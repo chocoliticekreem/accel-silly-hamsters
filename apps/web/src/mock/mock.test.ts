@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import demandData from "../../../../data/processed/demand.json";
 import { DAYS_PER_RUN } from "../api/contract";
 import { mergeDays } from "../sim/interp";
-import { createMockState, mockApi } from ".";
+import { schematicMockState, mockApi } from ".";
 
-const state = createMockState();
+const state = schematicMockState();
 const api = mockApi(state);
 
 describe("mock map", () => {

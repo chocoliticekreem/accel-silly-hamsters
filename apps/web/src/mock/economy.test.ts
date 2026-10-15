@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { DAYS_PER_RUN } from "../api/contract";
 import type { PersonDay } from "../api/economy";
-import { createMockState } from ".";
+import { schematicMockState } from ".";
 import { citizenDiary, citizenIndex } from "./citizens";
 import { economyFor, forkRun, headlinesFor, mockEconomyApi, personStory, replayLedger } from "./economy";
 
-const state = createMockState();
+const state = schematicMockState();
 const econ = economyFor(state);
 const RUN = 1;
 const res = state.result(RUN);
