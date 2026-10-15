@@ -226,7 +226,7 @@ function deliveryLevel(h: number, weekend: boolean) {
   return late + 0.85 * gauss(h, 12.8, 0.8) + (weekend ? 1.15 : 1.0) * gauss(h, 19.6, 1.2);
 }
 
-const PEAK_RIDERS = 170;
+const PEAK_RIDERS = 190;
 const PEAK_DELIVERY = 34;
 
 // ---------------------------------------------------------------- places and flows
@@ -268,10 +268,10 @@ function places(map: CityMap): Record<string, Place> {
 /** [from, to, via, weight]; every flow also runs in reverse. */
 const FLOWS: [string, string, string[], number][] = [
   // the corridor: Great Eastern St / Old St → art'otel → Pitfield St → Encode Hub → Hoxton
-  ["gesS", "pitN", ["artotel", "encode"], 11],
-  ["roundabout", "pitN", ["artotel", "encode"], 7],
-  ["oldStW", "encode", ["artotel"], 4],
-  ["hoxtonSt", "roundabout", ["hoxSq", "encode", "artotel"], 3],
+  ["gesS", "pitN", ["artotel", "encode"], 24],
+  ["roundabout", "pitN", ["artotel", "encode"], 14],
+  ["oldStW", "encode", ["artotel"], 8],
+  ["hoxtonSt", "roundabout", ["hoxSq", "encode", "artotel"], 5],
   // Old Street and City Road cycle lanes
   ["oldStW", "oldStE", [], 8],
   ["cityRdN", "oldStE", [], 5],
@@ -279,7 +279,7 @@ const FLOWS: [string, string, string[], number][] = [
   ["cityRdS", "oldStE", ["roundabout"], 3],
   // Shoreditch High St ↔ Old Street
   ["shsStn", "roundabout", ["gesS", "artotel"], 6],
-  ["shsStn", "encode", ["gesS", "artotel"], 3],
+  ["shsStn", "encode", ["gesS", "artotel"], 8],
   // north-south and the rest
   ["kingsland", "shsS", [], 5],
   ["bishops", "kingsland", [], 3],
@@ -496,7 +496,7 @@ function buildWorld(map: CityMap, data: CycleData): CycleWorld {
     const [, , dx, dz, w] = k;
     // a stand inside the carriageway (a misplaced OSM point) would be in everyone's way: skip it
     const centre = net.kerb(pk.x, pk.z, -w / 2);
-    if (!centre || Math.hypot(centre[0] - pk.x, centre[1] - pk.z) < w / 2 + 0.4) continue;
+    if (!centre || Math.hypot(centre[0] - pk.x, centre[1] - pk.z) < w / 2 + 1.6) continue;
     stands++;
     const [sx, sz] = toScene(pk.x, pk.z);
     const h = Math.atan2(dx, -dz);
@@ -732,6 +732,11 @@ function CyclistsLayer({ map, data, interactive }: { map: CityMap; data: CycleDa
     };
   }, []);
 
+  useEffect(() => {
+    // debug handle (dev tools): live counts per kind, plans, docks
+    (window as unknown as { __cyclists?: unknown }).__cyclists = { sim, world };
+  }, [sim, world]);
+
   const routeCached = (key: string, via: [number, number][], from: string, to: string) => {
     if (world.planCache.has(key)) return world.planCache.get(key) ?? null;
     const route = world.net.route(via);
@@ -740,20 +745,22 @@ function CyclistsLayer({ map, data, interactive }: { map: CityMap; data: CycleDa
     return plan;
   };
 
-  const spawn = (kind: Kind, plan: Plan, opts?: { inset?: number; pack?: boolean; dockTo?: DockState | null; brakeAtEnd?: boolean }) => {
+  const spawn = (kind: Kind, plan: Plan, opts?: { inset?: number; pack?: boolean; dockTo?: DockState | null; brakeAtEnd?: boolean; mid?: boolean }) => {
     const cargo = kind === "cargo";
     const r = sim.r;
     const rd = sim.riders.find((x) => !x.active && x.cargo === cargo);
     if (!rd) return null;
-    // the start must be clear
-    plan.path.at(0, -1, 0, pt);
+    // the start must be clear (a warm start drops the rider somewhere along the way, fading in)
+    const s0 = opts?.mid ? r() * plan.route.length * 0.85 : 0;
+    plan.path.at(s0, -1, 0, pt);
     const [sx, sz] = toScene(pt.x, pt.z);
     for (const o of sim.riders) if (o.active && Math.abs(o.x - sx) < 3.5 && Math.abs(o.z - sz) < 3.5) return null;
     rd.active = true;
     rd.gen++;
     rd.kind = kind;
     rd.plan = plan;
-    rd.s = 0;
+    rd.s = s0;
+    rd.jIdx = 0;
     const [base, extra] = SPEED[kind];
     rd.v0 = base + r() * extra;
     rd.v = rd.v0 * 0.6;
@@ -791,18 +798,21 @@ function CyclistsLayer({ map, data, interactive }: { map: CityMap; data: CycleDa
 
   const docksWithBikes = () => world.docks.filter((d) => d.kind === "santander" && d.bikes > 0);
 
-  const trySpawn = (kind: Kind) => {
+  const trySpawn = (kind: Kind, mid = false) => {
     const r = sim.r;
     if (kind === "santander") {
       const from = docksWithBikes();
       if (!from.length) return null;
-      const a = from[Math.floor(r() * from.length)];
+      // docks near the art'otel / Pitfield Street corridor are the busiest
+      const near = (d: Dock) => 1 / (1 + Math.hypot(d.x + 640, d.z - 400) / 220);
+      let pickW = r() * from.reduce((acc, d) => acc + near(d), 0);
+      const a = from.find((d) => (pickW -= near(d)) <= 0) ?? from[0];
       const free = world.docks.filter((d) => d !== a && d.kind === "santander" && d.bikes + d.reserved < d.slots && Math.hypot(d.x - a.x, d.z - a.z) > 250);
       if (!free.length) return null;
       const b = free[Math.floor(r() * free.length)];
       const plan = routeCached(`dock:${a.name}:${b.name}`, [[a.kx, a.kz], [b.kx, b.kz]], `Santander dock: ${a.name}`, `Santander dock: ${b.name}`);
       if (!plan) return null;
-      const rd = spawn(kind, plan, { dockTo: b, brakeAtEnd: true });
+      const rd = spawn(kind, plan, { dockTo: b, brakeAtEnd: true, mid });
       if (rd) {
         a.bikes--;
         b.reserved++;
@@ -822,12 +832,12 @@ function CyclistsLayer({ map, data, interactive }: { map: CityMap; data: CycleDa
       const [nx, nz] = world.net.graph.nodes[node];
       const plan = routeCached(`del:${st.name}:${node}`, [[st.x, st.z], [nx, nz]], `Pickup: ${st.name}`, `Drop-off: ${world.net.streetName(nx, nz) || "a flat nearby"}`);
       if (!plan) return null;
-      return spawn(kind, plan, { brakeAtEnd: true });
+      return spawn(kind, plan, { brakeAtEnd: true, mid });
     }
     // everyone else: a weighted flow
     const total = world.plans.reduce((s, p) => s + p.weight, 0);
     let x = r() * total;
-    for (const p of world.plans) if ((x -= p.weight) <= 0) return spawn(kind, p.plan);
+    for (const p of world.plans) if ((x -= p.weight) <= 0) return spawn(kind, p.plan, { mid });
     return null;
   };
 
@@ -901,13 +911,17 @@ function CyclistsLayer({ map, data, interactive }: { map: CityMap; data: CycleDa
     };
     const have: Partial<Record<Kind, number>> = {};
     for (const rd of riders) if (rd.active && !rd.leaving) have[rd.kind] = (have[rd.kind] ?? 0) + 1;
-    let budget = 4;
+    let budget = 10;
     for (const k of Object.keys(want) as Kind[]) {
       const target = want[k] ?? 0;
       const n = have[k] ?? 0;
       if (n < Math.round(target) && budget > 0) {
-        budget--;
-        trySpawn(k);
+        // far short (first frames, or the clock jumped into a rush): drop riders in along their routes
+        const far = n < target * 0.6;
+        for (let i = 0; i < (far ? 3 : 1) && budget > 0; i++) {
+          budget--;
+          trySpawn(k, far);
+        }
       } else if (n > target * 1.3 + 2) {
         // the clock has moved on: the shyest riders head off
         const ratio = target / n;
