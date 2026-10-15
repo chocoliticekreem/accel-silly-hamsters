@@ -3,6 +3,8 @@ run fallbacks, and contract serialization.
 
 The API reads the files the sim and the agents write (layout in backend/store.py) on every
 request and caches nothing, so a run that finishes while the server is up shows on the next call.
+The one exception is runs/{run}/footfall.json (backend/api/footfall.py), derived from the day
+files and rebuilt whenever one of them is newer.
 """
 
 from __future__ import annotations

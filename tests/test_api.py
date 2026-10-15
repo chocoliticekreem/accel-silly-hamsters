@@ -145,6 +145,7 @@ def test_every_contract_endpoint_is_served() -> None:
     additive = {
         "GET /files/reports/{run}/{storeId}.pdf",
         "GET /api/runs/{run}/summary",
+        "GET /api/runs/{run}/footfall",
         "GET /api/notebook",
         "GET /api/health",
         "GET /api/training",
@@ -359,6 +360,8 @@ def test_run_day_is_the_file_on_disk(client: TestClient, runs_dir: Path) -> None
         ("/api/runs/9/stores", 404),
         ("/api/runs/9/suggestions", 404),
         ("/api/runs/9/summary", 404),
+        ("/api/runs/9/footfall", 404),
+        ("/api/runs/x/footfall", 422),
         ("/api/stores/s3/report?run=9", 404),
         ("/api/stores/s3/report?run=latest", 422),
         ("/api/stores/nope/report", 404),

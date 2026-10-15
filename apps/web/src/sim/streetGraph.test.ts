@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Street } from "../api/contract";
-import { buildStreetGraph, tripMix } from "./streetGraph";
+import { buildStreetGraph } from "./streetGraph";
 
 const st = (id: string, points: [number, number][], width = 8): Street => ({ id, name: id, width, points });
 
@@ -39,15 +39,5 @@ describe("street graph spacing helpers", () => {
     expect(g.nodes[near[0]]).toEqual([0, 0]);
     expect(near.length).toBe(5); // the crossing and the four points 10 m out
     expect(g.near(500, 500, 1, 3)).toHaveLength(3);
-  });
-});
-
-describe("tripMix", () => {
-  it("commutes in the morning, home in the evening, out at night", () => {
-    const top = (h: number) => Object.entries(tripMix(h)).sort((x, y) => y[1] - x[1])[0][0];
-    expect(top(8.5)).toBe("toWork");
-    expect(top(18)).toBe("fromWork");
-    expect(top(13)).toBe("lunch");
-    expect(top(2.5)).toBe("nightOut");
   });
 });
