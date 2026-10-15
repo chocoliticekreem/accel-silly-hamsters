@@ -31,9 +31,11 @@ import Streets from "./modules/Streets";
 import Surroundings from "./modules/Surroundings";
 import Overground from "./modules/Overground";
 import OldStreet from "./modules/OldStreet";
+import ShoreditchStation from "./modules/ShoreditchStation";
 import Hoxton from "./modules/Hoxton";
 import Spitalfields from "./modules/Spitalfields";
 import Traffic from "./modules/Traffic";
+import Cyclists from "./modules/Cyclists";
 import ClubLife from "./modules/ClubLife";
 import Incidents from "./modules/Incidents";
 import Interiors from "./modules/Interiors";
@@ -56,6 +58,7 @@ export const MODULES: Record<string, ComponentType> = {
   Buildings,
   Overground,
   OldStreet,
+  ShoreditchStation,
   Hoxton,
   Spitalfields,
   Infill,
@@ -66,6 +69,7 @@ export const MODULES: Record<string, ComponentType> = {
   StreetDressing,
   StreetEvents,
   Traffic,
+  Cyclists,
   ClubLife,
   Interiors,
   Landmarks,
