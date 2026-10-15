@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import fpdf
 import pytest
 from test_agents_fakesim import setup_world  # pytest puts tests/ on sys.path
 
@@ -135,6 +137,47 @@ def test_report_files_evidence_and_pdf(runs):
     assert meta["wordingSource"] == "template" and meta["fileId"] is None
     assert len(meta["seedDeltas"]) == 1 + len(report.EXTRA_SEED_OFFSETS)
     assert "Simulated, not guaranteed." in meta["wording"]
+
+
+def test_pdf_is_set_in_the_web_app_fonts(runs):
+    report.write_reports(runs.best, runs.baseline)
+    pdf = (settings.RUNS_DIR / str(runs.best) / "reports" / "s2.pdf").read_bytes()
+    assert b"/BaseFont /MPDFAA+AtkinsonHyperlegibleNext" in pdf  # body
+    assert b"/BaseFont /MPDFAA+HammersmithOne" in pdf  # headings
+    assert b"Helvetica" not in pdf
+
+
+def test_pdf_falls_back_to_core_helvetica_without_the_font_files(runs, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "BODY_FONT", tmp_path / "missing.ttf")
+    report.write_reports(runs.best, runs.baseline)
+    pdf = (settings.RUNS_DIR / str(runs.best) / "reports" / "s2.pdf").read_bytes()
+    assert pdf.startswith(b"%PDF") and b"/BaseFont /Helvetica" in pdf
+    assert b"Atkinson" not in pdf
+
+
+def test_pdf_text_keeps_every_character_the_font_can_draw():
+    brand = {ord(c) for c in "Café Łódź–“”£ CO2->"}  # like the brand fonts: no "→", no "₂"
+    assert report._pdf_text("Café Łódź – “£2” → CO₂ 中", brand) == "Café Łódź – “£2” -> CO2 ?"
+    assert report._pdf_text("Café Łódź – “£2” → CO₂", report._LATIN_1) == (
+        'Café ?ód? - "£2" -> CO2'
+    )
+
+
+def test_unchanged_reports_render_the_same_pdf_bytes_at_any_time(runs, monkeypatch):
+    """The Files API copy is reused only when the PDF bytes match (_upload_pdf)."""
+    report.write_reports(runs.best, runs.baseline)
+    path = settings.RUNS_DIR / str(runs.best) / "reports" / "s2.pdf"
+    first = path.read_bytes()
+
+    init = fpdf.FPDF.__init__
+
+    def years_later(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        self.creation_date = datetime(2031, 1, 1, tzinfo=UTC)  # fpdf2 stamps "now" by default
+
+    monkeypatch.setattr(fpdf.FPDF, "__init__", years_later)
+    report.write_reports(runs.best, runs.baseline)
+    assert path.read_bytes() == first
 
 
 # --- online: cited wording + Files API (mocked client) ---------------------------------------

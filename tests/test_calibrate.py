@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from matplotlib import font_manager
+from matplotlib.font_manager import FontProperties
+
+from backend import settings
 from backend.contract import Source
 from backend.pipeline import run_all
 from backend.schemas import CalibrationVenue, StoreStats
@@ -73,6 +77,28 @@ def test_measured_targets_set_the_mean_error() -> None:
     summary = calibrate.summarise(calibrate.evaluate_venues([venue("s1", True)], sim))
     assert summary["measuredCount"] == 1
     assert summary["meanError"] == 0.0
+
+
+def test_chart_is_set_in_the_web_app_fonts(tmp_path) -> None:
+    body, heading = calibrate._chart_fonts()
+    assert (body, heading) == ("Atkinson Hyperlegible Next", "Hammersmith One")
+    for family, path in ((body, settings.BODY_FONT), (heading, settings.HEADING_FONT)):
+        found = font_manager.findfont(FontProperties(family=family), fallback_to_default=False)
+        assert found == str(path)
+    sim = {"s1": stats(evening_peak(2), evening_peak(3))}
+    rows = calibrate.evaluate_venues([venue("s1", False)], sim)
+    calibrate.draw_chart(rows, [venue("s1", False)], sim, tmp_path / "chart.png")
+    assert (tmp_path / "chart.png").read_bytes().startswith(b"\x89PNG")
+
+
+def test_chart_falls_back_to_the_default_font_without_the_font_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "BODY_FONT", tmp_path / "missing.ttf")
+    monkeypatch.setattr(settings, "HEADING_FONT", tmp_path / "missing.ttf")
+    assert calibrate._chart_fonts() == ("sans-serif", "sans-serif")
+    sim = {"s1": stats(evening_peak(2), evening_peak(3))}
+    rows = calibrate.evaluate_venues([venue("s1", False)], sim)
+    calibrate.draw_chart(rows, [venue("s1", False)], sim, tmp_path / "chart.png")
+    assert (tmp_path / "chart.png").read_bytes().startswith(b"\x89PNG")
 
 
 def test_pipeline_report_flags_a_fallback_map_by_its_source_label() -> None:

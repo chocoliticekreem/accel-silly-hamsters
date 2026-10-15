@@ -130,23 +130,28 @@ function Day({ h }: { h: StoreInsights["hourly"] }) {
   const peak = Math.max(1, ...h.footfall, ...h.visits.map((v, i) => v + h.missedDemand[i]));
   const y = (v: number) => (v / peak) * (H - 4);
   return (
-    <svg className="day-chart" viewBox={`0 0 ${W} ${H + 12}`} aria-label="Visits, passers-by and missed demand by hour">
-      {h.openFraction.map((o, i) => (o < 1 ? <rect key={`c${i}`} x={i * cw} y={0} width={cw} height={H} className="dc-closed" style={{ opacity: 1 - o }} /> : null))}
-      {h.footfall.map((v, i) => (
-        <rect key={`f${i}`} x={i * cw + 1} y={H - y(v)} width={cw - 2} height={y(v)} className="dc-foot" />
-      ))}
-      {h.visits.map((v, i) => (
-        <rect key={`v${i}`} x={i * cw + 3} y={H - y(v)} width={cw - 6} height={y(v)} className="dc-visit" />
-      ))}
-      {h.missedDemand.map((v, i) =>
-        v > 0 ? <rect key={`m${i}`} x={i * cw + 3} y={H - y(h.visits[i]) - y(v)} width={cw - 6} height={Math.max(1.5, y(v))} className="dc-missed" /> : null,
-      )}
-      {[0, 6, 12, 18].map((t) => (
-        <text key={t} x={t * cw + 1} y={H + 10} className="dc-axis">
-          {String(t).padStart(2, "0")}
-        </text>
-      ))}
-    </svg>
+    <>
+      <svg className="day-chart" viewBox={`0 0 ${W} ${H}`} aria-label="Visits, passers-by and missed demand by hour">
+        {h.openFraction.map((o, i) => (o < 1 ? <rect key={`c${i}`} x={i * cw} y={0} width={cw} height={H} className="dc-closed" style={{ opacity: 1 - o }} /> : null))}
+        {h.footfall.map((v, i) => (
+          <rect key={`f${i}`} x={i * cw + 1} y={H - y(v)} width={cw - 2} height={y(v)} className="dc-foot" />
+        ))}
+        {h.visits.map((v, i) => (
+          <rect key={`v${i}`} x={i * cw + 3} y={H - y(v)} width={cw - 6} height={y(v)} className="dc-visit" />
+        ))}
+        {h.missedDemand.map((v, i) =>
+          v > 0 ? <rect key={`m${i}`} x={i * cw + 3} y={H - y(h.visits[i]) - y(v)} width={cw - 6} height={Math.max(1.5, y(v))} className="dc-missed" /> : null,
+        )}
+      </svg>
+      {/* HTML, not SVG text: the chart scales with its card, and the hour labels must stay 12px */}
+      <div className="dc-axis">
+        {[0, 6, 12, 18].map((t) => (
+          <span key={t} style={{ left: `${(t / 24) * 100}%` }}>
+            {String(t).padStart(2, "0")}
+          </span>
+        ))}
+      </div>
+    </>
   );
 }
 

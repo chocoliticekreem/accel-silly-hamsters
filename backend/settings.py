@@ -17,6 +17,12 @@ CACHE_DIR = DATA_DIR / "cache"
 LLM_CACHE_DIR = CACHE_DIR / "llm"
 RUNS_DIR = ROOT / "runs"
 
+# The web app's type (OFL, from github.com/google/fonts): Atkinson Hyperlegible Next for body text
+# and numbers, Hammersmith One for headings. The owner-report PDF and calibration chart use them.
+FONTS_DIR = ROOT / "backend" / "assets" / "fonts"
+BODY_FONT = FONTS_DIR / "atkinsonhyperlegiblenext" / "AtkinsonHyperlegibleNext[wght].ttf"
+HEADING_FONT = FONTS_DIR / "hammersmithone" / "HammersmithOne-Regular.ttf"
+
 # Simulation
 SIM_VERSION = "0.1.0"  # bump on any change that alters sim output; it is part of the run-cache key
 DEFAULT_SEED = 42

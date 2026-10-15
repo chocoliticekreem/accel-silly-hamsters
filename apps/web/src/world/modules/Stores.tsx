@@ -172,7 +172,7 @@ function StoreBox({ store, b, nx, nz }: { store: Store; b: Building; nx: number;
       </group>
 
       {(hovered || selected) && (
-        <Html position={[0, h + 4, 0]} center distanceFactor={260} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+        <Html position={[0, h + 4, 0]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
           <div className="map-label">
             <TypeIcon type={store.type} size={14} />
             {store.name}

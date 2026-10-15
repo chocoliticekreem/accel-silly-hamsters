@@ -26,12 +26,16 @@ import hashlib
 import os
 import statistics
 import tempfile
+import unicodedata
+from collections.abc import Container
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 
 import anthropic
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
+from fpdf.fonts import TTFFont
 
 from backend import cache, llm, settings, store
 from backend.agents import prompts, rundata
@@ -464,6 +468,8 @@ def llm_wording(
 
 # --- PDF -----------------------------------------------------------------------------------------
 
+# Stand-ins for characters a font has no glyph for: the brand fonts lack "→"; core Helvetica
+# lacks everything outside latin-1.
 _PDF_REPLACEMENTS = {
     "→": "->",
     "–": "-",
@@ -474,34 +480,88 @@ _PDF_REPLACEMENTS = {
     "”": '"',
     "…": "...",
 }
+_LATIN_1 = range(256)
+NOTE_GREY = (82, 81, 78)
+
+FontSpec = tuple[str, str, int]
+# The web app's type (settings.BODY_FONT / HEADING_FONT), and core Helvetica if they are missing.
+BRAND_FONTS: dict[str, FontSpec] = {
+    "title": ("hammersmith", "", 16),
+    "heading": ("hammersmith", "", 12),
+    "body": ("atkinson", "", 10),
+    "note": ("atkinson", "", 9),
+}
+CORE_FONTS: dict[str, FontSpec] = {
+    "title": ("Helvetica", "B", 16),
+    "heading": ("Helvetica", "B", 12),
+    "body": ("Helvetica", "", 10),
+    "note": ("Helvetica", "I", 9),
+}
 
 
-def _pdf_text(text: str) -> str:
-    """fpdf2's core fonts are latin-1 only."""
-    for old, new in _PDF_REPLACEMENTS.items():
-        text = text.replace(old, new)
-    return text.encode("latin-1", "replace").decode("latin-1")
+def _pdf_text(text: str, glyphs: Container[int]) -> str:
+    """Keep every character the font can draw; swap the rest for a plain stand-in, their
+    compatibility form (CO₂ -> CO2), or "?"."""
+    out = []
+    for char in text:
+        if char == "\n" or ord(char) in glyphs:
+            out.append(char)
+            continue
+        for stand_in in (_PDF_REPLACEMENTS.get(char, ""), unicodedata.normalize("NFKC", char)):
+            if stand_in and all(ord(c) in glyphs for c in stand_in):
+                out.append(stand_in)
+                break
+        else:
+            out.append("?")
+    return "".join(out)
+
+
+def _pdf_fonts(pdf: FPDF) -> dict[str, FontSpec]:
+    """Embed the brand fonts; core Helvetica when a font file is missing."""
+    if not (settings.BODY_FONT.is_file() and settings.HEADING_FONT.is_file()):
+        return CORE_FONTS
+    # A variable font: its default instance is Regular (wght 400). Passing variations= would
+    # instance it again on every PDF (~0.14 s each).
+    pdf.add_font("atkinson", fname=settings.BODY_FONT)
+    pdf.add_font("hammersmith", fname=settings.HEADING_FONT)
+    return BRAND_FONTS
 
 
 def render_pdf(
-    report: StoreReport, ms: MapStore, *, run: int, baseline_run: int, wording: str, basis: str
+    report: StoreReport,
+    ms: MapStore,
+    *,
+    run: int,
+    baseline_run: int,
+    wording: str,
+    basis: str,
+    created: datetime | None = None,
 ) -> bytes:
     pdf = FPDF(format="A4")
+    if created is not None:
+        # fpdf2 otherwise stamps the current second, so re-rendering unchanged content would
+        # change the bytes and _upload_pdf could never reuse the Files API copy.
+        pdf.set_creation_date(created)
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
+    fonts = _pdf_fonts(pdf)
 
     def write(text: str, height: float = 6.0) -> None:
-        pdf.multi_cell(0, height, _pdf_text(text), align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        font = pdf.current_font
+        glyphs = font.cmap if isinstance(font, TTFFont) else _LATIN_1
+        pdf.multi_cell(
+            0, height, _pdf_text(text, glyphs), align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT
+        )
 
     def heading(text: str) -> None:
         pdf.ln(3)
-        pdf.set_font("Helvetica", "B", 12)
+        pdf.set_font(*fonts["heading"])
         write(text, 7)
-        pdf.set_font("Helvetica", "", 10)
+        pdf.set_font(*fonts["body"])
 
-    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_font(*fonts["title"])
     write(f"Weekly report: {ms.name}", 9)
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font(*fonts["body"])
     write(
         f"{ms.type.title()} in Shoreditch | run {run} vs baseline run {baseline_run} | "
         "14 simulated days"
@@ -530,7 +590,8 @@ def render_pdf(
     for index, source in enumerate(report.evidence, 1):
         write(f"[{index}] {source.label}: {source.url}")
     pdf.ln(4)
-    pdf.set_font("Helvetica", "I", 9)
+    pdf.set_font(*fonts["note"])
+    pdf.set_text_color(*NOTE_GREY)
     write(f"{report.note} Approve or reject each change in the app.")
     return bytes(pdf.output())
 
@@ -580,6 +641,8 @@ def write_reports(
     chain = _applied_chain(best_run, baseline_run)
     online = llm.available()
     reports_dir = store.run_dir(best_run) / "reports"
+    run_created = {r.run: r.createdAt for r in store.load_index()}.get(best_run)
+    created = datetime.fromisoformat(run_created) if run_created else None
     reports = []
     for ms in advised:
         sid = ms.id
@@ -630,7 +693,13 @@ def write_reports(
                     {"agent": AGENT, "type": "wording_fallback", "storeId": sid, "error": str(e)},
                 )
         pdf = render_pdf(
-            report, ms, run=best_run, baseline_run=baseline_run, wording=wording, basis=basis
+            report,
+            ms,
+            run=best_run,
+            baseline_run=baseline_run,
+            wording=wording,
+            basis=basis,
+            created=created,
         )
         _write_bytes(reports_dir / f"{sid}.pdf", pdf)
         store.write_json(reports_dir / f"{sid}.json", report)

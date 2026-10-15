@@ -18,13 +18,14 @@ from backend import settings, store
 from backend.schemas import CalibrationVenue, StoreConfig, StoreStats
 from backend.sim import runner
 
-SIM_COLOR = "#2a78d6"
-TARGET_COLOR = "#eb6834"
-SURFACE = "#fcfcfb"
-INK = "#0b0b0b"
-INK_SECONDARY = "#52514e"
-INK_MUTED = "#898781"
-GRID = "#e1e0d9"
+# The web app's palette (apps/web/src/styles.css :root), so the slide matches the History panel.
+SIM_COLOR = "#ff9a3d"  # --lamp
+TARGET_COLOR = "#848078"  # --context: --text at 50% on --plate
+SURFACE = "#181613"  # --plate
+INK = "#f0eadd"  # --text
+INK_SECONDARY = "#bfb6a6"  # --muted
+INK_MUTED = "#a59c8c"  # --faint
+GRID = "#292723"  # --grid: --text at 8% on --plate
 
 
 def _peak_normalise(values: list[float]) -> np.ndarray:
@@ -79,6 +80,22 @@ def summarise(rows: list[dict]) -> dict:
     }
 
 
+def _chart_fonts() -> tuple[str, str]:
+    """(body, heading) font families for matplotlib: the web app's fonts, registered from
+    settings.BODY_FONT / HEADING_FONT, or matplotlib's default sans-serif when a file is missing."""
+    from matplotlib import font_manager
+
+    families = []
+    for path in (settings.BODY_FONT, settings.HEADING_FONT):
+        if not path.is_file():
+            families.append("sans-serif")
+            continue
+        if all(f.fname != str(path) for f in font_manager.fontManager.ttflist):
+            font_manager.fontManager.addfont(str(path))
+        families.append(font_manager.FontProperties(fname=str(path)).get_name())
+    return families[0], families[1]
+
+
 def draw_chart(
     rows: list[dict], venues: list[CalibrationVenue], stats: dict[str, StoreStats], path
 ) -> None:
@@ -87,9 +104,11 @@ def draw_chart(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    body, heading = _chart_fonts()
     by_id = {v.storeId: v for v in venues if v.storeId}
     n = len(rows)
-    fig, axes = plt.subplots(n, 2, figsize=(10, 2.3 * n + 0.8), squeeze=False, facecolor=SURFACE)
+    height = 2.3 * n + 0.8
+    fig, axes = plt.subplots(n, 2, figsize=(10, height), squeeze=False, facecolor=SURFACE)
     hours = np.arange(24)
     for i, row in enumerate(rows):
         venue, st = by_id[row["storeId"]], stats[row["storeId"]]
@@ -107,15 +126,21 @@ def draw_chart(
                 _peak_normalise(target),
                 color=TARGET_COLOR,
                 linewidth=2,
-                linestyle="-" if venue.measured else "--",
+                linestyle="--",
                 label="Popular Times" if venue.measured else "Placeholder shape",
             )
             kind = "measured" if venue.measured else "placeholder, not measured"
-            ax.set_title(f"{venue.name} · {label} ({kind})", fontsize=9, color=INK, loc="left")
+            ax.set_title(
+                f"{venue.name} · {label} ({kind})",
+                fontsize=9,
+                color=INK,
+                loc="left",
+                fontfamily=body,
+            )
             ax.set_xlim(0, 23)
             ax.set_ylim(0, 110)
             ax.set_xticks([0, 6, 12, 18, 23])
-            ax.tick_params(colors=INK_MUTED, labelsize=8)
+            ax.tick_params(colors=INK_MUTED, labelsize=8, labelfontfamily=body)
             ax.grid(axis="y", color=GRID, linewidth=0.6)
             for spine in ax.spines.values():
                 spine.set_visible(False)
@@ -128,13 +153,40 @@ def draw_chart(
                 ha="right",
                 fontsize=8,
                 color=INK_SECONDARY,
+                fontfamily=body,
             )
     handles, labels = axes[0][0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper right", frameon=False, fontsize=9)
-    fig.suptitle(
-        "Busyness by hour, scaled to peak = 100", x=0.01, ha="left", fontsize=11, color=INK
+    fig.legend(
+        handles,
+        labels,
+        loc="upper right",
+        frameon=False,
+        prop={"family": body, "size": 9},
+        labelcolor=INK,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    # Hammersmith One's 1 and 0 read as I and O, so the heading holds words only and the scale
+    # goes on a body-font line under it (numbers are always in the body font, as on the web).
+    fig.suptitle(
+        "Busyness by hour",
+        x=0.01,
+        y=1 - 0.12 / height,
+        ha="left",
+        va="top",
+        fontsize=11,
+        color=INK,
+        fontfamily=heading,
+    )
+    fig.text(
+        0.01,
+        1 - 0.38 / height,
+        "Scaled to peak = 100",
+        ha="left",
+        va="top",
+        fontsize=9,
+        color=INK_SECONDARY,
+        fontfamily=body,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 1 - 0.6 / height))
     fig.savefig(path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
 
