@@ -134,6 +134,8 @@ export interface StoreKpis {
   visits: number;
   kwh: number;
   returnRate: number;
+  /** Additive: hours open over the 14 days; staff are paid for these (backend/economics.py). */
+  openHours?: number;
 }
 
 export interface StoreRunResult {

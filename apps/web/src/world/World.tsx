@@ -43,8 +43,6 @@ import Interiors from "./modules/Interiors";
 import Landmarks from "./modules/Landmarks";
 import FreeCam from "./modules/FreeCam";
 import Police from "./modules/Police";
-import Photoreal from "./modules/Photoreal";
-import MapGround from "./modules/MapGround";
 import RealBuildings from "./modules/RealBuildings";
 import RealLand from "./modules/RealLand";
 import RealRail from "./modules/RealRail";
@@ -53,8 +51,6 @@ import { useModuleHides } from "./graphics";
 
 export const MODULES: Record<string, ComponentType> = {
   Sky,
-  Photoreal,
-  MapGround,
   Ground,
   RealLand,
   Surroundings,

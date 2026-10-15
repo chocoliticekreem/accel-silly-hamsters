@@ -383,7 +383,9 @@ class StaticBuilder {
 }
 
 function buildWorld(map: CityMap, data: CycleData): CycleWorld {
+  const t0 = performance.now();
   const net = buildNetwork(map, data);
+  const t1 = performance.now();
   const P = places(map);
   const plans: CycleWorld["plans"] = [];
   for (const [a, b, via, w] of FLOWS) {
@@ -549,6 +551,7 @@ function buildWorld(map: CityMap, data: CycleData): CycleWorld {
     }
   }
 
+  console.info(`[cyclists] built: network ${Math.round(t1 - t0)} ms, rest ${Math.round(performance.now() - t1)} ms, ${plans.length} routes, ${docks.length} docks, ${parked.length} parked bikes`);
   return {
     net,
     plans,
@@ -734,8 +737,8 @@ function CyclistsLayer({ map, data, interactive }: { map: CityMap; data: CycleDa
 
   useEffect(() => {
     // debug handle (dev tools): live counts per kind, plans, docks
-    (window as unknown as { __cyclists?: unknown }).__cyclists = { sim, world };
-  }, [sim, world]);
+    if (import.meta.env.DEV) (window as unknown as { __cyclists?: unknown }).__cyclists = { sim, world, camera };
+  }, [sim, world, camera]);
 
   const routeCached = (key: string, via: [number, number][], from: string, to: string) => {
     if (world.planCache.has(key)) return world.planCache.get(key) ?? null;
@@ -754,7 +757,8 @@ function CyclistsLayer({ map, data, interactive }: { map: CityMap; data: CycleDa
     const s0 = opts?.mid ? r() * plan.route.length * 0.85 : 0;
     plan.path.at(s0, -1, 0, pt);
     const [sx, sz] = toScene(pt.x, pt.z);
-    for (const o of sim.riders) if (o.active && Math.abs(o.x - sx) < 3.5 && Math.abs(o.z - sz) < 3.5) return null;
+    const clear = opts?.pack ? 1.9 : 3.5;
+    for (const o of sim.riders) if (o.active && Math.abs(o.x - sx) < clear && Math.abs(o.z - sz) < clear) return null;
     rd.active = true;
     rd.gen++;
     rd.kind = kind;

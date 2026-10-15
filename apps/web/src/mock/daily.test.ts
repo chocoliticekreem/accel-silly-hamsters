@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, DAYS_PER_RUN, type DayData, type OwnerEvent } from "../api/contract";
 import { countOwnerChanges } from "../api/overviewFallback";
-import { GBP_PER_KWH, GROSS_MARGIN, SPEND_GBP } from "../sim/economics";
+import { GBP_PER_KWH, marginPerVisit } from "../sim/economics";
 import { createMockState, mockApi } from ".";
 import { aggregateDaily } from "./daily";
 import { OPTIMISE_MS, optimiseProgress } from "./optimise";
@@ -32,7 +32,7 @@ describe("aggregateDaily", () => {
   });
 
   it("profit is margin on visits minus energy", () => {
-    const want = (SPEND_GBP.cafe + SPEND_GBP.takeaway) * GROSS_MARGIN - 15 * GBP_PER_KWH;
+    const want = marginPerVisit("cafe") + marginPerVisit("takeaway") - 15 * GBP_PER_KWH;
     expect(out[0].profitGbp).toBeCloseTo(want, 2);
   });
 

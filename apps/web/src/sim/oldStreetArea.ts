@@ -19,3 +19,7 @@ export const WHITE_COLLAR_AREA: [number, number][] = [
   [-917.8, 205.4], [-918.4, 211.7], [-919.4, 222.9], [-944.4, 239.9], [-947.0, 241.4], [-952.9, 241.2], [-956.3, 244.5],
   [-969.9, 241.9], [-972.2, 241.3], [-973.1, 239.9], [-970.4, 209.9], [-961.8, 206.6], [-957.8, 201.0], [-953.9, 203.7], [-951.8, 202.9],
 ];
+
+/** Backend map streets that are pieces of the removed gyratory (wholly within 80 m of the junction): the
+ * OldStreet module runs its own traffic on the real lanes there, so the Traffic module skips them. */
+export const isOldGyratory = (s: { points: [number, number][] }) => s.points.every(([x, z]) => Math.hypot(x + 893, z - 258) < 80);
