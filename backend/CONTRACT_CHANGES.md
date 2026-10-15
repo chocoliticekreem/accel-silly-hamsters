@@ -29,8 +29,32 @@ not sent as `null`.
 | `GET /api/runs/{run}/stores` → each `StoreRunResult` | Optional `schedule`: `[{fromDay, week[7]}]`, the shop's weekly hours as its owner changed them during the run, oldest first; `week` is Mon..Sun, each `{open, close}` or `null` (closed that weekday). Absent = `open`/`close` every day. Optional `closedFromDay`: the day the shop closed for good (absent = still trading). `open`/`close` keep meaning the run's starting hours. See `docs/OWNER_ACTIONS.md`. |
 | New `GET /api/runs/{run}/owner-events` | `OwnerEvent[]` oldest first (`t`, then `storeId`): `day`, `t` (sim minute), `storeId`, `action` (`hours_changed` \| `day_closed` \| `day_reopened` \| `shut_early` \| `open_late` \| `temporary_closure` \| `lighting_changed` \| `closed_permanently`), optional `from`/`to` (`HH:MM`, a weekday like `mon`, or a lighting level), `reason` (one owner-voice sentence, ≤ 100 chars), `trigger` `{kind, value, label}`. 404 like other run files (runs from before this feature have none). |
 | New `GET /api/runs/{run}/street-events` | `StreetEvent[]` oldest first: `day`, `fromT`, `toT` (sim minutes), `kind` (`roadworks` \| `heavy_traffic` \| `club_night` \| `event` \| `weather`), `streetId` (a map `Street.id`), `label`, `severity` (0–1). 404 like other run files. |
+| New `GET /api/stores/{storeId}/overview?run=` | `StoreOverview` (`backend/contract.py`, `docs/STORE_PAGE.md`): the owner's store page in one call. `storeId`, `name`, `type`, `run`, `baselineRun`, `bestRun` (this shop's most profitable run vs its baseline; `null` while only the baseline exists), `status` (`not_started` \| `improving` \| `best_found`), `headline` (one sentence), `numbers` (`customersPerWeek`, `energyCostPerWeekGbp`, `kwhPerWeek` as `{value, change}` with `change` a fraction vs the baseline, plus `profitChangePerWeekGbp`), up to 3 `advice[]` (`text`, `gbpPerWeek`, `certainty` `likely` \| `worth testing` \| `uncertain`, `status` `new` \| `applied` \| `tested_better` \| `tested_worse`, `suggestion`), `history[]` (`run`, `label`, `customersPerWeek`, `kwhPerWeek`, `profitChangePerWeekGbp`, `changes[]`, `best`), `note`. Optional `ownerChanges`: how many times the shop's owner adapted during `run` (absent when the run has no `owner_events.json`). Store-scoped: no other shop's id, name or numbers (a suggestion `reason` naming another shop is dropped). 404 for clubs, unknown stores, unknown or unfinished runs, and before any run has finished. |
+| New `POST /api/stores/{storeId}/optimize` | Body `{maxRuns?}` (2–10, default 6; the baseline counts). Starts a training session scoped to this shop as a background task and answers **202** with `AnalystStatus` (`state: "running"`). Only this shop's settings change (every other store stays at the baseline) and the objective is its profit change per week. 403 when the server runs with `READ_ONLY=1` (hosted demo), 404 for clubs and unknown stores, 409 while any session is `running` (a `running` checkpoint not updated for 30 min counts as dead), 422 for `maxRuns` out of range, 503 without `data/processed/map.json`. |
 
 ## Behaviour notes (not shape changes)
+
+- **Store overview semantics** (`backend/overview.py`). Baseline = the analyst checkpoint's
+  `baselineRun`, else the first finished run without a parent. `history` = the baseline plus every
+  later finished run (same seed) whose config changed this shop against its `parentRun`, oldest
+  first; `changes` are those diffs ("Close 23:00 → 03:00", "Lights 18–00 low → off"), `label`
+  words the first one ("Open till 03:00", "Open from 10:00", "Lights 18–00 off"). Profit =
+  `economics.profit_vs` against the baseline. `best` / `bestRun` = this shop's most profitable
+  history run (the baseline when every change lost money), **not** the analyst's area-wide
+  `bestRun`. Default `run` = `bestRun`, else the latest finished run. `status`: `not_started` while
+  the history is only the baseline, `improving` while a session is running, else `best_found`.
+  `advice` = this shop's suggestions on `run`, priced with `expectedDelta` on the run's numbers,
+  sorted by `gbpPerWeek`, top 3; `applied` = a change already on `run`'s parent chain,
+  `tested_better`/`tested_worse` = an earlier run made it and the shop's profit rose/fell.
+  `headline`: when `run` costs the shop money, "going back is better" (to its original settings or
+  to its best earlier test, with the £/week gap); else the top advice; else a keep/no-change line.
+- **One-shop sessions** (`POST .../optimize`, `training.train(scope_store=...)`) write the same
+  `runs/analyst_state.json` as the area session (with `scopeStore`, kept out of
+  `GET /api/agents/session`), so `GET /api/analyst` shows them and, while one is the last session,
+  the report's default run is that shop's best run. The choice is a deterministic ranking of the
+  shop's proposals by expected £/week (no analyst LLM); store-agent proposals use the usual
+  backend (Batch API online, heuristic offline). Reports are written for that shop only; the
+  shared baseline run keeps its area session's cost.
 
 - **Owners adapt inside a run** (`docs/OWNER_ACTIONS.md`, `backend/sim/owners.py`), switch
   `OWNER_ADAPTATION` (env, default on; `0` = the pre-adaptation sim, byte-identical files apart
@@ -72,6 +96,7 @@ All errors are `{"detail": ...}`.
 | --- | --- |
 | 404 | Unknown run, day (outside 1–14), store, report or PDF. The detail names the missing file and the run status while it is `queued` or `running`. |
 | 422 | Invalid input: wrong types, unknown fields, `scope: "store"` without `storeIds`, `suggestionIndex` out of range. |
-| 409 | `POST /api/apply` on the sample run, with nothing to apply, or with every selected suggestion rejected by the hard rules (`detail.rejections`). |
+| 403 | `POST /api/stores/{storeId}/optimize` on a read-only server (`READ_ONLY=1`). |
+| 409 | `POST /api/apply` on the sample run, with nothing to apply, or with every selected suggestion rejected by the hard rules (`detail.rejections`). `POST /api/stores/{storeId}/optimize` while a training session is running. |
 | 503 | The sim, the hard rules or `data/processed/map.json` is unavailable, so nothing was queued. |
 | 500 | A data file on disk no longer matches its schema; the detail names the file or the schema. |

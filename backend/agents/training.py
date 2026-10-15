@@ -24,21 +24,28 @@ summary.json and costPerStoreWeekGbp into runs/index.json.
 Cost per store-week = the session's LLM cost (GBP) / (advised stores x weeks of advice). A
 session produces one weekly report per non-club store, so weeks = 1: the figure is what one
 store's weekly advice cost to produce.
+
+One-shop sessions (train(scope_store=...), POST /api/stores/{id}/optimize) run the same steps
+with AnalystState.scopeStore set: only that store's agent proposes, the choice ranks its
+proposals by expected GBP/week, the objective is its profit change per week vs the baseline
+(gain = change / the shop's weekly margin), and reports are written for that store only.
 """
 
 from __future__ import annotations
 
 import traceback
 import uuid
+from itertools import combinations
 from typing import Literal
 
-from backend import cache, llm, settings, store
+from backend import cache, economics, llm, settings, store
 from backend.agents import analyst, report, rundata, store_owner
 from backend.agents.analyst import AnalystBackend
 from backend.agents.experiment import AnalystContext, IterationOutcome
 from backend.agents.objective import city_value, gain
 from backend.agents.rules import check_changes, log_rejections
-from backend.contract import MapData, Suggestion, dump
+from backend.agents.wording import change_label
+from backend.contract import MapData, StoreType, Suggestion, dump
 from backend.schemas import AnalystState, NotebookEntry, RunSummary
 from backend.sim import runner
 
@@ -53,16 +60,26 @@ def pending_path():
 
 
 def train(
-    max_runs: int = settings.MAX_RUNS, fresh: bool = False, seed: int = settings.DEFAULT_SEED
+    max_runs: int = settings.MAX_RUNS,
+    fresh: bool = False,
+    seed: int = settings.DEFAULT_SEED,
+    scope_store: str | None = None,
 ) -> AnalystState:
     """Run (or resume) a training session and return its final checkpoint.
 
     fresh=True starts a new session that reads neither the LLM response cache nor runs from
     earlier sessions; otherwise the last checkpoint is resumed (same seed) and caches are reused.
+
+    scope_store runs a one-shop session (POST /api/stores/{id}/optimize): the same loop,
+    checkpoints and budgets, but only that store's agent proposes, only its settings change
+    (every other store stays at the baseline), and the objective is its profit change per week
+    vs the baseline (economics.profit_vs). The choice is a deterministic ranking by expected
+    GBP/week (the area analyst's prompts and tools are area-wide), so no analyst LLM is called.
+    Only a running session with the same scope is resumed.
     """
     cache.set_policy(fresh=fresh)
-    backend = analyst.select_backend()
-    state = _start_or_resume(fresh, seed, backend.name)
+    backend = analyst.select_backend("heuristic" if scope_store else None)
+    state = _start_or_resume(fresh, seed, backend.name, scope_store)
     reason: StopReason
     try:
         reason = _loop(state, backend, max_runs)
@@ -84,9 +101,40 @@ def train(
     return state
 
 
-def _start_or_resume(fresh: bool, seed: int, backend_name: str) -> AnalystState:
+def start_store_session(store_id: str, seed: int = settings.DEFAULT_SEED) -> AnalystState:
+    """Checkpoint a new one-shop session as running (step "start") without running it, so the
+    API can answer with its status at once; train(scope_store=store_id) then resumes it."""
+    now = store.now_iso()
+    state = AnalystState(
+        sessionId=uuid.uuid4().hex[:12],
+        state="running",
+        startedAt=now,
+        updatedAt=now,
+        backend="heuristic",
+        fresh=False,
+        seed=seed,
+        scopeStore=store_id,
+    )
+    _checkpoint(state)
+    llm.log_event(
+        None,
+        {"agent": AGENT, "type": "start", "session": state.sessionId, "scope": "store"},
+    )
+    return state
+
+
+def _resumable(previous: AnalystState | None, seed: int, scope_store: str | None) -> bool:
+    if previous is None or previous.seed != seed or previous.scopeStore != scope_store:
+        return False
+    # A finished one-shop session is never resumed: "optimise again" starts a new one.
+    return scope_store is None or previous.state == "running"
+
+
+def _start_or_resume(
+    fresh: bool, seed: int, backend_name: str, scope_store: str | None = None
+) -> AnalystState:
     previous = None if fresh else store.load_analyst_state()
-    if previous is not None and previous.seed == seed:
+    if previous is not None and _resumable(previous, seed, scope_store):
         previous.state = "running"
         previous.stoppedReason = None
         previous.error = None
@@ -113,6 +161,7 @@ def _start_or_resume(fresh: bool, seed: int, backend_name: str) -> AnalystState:
         backend=backend_name,
         fresh=fresh,
         seed=seed,
+        scopeStore=scope_store,
     )
     _checkpoint(state)
     llm.log_event(
@@ -131,6 +180,40 @@ def _score_of(summary: RunSummary) -> float:
     if summary.objective == settings.OBJECTIVE:
         return summary.objectiveValue
     return city_value(summary.kpis, settings.OBJECTIVE)
+
+
+def _store_type(store_id: str) -> StoreType:
+    for ms in store.load_map().stores:
+        if ms.id == store_id:
+            return ms.type
+    raise KeyError(f"unknown store {store_id}")
+
+
+def _objective_value(state: AnalystState, run: int) -> float:
+    """The session objective for `run`: the area KPI, or (one-shop session) the shop's profit
+    change per week vs the session baseline."""
+    if state.scopeStore is None:
+        return _score_of(rundata.load_summary(run))
+    sid, base = state.scopeStore, state.baselineRun
+    if base is None or run == base:
+        return 0.0
+    before, after = rundata.load_stores(base)[sid].kpis, rundata.load_stores(run)[sid].kpis
+    return economics.profit_vs(_store_type(sid), before, after, economics.area_price_gbp_per_kwh())
+
+
+def _shop_scale(state: AnalystState) -> float:
+    """GBP that count as a 100% gain in a one-shop session: the shop's weekly margin at the
+    baseline (at least GBP 1), so THRESHOLD reads as a share of what the shop keeps."""
+    sid, base = state.scopeStore, state.baselineRun
+    assert sid is not None and base is not None
+    kpis = rundata.load_stores(base)[sid].kpis
+    return max(economics.weekly_margin_gbp(_store_type(sid), kpis), 1.0)
+
+
+def _gain(state: AnalystState, new: float, reference: float) -> float:
+    if state.scopeStore is None:
+        return gain(new, reference, settings.OBJECTIVE)
+    return (new - reference) / _shop_scale(state)
 
 
 def _add_run(state: AnalystState, run: int) -> None:
@@ -175,13 +258,13 @@ def _baseline(state: AnalystState) -> None:
     run = runner.execute_run(runner.baseline_configs(), state.seed)
     summary = rundata.load_summary(run)
     state.baselineRun = state.currentRun = state.bestRun = run
-    state.bestObjective = _score_of(summary)
+    state.bestObjective = _objective_value(state, run)
     _add_run(state, run)
     store.append_notebook(
         NotebookEntry(
             run=run,
             line=analyst.baseline_notebook_line(summary),
-            objectiveValue=state.bestObjective,
+            objectiveValue=_score_of(summary),  # the notebook is area-level in every session
             at=store.now_iso(),
         )
     )
@@ -196,7 +279,12 @@ def _propose(state: AnalystState) -> None:
         best,
         {"agent": "analyst", "type": "handoff", "to": "store_agents", "run": best},
     )
-    proposals = store_owner.propose_all(best, session=state.sessionId)
+    if state.scopeStore is None:
+        proposals = store_owner.propose_all(best, session=state.sessionId)
+    else:
+        proposals = store_owner.propose_all(
+            best, session=state.sessionId, store_ids={state.scopeStore}
+        )
     llm.log_event(
         best,
         {
@@ -219,21 +307,23 @@ def _last_outcome(state: AnalystState) -> IterationOutcome | None:
     config = rundata.load_config(run)
     if config.parentRun is None:
         return None
-    value = _score_of(rundata.load_summary(run))
-    parent_value = _score_of(rundata.load_summary(config.parentRun))
+    value = _objective_value(state, run)
+    parent_value = _objective_value(state, config.parentRun)
     pending = store.read_json(pending_path(), {}) or {}
     return IterationOutcome(
         run=run,
         parent_run=config.parentRun,
         applied=[Suggestion.model_validate(c) for c in config.appliedChanges],
         objective_value=value,
-        gain=gain(value, parent_value, settings.OBJECTIVE),
+        gain=_gain(state, value, parent_value),
         is_best=state.bestRun == run,
         hypothesis=pending.get("hypothesis", "") if pending.get("run") == run else "",
     )
 
 
 def _choose(state: AnalystState, backend: AnalystBackend, map_data: MapData, max_runs: int) -> bool:
+    if state.scopeStore is not None:
+        return _choose_for_store(state, map_data)
     best = state.bestRun
     assert best is not None and state.bestObjective is not None
     base = rundata.load_config(best).stores
@@ -260,14 +350,26 @@ def _choose(state: AnalystState, backend: AnalystBackend, map_data: MapData, max
             {"agent": "analyst", "type": "no_experiment", "reason": choice.hypothesis},
         )
         return False
-    changes = [dump(s) for s in result.accepted]
+    _commit_choice(state, result.accepted, choice.hypothesis, choice.expected_gain, backend.name)
+    return True
+
+
+def _commit_choice(
+    state: AnalystState,
+    accepted: list[Suggestion],
+    hypothesis: str,
+    expected_gain: float | None,
+    backend_name: str,
+) -> None:
+    best = state.bestRun
+    changes = [dump(s) for s in accepted]
     store.write_json(
         pending_path(),
         {
             "sessionId": state.sessionId,
             "bestRun": best,
-            "hypothesis": choice.hypothesis,
-            "expectedGain": choice.expected_gain,
+            "hypothesis": hypothesis,
+            "expectedGain": expected_gain,
             "changes": changes,
         },
     )
@@ -276,15 +378,57 @@ def _choose(state: AnalystState, backend: AnalystBackend, map_data: MapData, max
         {
             "agent": "analyst",
             "type": "hypothesis",
-            "backend": backend.name,
-            "text": choice.hypothesis,
-            "expectedGain": choice.expected_gain,
+            "backend": backend_name,
+            "text": hypothesis,
+            "expectedGain": expected_gain,
             "changes": changes,
         },
     )
     state.step = "chosen"
     _checkpoint(state)
-    return True
+
+
+def _choose_for_store(state: AnalystState, map_data: MapData) -> bool:
+    """One-shop session: the untried set of 1-2 of the shop's proposals with the highest
+    expected profit per week (expectedDelta on the best run's numbers, economics.gbp_per_week)
+    that passes the hard rules. Only this shop's config changes; every other store keeps the
+    best run's (= the baseline's) settings."""
+    sid, best = state.scopeStore, state.bestRun
+    assert sid is not None and best is not None
+    files = rundata.RunFiles.load(best)
+    kind, price = _store_type(sid), economics.area_price_gbp_per_kwh()
+    kpis = files.stores[sid].kpis
+    proposals = [p for p in rundata.load_suggestions(best) if p.storeId == sid]
+
+    def expected_gbp(option: tuple[Suggestion, ...]) -> float:
+        d_visits = sum(c.expectedDelta.visits for c in option) * kpis.visits
+        d_kwh = sum(c.expectedDelta.kwh for c in option) * kpis.kwh
+        return economics.gbp_per_week(kind, d_visits, d_kwh, price)
+
+    options = [(p,) for p in proposals] + list(
+        combinations(proposals, settings.MAX_CHANGES_PER_STORE_PER_WEEK)
+    )
+    ranked = sorted((o for o in options if expected_gbp(o) > 0), key=lambda o: -expected_gbp(o))
+    for option in ranked:
+        result = check_changes(files.config.stores, list(option), map_data)
+        if result.rejections:
+            continue
+        if cache.run_lookup(cache.run_key(result.configs, state.seed)) is not None:
+            continue
+        gbp = expected_gbp(option)
+        labels = ", ".join(change_label(c) for c in result.accepted)
+        hypothesis = f"{labels} should add about £{gbp:.0f} a week for this shop"
+        _commit_choice(state, result.accepted, hypothesis, gbp / _shop_scale(state), "heuristic")
+        return True
+    llm.log_event(
+        best,
+        {
+            "agent": "analyst",
+            "type": "no_experiment",
+            "reason": "No untried change for this shop with a positive expected profit",
+        },
+    )
+    return False
 
 
 def _load_pending(state: AnalystState) -> dict:
@@ -328,8 +472,8 @@ def _score(state: AnalystState, backend: AnalystBackend) -> None:
     pending = _load_pending(state)
     run = state.currentRun
     assert run is not None and state.bestObjective is not None
-    value = _score_of(rundata.load_summary(run))
-    run_gain = gain(value, state.bestObjective, settings.OBJECTIVE)
+    value = _objective_value(state, run)
+    run_gain = _gain(state, value, state.bestObjective)
     outcome = IterationOutcome(
         run=run,
         parent_run=pending["bestRun"],
@@ -341,7 +485,14 @@ def _score(state: AnalystState, backend: AnalystBackend) -> None:
     )
     line = backend.notebook_line(outcome)
     store.append_notebook(
-        NotebookEntry(run=run, line=line, objectiveValue=value, at=store.now_iso())
+        NotebookEntry(
+            run=run,
+            line=line,
+            objectiveValue=value
+            if state.scopeStore is None
+            else _score_of(rundata.load_summary(run)),
+            at=store.now_iso(),
+        )
     )
     if outcome.is_best:
         state.bestRun, state.bestObjective = run, value
@@ -380,7 +531,12 @@ def _finish(state: AnalystState, backend: AnalystBackend, reason: StopReason) ->
     backend.close(reason)
     try:
         if state.bestRun is not None and state.baselineRun is not None:
-            report.write_reports(state.bestRun, state.baselineRun, session=state.sessionId)
+            report.write_reports(
+                state.bestRun,
+                state.baselineRun,
+                session=state.sessionId,
+                store_ids=None if state.scopeStore is None else {state.scopeStore},
+            )
     finally:
         write_session_costs(state)
         _checkpoint(state)
@@ -392,9 +548,13 @@ def write_session_costs(state: AnalystState) -> float:
     Returns costPerStoreWeekGbp (see the module docstring for the definition).
     """
     map_data = store.load_map()
-    store_weeks = len(rundata.advised_stores(map_data)) * ADVICE_WEEKS_PER_SESSION
+    advised = 1 if state.scopeStore else len(rundata.advised_stores(map_data))
+    store_weeks = advised * ADVICE_WEEKS_PER_SESSION
     summary_cost = llm.cost_summary(session=state.sessionId, store_weeks=store_weeks)
-    for run in state.runsThisSession:
+    runs = state.runsThisSession
+    if state.scopeStore:  # the shared baseline run keeps its area session's cost
+        runs = [r for r in runs if r != state.baselineRun]
+    for run in runs:
         try:
             summary = rundata.load_summary(run)
         except FileNotFoundError:

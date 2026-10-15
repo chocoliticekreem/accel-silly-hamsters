@@ -563,15 +563,21 @@ def _upload_pdf(sid: str, pdf: bytes, run: int, previous: dict | None) -> str | 
 
 
 def write_reports(
-    best_run: int, baseline_run: int, *, session: str | None = None
+    best_run: int,
+    baseline_run: int,
+    *,
+    session: str | None = None,
+    store_ids: set[str] | None = None,
 ) -> list[StoreReport]:
-    """Write runs/{best_run}/reports/{storeId}.json/.pdf/.meta.json for every non-club store."""
+    """Write runs/{best_run}/reports/{storeId}.json/.pdf/.meta.json for every non-club store
+    (or only `store_ids`, for a one-shop session)."""
     map_data = store.load_map()
     base, best = rundata.RunFiles.load(baseline_run), rundata.RunFiles.load(best_run)
     advised = [
         ms
         for ms in rundata.advised_stores(map_data)
-        if all(ms.id in files.stores and ms.id in files.stats for files in (base, best))
+        if (store_ids is None or ms.id in store_ids)
+        and all(ms.id in files.stores and ms.id in files.stats for files in (base, best))
         and ms.id in base.config.stores
         and ms.id in best.config.stores
     ]
