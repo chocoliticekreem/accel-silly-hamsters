@@ -174,7 +174,6 @@ export class Quads {
 
   /**
    * A quad centred at scene (x, y, z) facing horizontal scene direction (nx, nz), w × h metres, showing `r`.
-   * `rotate` turns the image a quarter (for vertical lettering read top to bottom).
    */
   add(x: number, y: number, z: number, nx: number, nz: number, w: number, h: number, r: UvRect) {
     const rx = nz;
@@ -201,6 +200,40 @@ export class Quads {
     g.setAttribute("position", new BufferAttribute(new Float32Array(this.pos), 3));
     g.setAttribute("normal", new BufferAttribute(new Float32Array(this.nor), 3));
     g.setAttribute("uv", new BufferAttribute(new Float32Array(this.uvs), 2));
+    g.computeBoundingSphere();
+    return g;
+  }
+}
+
+/** Flat, vertex-coloured light pools on the ground (drawn additively with a radial glow texture). */
+export class Pools {
+  private pos: number[] = [];
+  private uvs: number[] = [];
+  private col: number[] = [];
+
+  /** A pool of radius r centred at scene (x, z), tinted `c` (0..1 rgb, brightness included). */
+  add(x: number, z: number, r: number, c: [number, number, number], y = 0.24) {
+    const v = [
+      [x - r, z + r, 0, 0],
+      [x + r, z + r, 1, 0],
+      [x + r, z - r, 1, 1],
+      [x - r, z + r, 0, 0],
+      [x + r, z - r, 1, 1],
+      [x - r, z - r, 0, 1],
+    ];
+    for (const [px, pz, u, w] of v) {
+      this.pos.push(px, y, pz);
+      this.uvs.push(u, w);
+      this.col.push(...c);
+    }
+  }
+
+  build(): BufferGeometry | null {
+    if (!this.pos.length) return null;
+    const g = new BufferGeometry();
+    g.setAttribute("position", new BufferAttribute(new Float32Array(this.pos), 3));
+    g.setAttribute("uv", new BufferAttribute(new Float32Array(this.uvs), 2));
+    g.setAttribute("color", new BufferAttribute(new Float32Array(this.col), 3));
     g.computeBoundingSphere();
     return g;
   }

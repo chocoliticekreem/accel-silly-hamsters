@@ -2,6 +2,7 @@
 // alone (no made-up blocks on top of real gardens, yards and buildings). Contract coords (x east, z north).
 // Area modules add their outline here; keep each entry one polygon.
 import { OLD_STREET_AREA, OLD_STREET_HIDDEN_BUILDINGS, WHITE_COLLAR_AREA } from "./oldStreetArea";
+import { SPITALFIELDS_SITES } from "./spitalfieldsSites";
 
 export interface AreaKeepout {
   name: string;
@@ -38,6 +39,7 @@ export const AREA_KEEPOUTS: AreaKeepout[] = [
   { name: "Goodsyard", poly: GOODSYARD_AREA },
   { name: "Old Street", poly: OLD_STREET_AREA },
   { name: "White Collar Factory", poly: WHITE_COLLAR_AREA },
+  ...SPITALFIELDS_SITES,
 ];
 
 export function inPoly(x: number, z: number, poly: [number, number][]): boolean {

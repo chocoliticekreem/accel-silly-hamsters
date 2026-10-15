@@ -636,12 +636,14 @@ def _choose_for_store(
     assert sid is not None and best is not None
     files = rundata.RunFiles.load(best)
     kind, price = _shop_type(sid), economics.area_price_gbp_per_kwh()
-    kpis = files.stores[sid].kpis
+    shop = files.stores[sid]
+    kpis = shop.kpis
 
     def expected_gbp(option: tuple[Suggestion, ...]) -> float:
         d_visits = sum(c.expectedDelta.visits for c in option) * kpis.visits
         d_kwh = sum(c.expectedDelta.kwh for c in option) * kpis.kwh
-        return economics.gbp_per_week(kind, d_visits, d_kwh, price)
+        d_hours = sum(economics.suggestion_open_hours_delta(shop, c) for c in option)
+        return economics.gbp_per_week(kind, d_visits, d_kwh, d_hours, price)
 
     options = [
         option

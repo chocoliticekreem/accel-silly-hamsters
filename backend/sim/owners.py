@@ -23,8 +23,8 @@ events on its own street and club nights next door, and may:
   closed_permanently  losing money LOSS_DAYS days running (only when allow_closure: never in a run
                       whose parent is the baseline)
 
-Money comes from backend/economics.py: margin per visit = spend x GROSS_MARGIN for the store type,
-energy at energy.json's hourly price, lighting included.
+Money comes from backend/economics.py: margin per visit = spend x GROSS_MARGIN[type],
+energy at energy.json's hourly price, lighting included, and wages for every open hour.
 
 Every new window passes the hard rules (backend/agents/rules.py: licence, minimum open/closed).
 A day's template is a daily window (open, close) plus closed weekdays; today-only actions are
@@ -319,8 +319,9 @@ class Owners:
         kwh = energy_kwh(
             self.world.energy, o.store_type, float(self.world.floor_area[i]), open_row, lit
         )
-        takings = self.visits[i, day].sum() * economics.SPEND_GBP_PER_VISIT[o.store_type]
-        profit = takings * economics.GROSS_MARGIN - float((kwh * self.price).sum())
+        wages = float(open_row.sum()) * economics.staff_gbp_per_open_hour(o.store_type)
+        margin = float(self.visits[i, day].sum()) * self._margin(o)
+        profit = margin - float((kwh * self.price).sum()) - wages
         o.loss_streak = o.loss_streak + 1 if profit < 0 else 0
         if o.loss_streak < LOSS_DAYS:
             return False
@@ -383,7 +384,7 @@ class Owners:
                     f"People kept finding us shut after {t.close}, staying open till {new_close}.",
                     "missed_demand", round(missed, 1),
                     f"{missed:.0f} a day found us shut after {t.close}: "
-                    f"+£{gain:.2f} margin vs £{cost:.2f} power a day",
+                    f"+£{gain:.2f} margin vs £{cost:.2f} costs a day",
                 )  # fmt: skip
                 return True
         new_close = _shift(t.close, -60)
@@ -399,10 +400,10 @@ class Owners:
             o.trims_close += 1
             self._emit(
                 nxt, (nxt - 1) * MINUTES_PER_DAY, o, "hours_changed", t.close, new_close,
-                f"After {new_close} we don't take enough to pay the power, closing at {new_close}.",
+                f"After {new_close} takings don't cover staff and power, closing at {new_close}.",
                 "empty_hours", round(last, 2),
                 f"{last:.1f} visits a day after {new_close}: "
-                f"£{last * margin:.2f} margin vs £{cost:.2f} power",
+                f"£{last * margin:.2f} margin vs £{cost:.2f} power and staff",
             )  # fmt: skip
             return True
         first_h = open_m // 60
@@ -421,10 +422,10 @@ class Owners:
             o.trims_open += 1
             self._emit(
                 nxt, (nxt - 1) * MINUTES_PER_DAY, o, "hours_changed", t.open, new_open,
-                f"Before {new_open} we don't take enough to pay the power, opening at {new_open}.",
+                f"Before {new_open} takings don't cover staff and power, opening at {new_open}.",
                 "empty_hours", round(first, 2),
                 f"{first:.1f} visits a day before {new_open}: "
-                f"£{first * margin:.2f} margin vs £{cost:.2f} power",
+                f"£{first * margin:.2f} margin vs £{cost:.2f} power and staff",
             )  # fmt: skip
             return True
         return False
@@ -584,7 +585,7 @@ class Owners:
                     continue
                 gain = evidence * EXTEND_CONVERSION * self._margin(o)
                 if gain <= self._open_cost(o, closes % MINUTES_PER_DAY, target - closes):
-                    continue  # the crowd would not pay for the power of staying open
+                    continue  # the crowd would not pay the staff and power of staying open
                 o.overrides[nxt] = new
                 o.override_kind[nxt] = "open_late"
                 self._lift_lights(o, timeutil.to_minutes(w[1]), target - closes)
@@ -637,11 +638,12 @@ class Owners:
 
     def _margin(self, o: _Owner) -> float:
         """GBP the owner keeps per visit (backend/economics.py)."""
-        return economics.SPEND_GBP_PER_VISIT[o.store_type] * economics.GROSS_MARGIN
+        return economics.margin_per_visit(o.store_type)
 
     def _open_cost(self, o: _Owner, minute: int, minutes: int) -> float:
-        """Extra energy bill (GBP) of being open `minutes` from clock minute `minute` instead of
-        shut: the open-hours load over standby, plus the lights it would burn open vs shut."""
+        """Extra cost (GBP) of being open `minutes` from clock minute `minute` instead of shut:
+        the staff on shift, the open-hours load over standby, and the lights it would burn open
+        vs shut."""
         e = self.world.energy
         i = o.index
         rate = float(self.world.floor_area[i]) * (
@@ -662,7 +664,7 @@ class Owners:
                 on_shut = 0 if o.lights_off_mask[h] else on_shut
             kwh = (rate + light_kw[on_open] - light_kw[on_shut]) * hours
             total += kwh * float(self.price[h])
-        return total
+        return total + max(minutes, 0) / 60 * economics.staff_gbp_per_open_hour(o.store_type)
 
     # --- schedule upkeep -----------------------------------------------------------------------
 

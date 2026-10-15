@@ -195,9 +195,16 @@ export default function RealBuildings() {
     return b;
   }, [city, map]);
   const gl = useThree((s) => s.gl);
-  // debugging aid: renderer stats (draw calls, triangles) from the console
+  // debugging aid: `await __frameStats()` in the console = draw calls and triangles of one whole frame (all passes)
   useEffect(() => {
-    (window as unknown as { __renderInfo?: () => unknown }).__renderInfo = () => ({ ...gl.info.render, ...gl.info.memory });
+    (window as unknown as { __frameStats?: () => Promise<unknown> }).__frameStats = async () => {
+      gl.info.autoReset = false;
+      gl.info.reset();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const out = { ...gl.info.render, ...gl.info.memory, programs: gl.info.programs?.length };
+      gl.info.autoReset = true;
+      return out;
+    };
   }, [gl]);
   const meshes = useRef<(Mesh | null)[]>([]);
   const scene = useThree((s) => s.scene);
