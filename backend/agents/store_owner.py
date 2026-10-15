@@ -20,15 +20,15 @@ Every proposal passes agents.rules before it reaches runs/{run}/suggestions.json
 from __future__ import annotations
 
 import json
+import os
 import re
 import statistics
 import time
 from dataclasses import asdict, dataclass
 
-import anthropic
 from pydantic import ValidationError
 
-from backend import llm, settings, store
+from backend import cache, llm, settings, store
 from backend.agents import prompts, rundata
 from backend.agents.changes import (
     affected_hours,
@@ -69,7 +69,7 @@ MAX_EXPECTED_DELTA = 3.0  # +300%: anything larger from a model is noise, not an
 
 BATCH_MAX_TOKENS = 8000
 BATCH_POLL_SECONDS = 30
-BATCH_TIMEOUT_SECONDS = 2 * 3600
+BATCH_TIMEOUT_SECONDS = float(os.getenv("BATCH_TIMEOUT_SECONDS", str(2 * 3600)))
 
 
 @dataclass
@@ -567,31 +567,257 @@ def parse_store_output(store_id: str, data: dict) -> tuple[list[Suggestion], lis
     return suggestions, errors
 
 
-def _wait_for_batch(client, batch_id: str, run: int):
+REPAIR_PROMPT = (
+    "Your answer failed validation: {error}. Reply again with only the corrected JSON object "
+    "for the same schema; keep the suggestions you meant, fix only what failed."
+)
+_ITEM_SCHEMA: dict = prompts.STORE_SCHEMA["properties"]["suggestions"]["items"]
+
+
+def output_errors(data: object) -> list[str]:
+    """Where a store agent's structured output breaks STORE_SCHEMA ([] when it is valid)."""
+    if not isinstance(data, dict):
+        return ["expected a JSON object"]
+    items = data.get("suggestions")
+    if not isinstance(items, list):
+        return ["suggestions: expected an array"]
+    errors = []
+    required, props = set(_ITEM_SCHEMA["required"]), _ITEM_SCHEMA["properties"]
+    for i, item in enumerate(items):
+        where = f"suggestions[{i}]"
+        if not isinstance(item, dict):
+            errors.append(f"{where}: expected an object")
+            continue
+        if missing := sorted(required - set(item)):
+            errors.append(f"{where}: missing {', '.join(missing)}")
+        if extra := sorted(set(item) - set(props)):
+            errors.append(f"{where}: unexpected {', '.join(extra)}")
+        for key in ("field", "confidence"):
+            if key in item and item[key] not in props[key]["enum"]:
+                errors.append(f"{where}.{key}: {item[key]!r} is not one of {props[key]['enum']}")
+        delta = item.get("expectedDelta")
+        if "expectedDelta" in item and not (
+            isinstance(delta, dict)
+            and all(isinstance(delta.get(k), int | float) for k in ("visits", "kwh"))
+        ):
+            errors.append(f"{where}.expectedDelta: needs numbers visits and kwh")
+    return errors
+
+
+def validate_output(store_id: str, text: str) -> tuple[list[Suggestion], str | None]:
+    """The store's suggestions from its raw answer, or the validation error to repair."""
+    if not text.strip():
+        return [], "empty response"
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        return [], f"invalid JSON: {e}"
+    errors = output_errors(data)
+    if not errors:
+        suggestions, errors = parse_store_output(store_id, data)
+        if not errors:
+            return suggestions, None
+    return [], "; ".join(errors)[:600]
+
+
+def _text(message) -> str:
+    return next((b.text for b in message.content if getattr(b, "type", "") == "text"), "")
+
+
+@dataclass
+class _Round:
+    """One round of store agents in progress: what each store ended with."""
+
+    run: int
+    session: str | None
+    params: dict[str, dict]  # store id -> request params
+    proposals: dict[str, list[Suggestion]]
+    heuristic: dict[str, str]  # store id -> why it falls back to the heuristic
+
+
+def _recover(event: str, rnd: _Round, sid: str, **fields) -> None:
+    llm.record_recovery(event, agent=AGENT, run=rnd.run, session=rnd.session, storeId=sid, **fields)
+
+
+def _ask_one(rnd: _Round, params: dict, sid: str):
+    """One store agent as a plain Messages call (batch fallback, repair): budget pre-flight, the
+    retry policy, ledger and log. Raises LLMError when Claude stays unavailable."""
+    llm.preflight(rnd.session, params)
+    client = llm.client()
+    message = llm.call_with_retries(
+        lambda: client.messages.create(**params),
+        agent=AGENT,
+        run=rnd.run,
+        session=rnd.session,
+    )
+    usage = llm.Usage.from_api(message.usage)
+    llm.record_usage(AGENT, params["model"], usage, run=rnd.run, session=rnd.session)
+    llm.log_event(
+        rnd.run,
+        {
+            "agent": AGENT,
+            "type": "response",
+            "storeId": sid,
+            "stopReason": message.stop_reason,
+            "text": _text(message),
+            "usage": asdict(usage),
+        },
+    )
+    return message
+
+
+def _accept(rnd: _Round, sid: str, message) -> None:
+    """Take one store's answer: a refusal or truncation falls back to the heuristic; output that
+    fails validation gets one repair re-ask with the error, then the shop is skipped this round
+    (no proposals rather than a guess). Isolated per shop: nothing here touches another store."""
+    if message.stop_reason in ("refusal", "max_tokens"):
+        rnd.heuristic[sid] = f"stop_reason={message.stop_reason}"
+        _recover(
+            "fallback", rnd, sid, to="heuristic", kind=message.stop_reason, outcome="heuristic"
+        )
+        return
+    text = _text(message)
+    suggestions, error = validate_output(sid, text)
+    if error is None:
+        rnd.proposals[sid] = suggestions
+        return
+    _recover("repair", rnd, sid, kind="invalid_output", attempt=1, error=error, outcome="re-ask")
+    params = rnd.params[sid]
+    repair = {
+        **params,
+        "messages": [
+            *params["messages"],
+            {"role": "assistant", "content": text},
+            {"role": "user", "content": REPAIR_PROMPT.format(error=error)},
+        ],
+    }
+    try:
+        repaired = _ask_one(rnd, repair, sid)
+        suggestions, error = validate_output(sid, _text(repaired))
+    except llm.BudgetExceeded:
+        raise
+    except llm.LLMError as e:
+        error = f"repair call failed: {e}"
+    if error is None:
+        rnd.proposals[sid] = suggestions
+        return
+    rnd.proposals[sid] = []
+    _recover("skip", rnd, sid, kind="invalid_output", error=error, outcome="no proposals")
+
+
+def _batch_intent_path(run: int):
+    return store.run_dir(run) / "store_batch.json"
+
+
+def _submit_or_reattach(rnd: _Round, client, requests: list[dict]) -> str:
+    """The batch for these requests: the one submitted before a crash or kill (its id was
+    recorded right after submitting, so a resume re-attaches instead of paying twice), else a
+    new one. Budget pre-flight covers the whole batch."""
+    digest = cache.stable_hash(requests)
+    intent = store.read_json(_batch_intent_path(rnd.run)) or {}
+    if intent.get("digest") == digest and intent.get("session") == rnd.session:
+        llm.log_event(
+            rnd.run, {"agent": AGENT, "type": "batch_reattached", "batchId": intent["batchId"]}
+        )
+        return intent["batchId"]
+    estimate = sum(llm.estimate_usd(r["params"], batch=True) for r in requests)
+    llm.check_budget(rnd.session, estimate)
+    batch = llm.call_with_retries(
+        lambda: client.messages.batches.create(requests=requests),
+        agent=AGENT,
+        run=rnd.run,
+        session=rnd.session,
+        what="batches.create",
+    )
+    store.write_json(
+        _batch_intent_path(rnd.run),
+        {"batchId": batch.id, "session": rnd.session, "digest": digest, "at": store.now_iso()},
+    )
+    llm.log_event(
+        rnd.run,
+        {"agent": AGENT, "type": "batch_created", "batchId": batch.id, "requests": len(requests)},
+    )
+    return batch.id
+
+
+def _wait_for_batch(rnd: _Round, client, batch_id: str) -> bool:
+    """Poll until the batch ends (True) or BATCH_TIMEOUT_SECONDS pass (False: cancelled, and
+    the stores without a result go per-request)."""
     deadline = time.monotonic() + BATCH_TIMEOUT_SECONDS
     while True:
-        batch = client.messages.batches.retrieve(batch_id)
+        batch = llm.call_with_retries(
+            lambda: client.messages.batches.retrieve(batch_id),
+            agent=AGENT,
+            run=rnd.run,
+            session=rnd.session,
+            what="batches.retrieve",
+        )
         if batch.processing_status == "ended":
-            return batch
-        if time.monotonic() > deadline:
-            client.messages.batches.cancel(batch_id)
-            llm.log_event(run, {"agent": AGENT, "type": "batch_timeout", "batchId": batch_id})
-            return None
+            return True
+        if time.monotonic() >= deadline:
+            try:
+                client.messages.batches.cancel(batch_id)
+            except Exception as e:  # best effort: the per-request fallback runs either way
+                llm.log_event(
+                    rnd.run, {"agent": AGENT, "type": "batch_cancel_error", "error": repr(e)}
+                )
+            llm.record_recovery(
+                "batch_timeout",
+                agent=AGENT,
+                run=rnd.run,
+                session=rnd.session,
+                batchId=batch_id,
+                kind="batch_stuck",
+                wait=BATCH_TIMEOUT_SECONDS,
+                outcome="per-request for the missing stores",
+            )
+            return False
         time.sleep(BATCH_POLL_SECONDS)
+
+
+def _batch_results(rnd: _Round, client, requests: list[dict]) -> tuple[list, str]:
+    """The batch's results and why a store without one is missing. Never raises LLMError: a
+    batch that cannot be created, polled or read leaves every store to the per-request path."""
+    try:
+        batch_id = _submit_or_reattach(rnd, client, requests)
+        if not _wait_for_batch(rnd, client, batch_id):
+            return [], "batch_timeout"
+        results = llm.call_with_retries(
+            lambda: list(client.messages.batches.results(batch_id)),
+            agent=AGENT,
+            run=rnd.run,
+            session=rnd.session,
+            what="batches.results",
+        )
+        return results, "batch_ended_without_result"
+    except llm.BudgetExceeded:
+        raise
+    except llm.LLMError as e:
+        llm.log_event(rnd.run, {"agent": AGENT, "type": "batch_error", "error": str(e)})
+        return [], "batch_error"
 
 
 def _propose_with_batch(
     run: int, briefs: dict[str, StoreBrief], session: str | None, config: TrainingConfig
 ) -> tuple[dict[str, list[Suggestion]], dict[str, str]]:
-    """All store agents in one Message Batch. Returns proposals and per-store fallback reasons."""
+    """All store agents in one Message Batch. Returns proposals and the stores that fall back to
+    the heuristic (with why).
+
+    Recovery, per store: a batch that cannot be created, times out ("in_progress" too long) or
+    whose results expired, and every result that errored, expired or was cancelled, is asked again
+    as a plain request; one that still fails gets the heuristic. Bad output gets one repair
+    (_accept). Once the circuit breaker opens every remaining store gets the heuristic at once.
+    """
     client = llm.client()
     system = llm.system_blocks(prompts.city_context(config))
     ids: dict[str, str] = {}
     requests = []
+    rnd = _Round(run=run, session=session, params={}, proposals={}, heuristic={})
     for index, (sid, brief) in enumerate(briefs.items()):
         custom_id = _custom_id(index, sid)
         ids[custom_id] = sid
         params = _batch_params(brief, system, config.maxChangesPerStore)
+        rnd.params[sid] = params
         requests.append({"custom_id": custom_id, "params": params})
         llm.log_event(
             run,
@@ -603,33 +829,23 @@ def _propose_with_batch(
                 "params": params,
             },
         )
-    llm.check_budget(session)
-    batch = client.messages.batches.create(requests=requests)
-    llm.log_event(
-        run, {"agent": AGENT, "type": "batch_created", "batchId": batch.id, "requests": len(ids)}
-    )
-    proposals: dict[str, list[Suggestion]] = {}
-    fallbacks: dict[str, str] = {}
-    if _wait_for_batch(client, batch.id, run) is None:
-        return proposals, {sid: "batch timed out" for sid in briefs}
-    model = settings.STORE_AGENT_MODEL
-    for result in client.messages.batches.results(batch.id):
-        store_id = ids.get(result.custom_id)
-        if store_id is None:
+    results, why_missing = _batch_results(rnd, client, requests)
+    answered: dict[str, object] = {}
+    missing: dict[str, str] = {}  # store id -> why it has no batch answer
+    for result in results:
+        found = ids.get(result.custom_id)
+        if found is None:
             continue
-        sid = store_id
+        sid = found
         outcome = result.result
         if outcome.type != "succeeded":
-            fallbacks[sid] = f"batch result {outcome.type}"
-            llm.log_event(
-                run,
-                {"agent": AGENT, "type": "batch_result", "storeId": sid, "result": outcome.type},
-            )
+            missing[sid] = f"batch_{outcome.type}"
             continue
         message = outcome.message
         usage = llm.Usage.from_api(message.usage)
-        llm.record_usage(AGENT, model, usage, run=run, batch=True, session=session)
-        text = next((b.text for b in message.content if b.type == "text"), "")
+        llm.record_usage(
+            AGENT, settings.STORE_AGENT_MODEL, usage, run=run, batch=True, session=session
+        )
         llm.log_event(
             run,
             {
@@ -637,34 +853,35 @@ def _propose_with_batch(
                 "type": "batch_response",
                 "storeId": sid,
                 "stopReason": message.stop_reason,
-                "text": text,
+                "text": _text(message),
                 "usage": asdict(usage),
             },
         )
-        if message.stop_reason in ("refusal", "max_tokens"):
-            fallbacks[sid] = f"stop_reason={message.stop_reason}"
-            continue
-        try:
-            parsed, errors = parse_store_output(sid, _json(text))
-        except ValueError as e:
-            fallbacks[sid] = f"invalid JSON: {e}"
-            continue
-        if errors:
-            llm.log_event(
-                run, {"agent": AGENT, "type": "parse_errors", "storeId": sid, "errors": errors}
-            )
-        proposals[sid] = parsed
+        answered[sid] = message
     for sid in briefs:
-        if sid not in proposals and sid not in fallbacks:
-            fallbacks[sid] = "no batch result"
-    return proposals, fallbacks
-
-
-def _json(text: str) -> dict:
-    data = json.loads(text)
-    if not isinstance(data, dict):
-        raise ValueError("expected a JSON object")
-    return data
+        if sid not in answered:
+            missing.setdefault(sid, why_missing)
+    for sid in briefs:
+        if sid not in missing:
+            continue
+        why = missing[sid]
+        if llm.breaker_open():
+            rnd.heuristic[sid] = f"{why}; circuit open"
+            _recover("fallback", rnd, sid, to="heuristic", kind="circuit_open", outcome="heuristic")
+            continue
+        _recover("fallback", rnd, sid, to="request", kind=why, outcome="asking per request")
+        try:
+            answered[sid] = _ask_one(rnd, rnd.params[sid], sid)
+        except llm.BudgetExceeded:
+            raise
+        except llm.LLMError as e:
+            rnd.heuristic[sid] = f"{why}; request failed: {e}"
+            kind = "circuit_open" if isinstance(e, llm.CircuitOpen) else "llm_unavailable"
+            _recover("fallback", rnd, sid, to="heuristic", kind=kind, outcome="heuristic")
+    for sid in briefs:
+        if sid in answered:
+            _accept(rnd, sid, answered[sid])
+    return rnd.proposals, rnd.heuristic
 
 
 # --- entry point ----------------------------------------------------------------------------
@@ -722,18 +939,10 @@ def propose_all(
     }
     mode = _mode(config.storeAgents, run)
     if mode == "batch":
-        try:
-            proposals, fallbacks = _propose_with_batch(run, briefs, session, config)
-        except anthropic.APIError as e:
-            llm.log_event(run, {"agent": AGENT, "type": "batch_error", "error": str(e)})
-            proposals, fallbacks = {}, {sid: f"batch API error: {e}" for sid in briefs}
+        proposals, fallbacks = _propose_with_batch(run, briefs, session, config)
     else:
         proposals, fallbacks = {}, {sid: "offline" for sid in briefs}
-    for sid, reason in fallbacks.items():
-        if mode == "batch":
-            llm.log_event(
-                run, {"agent": AGENT, "type": "fallback", "storeId": sid, "reason": reason}
-            )
+    for sid in fallbacks:
         proposals[sid] = heuristic_proposals(briefs[sid], map_data, config)
 
     final: list[Suggestion] = []

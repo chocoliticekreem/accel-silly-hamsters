@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict
+from functools import partial
 from typing import Protocol
 
 import anthropic
@@ -295,6 +296,22 @@ class HeuristicAnalyst:
         return None
 
 
+def _heuristic_fallback(ctx: AnalystContext, reason: str, *, kind: str) -> Choice:
+    """An LLM analyst that cannot decide this iteration (Claude down, circuit open, refusal, no
+    commitment) hands it to the heuristic: logged and counted as a fallback, the session goes on."""
+    llm.record_recovery(
+        "fallback",
+        agent=AGENT,
+        run=ctx.best_run,
+        session=ctx.session,
+        to="heuristic",
+        kind=kind,
+        outcome="heuristic chose this iteration",
+        reason=reason[:240],
+    )
+    return HeuristicAnalyst().choose(ctx)
+
+
 # --- messages (Messages API tool-use loop) ---------------------------------------------------
 
 
@@ -347,10 +364,25 @@ class MessagesAnalyst:
         )
         nudged = False
         for turn in range(self.MAX_TURNS):
-            llm.check_budget(ctx.session)
-            response = client.beta.messages.create(
-                **self._request(system, messages), betas=[llm.FALLBACK_BETA], fallbacks="default"
-            )
+            request = self._request(system, messages)
+            llm.check_budget(ctx.session, llm.estimate_usd(request))
+            try:
+                response = llm.call_with_retries(
+                    partial(
+                        client.beta.messages.create,
+                        **request,
+                        betas=[llm.FALLBACK_BETA],
+                        fallbacks="default",
+                    ),
+                    agent=AGENT,
+                    run=ctx.best_run,
+                    session=ctx.session,
+                )
+            except llm.BudgetExceeded:
+                raise
+            except llm.LLMError as e:
+                kind = "circuit_open" if isinstance(e, llm.CircuitOpen) else "llm_unavailable"
+                return self._fallback(ctx, str(e), kind=kind)
             usage = llm.Usage.from_api(response.usage)
             llm.record_usage(
                 AGENT, settings.ANALYST_MODEL, usage, run=ctx.best_run, session=ctx.session
@@ -368,7 +400,9 @@ class MessagesAnalyst:
                 },
             )
             if response.stop_reason in ("refusal", "max_tokens"):
-                return self._fallback(ctx, f"stop_reason={response.stop_reason}")
+                return self._fallback(
+                    ctx, f"stop_reason={response.stop_reason}", kind=response.stop_reason
+                )
             messages.append({"role": "assistant", "content": response.content})
             tool_uses = [b for b in response.content if b.type == "tool_use"]
             if not tool_uses:
@@ -376,7 +410,7 @@ class MessagesAnalyst:
                 if re.search(r"\bSTOP\b", text):
                     return Choice([], clamp_words(text, HYPOTHESIS_WORDS) or "STOP", stop=True)
                 if nudged:
-                    return self._fallback(ctx, "model ended without run_sim")
+                    return self._fallback(ctx, "model ended without run_sim", kind="no_commit")
                 nudged = True
                 messages.append({"role": "user", "content": NUDGE})
                 llm.log_event(ctx.best_run, {"agent": AGENT, "type": "nudge", "text": NUDGE})
@@ -385,7 +419,7 @@ class MessagesAnalyst:
             if committed is not None:
                 return committed
             messages.append({"role": "user", "content": results})
-        return self._fallback(ctx, f"no experiment after {self.MAX_TURNS} turns")
+        return self._fallback(ctx, f"no experiment after {self.MAX_TURNS} turns", kind="turn_limit")
 
     def _run_tools(
         self, ctx: AnalystContext, tools: AnalystTools, tool_uses: list
@@ -417,11 +451,8 @@ class MessagesAnalyst:
                 committed = result.committed
         return results, committed
 
-    def _fallback(self, ctx: AnalystContext, reason: str) -> Choice:
-        llm.log_event(
-            ctx.best_run, {"agent": AGENT, "type": "fallback", "to": "heuristic", "reason": reason}
-        )
-        return HeuristicAnalyst().choose(ctx)
+    def _fallback(self, ctx: AnalystContext, reason: str, *, kind: str) -> Choice:
+        return _heuristic_fallback(ctx, reason, kind=kind)
 
     def notebook_line(self, outcome: IterationOutcome) -> str:
         return measured_notebook_line(outcome, store.load_map())
@@ -836,11 +867,8 @@ class ManagedAnalyst:
                 ctx.best_run, {"agent": AGENT, "type": "managed_error", "event": _block_dict(event)}
             )
 
-    def _fallback(self, ctx: AnalystContext, reason: str) -> Choice:
-        llm.log_event(
-            ctx.best_run, {"agent": AGENT, "type": "fallback", "to": "heuristic", "reason": reason}
-        )
-        return HeuristicAnalyst().choose(ctx)
+    def _fallback(self, ctx: AnalystContext, reason: str, *, kind: str = "idle") -> Choice:
+        return _heuristic_fallback(ctx, reason, kind=kind)
 
     def notebook_line(self, outcome: IterationOutcome) -> str:
         map_data = store.load_map()

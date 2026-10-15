@@ -8,9 +8,19 @@ from __future__ import annotations
 
 import pytest
 
-from backend import settings
+from backend import llm, settings
 
 
 @pytest.fixture(autouse=True)
 def _owner_adaptation_off(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "OWNER_ADAPTATION", False)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_llm_state():
+    """The circuit breaker and recovery counts are process-wide: every test starts closed."""
+    llm.reset_breaker()
+    llm.reset_recoveries()
+    yield
+    llm.reset_breaker()
+    llm.reset_recoveries()

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from test_agents_fakesim import setup_world  # pytest puts tests/ on sys.path
 
-from backend import llm, settings, store
+from backend import cache, chaos, llm, settings, store
 from backend.agents import report, rundata, store_owner
 from backend.agents.rules import check_changes
 from backend.agents.wording import change_label
@@ -215,3 +215,33 @@ def test_online_wording_falls_back_to_the_template_on_refusal(runs, monkeypatch)
         json.loads(line) for line in (settings.RUNS_DIR / str(runs.best) / "llm_log.jsonl").open()
     ]
     assert any(e["type"] == "wording_fallback" for e in log)
+
+
+def test_wording_retries_an_overload_then_uses_the_template_when_claude_stays_down(
+    runs, monkeypatch
+):
+    client = FakeReportClient()
+    real_create, failures = client.create, {"left": 1}
+
+    def overloaded_once(**kwargs):
+        if failures["left"]:
+            failures["left"] -= 1
+            raise chaos.api_error(529)
+        return real_create(**kwargs)
+
+    client.beta = SimpleNamespace(messages=SimpleNamespace(create=overloaded_once))
+    monkeypatch.setattr(llm, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(llm, "available", lambda: True)
+    monkeypatch.setattr(llm, "client", lambda: client)
+    report.write_reports(runs.best, runs.baseline, session="sess")
+    meta = store.read_json(settings.RUNS_DIR / str(runs.best) / "reports" / "s1.meta.json")
+    assert meta["wordingSource"] == "llm"  # the first store's call was retried, not lost
+
+    def down(**kwargs):
+        raise chaos.api_error(503)
+
+    client.beta = SimpleNamespace(messages=SimpleNamespace(create=down))
+    monkeypatch.setattr(cache.policy, "fresh", True)  # no cached wording: Claude is asked again
+    report.write_reports(runs.best, runs.baseline, session="sess")
+    meta = store.read_json(settings.RUNS_DIR / str(runs.best) / "reports" / "s2.meta.json")
+    assert meta["wordingSource"] == "template"  # the owner still gets a report

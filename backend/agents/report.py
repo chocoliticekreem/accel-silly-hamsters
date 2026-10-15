@@ -446,10 +446,16 @@ def llm_wording(
         )
         llm.log_event(run, {"agent": AGENT, "type": "cached_response", "key": key})
         return hit["wording"], hit["citations"]
-    llm.check_budget(session)
+    llm.preflight(session, request)
     llm.log_event(run, {"agent": AGENT, "type": "request", "request": request})
-    response = llm.client().beta.messages.create(
-        **request, betas=[llm.FALLBACK_BETA], fallbacks="default"
+    client = llm.client()
+    response = llm.call_with_retries(
+        lambda: client.beta.messages.create(
+            **request, betas=[llm.FALLBACK_BETA], fallbacks="default"
+        ),
+        agent=AGENT,
+        run=run,
+        session=session,
     )
     usage = llm.Usage.from_api(response.usage)
     llm.record_usage(AGENT, model, usage, run=run, session=session)

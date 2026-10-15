@@ -329,8 +329,19 @@ def breaker_open() -> bool:
     return bool(_breaker["open"])
 
 
-def _failed_attempt(fatal: bool, *, agent: str, run: int | None, session: str | None) -> None:
-    _breaker["failures"] = settings.BREAKER_THRESHOLD if fatal else _breaker["failures"] + 1
+def _failed_attempt(
+    error: BaseException, *, agent: str, run: int | None, session: str | None
+) -> None:
+    """Count a failed attempt toward the breaker. Unavailability counts (retryable errors); an
+    auth or permission error opens it at once (no call can succeed); any other fatal error is
+    about that one request (bad request, expired results) and does not count."""
+    status = getattr(error, "status_code", None)
+    if status in (401, 403):
+        _breaker["failures"] = settings.BREAKER_THRESHOLD
+    elif classify(error) == "retryable":
+        _breaker["failures"] += 1
+    else:
+        return
     if not _breaker["open"] and _breaker["failures"] >= settings.BREAKER_THRESHOLD:
         _breaker["open"] = True
         record_recovery(
@@ -371,7 +382,7 @@ def call_with_retries(
             result = fn()
         except Exception as e:
             fatal = classify(e) == "fatal"
-            _failed_attempt(fatal, agent=agent, run=run, session=session)
+            _failed_attempt(e, agent=agent, run=run, session=session)
             hint = retry_after_seconds(e)
             wait = min(
                 settings.RETRY_MAX_WAIT_SECONDS, hint if hint is not None else backoff_wait(attempt)
@@ -432,21 +443,51 @@ def session_budget_usd(session: str | None) -> float:
     return _session_budgets_usd.get(session, settings.SESSION_BUDGET_USD)
 
 
-def check_budget(session: str | None = None) -> None:
-    """Raise BudgetExceeded before a call once the global or the session cap is reached.
+def check_budget(session: str | None = None, estimate_usd: float = 0.0) -> None:
+    """Raise BudgetExceeded before a call once the global or the session cap is reached, or when
+    a call estimated at `estimate_usd` (preflight) could cross it: spend never passes a cap.
 
     Call this before every Claude request or batch submission. The ledger lives in
     runs/costs.jsonl, so deleting runs/ resets the count: keep a Console spend limit as the
     real backstop.
     """
-    total = spent_usd()
-    if total >= settings.SPEND_CAP_USD:
-        raise BudgetExceeded(f"spend cap reached: ${total:.2f} of ${settings.SPEND_CAP_USD:.2f}")
+    caps = [("spend cap", spent_usd(), settings.SPEND_CAP_USD)]
     if session is not None:
-        in_session = spent_usd(session=session)
-        cap = session_budget_usd(session)
-        if in_session >= cap:
-            raise BudgetExceeded(f"session budget reached: ${in_session:.2f} of ${cap:.2f}")
+        caps.append(("session budget", spent_usd(session=session), session_budget_usd(session)))
+    for name, spent, cap in caps:
+        if spent >= cap:
+            raise BudgetExceeded(f"{name} reached: ${spent:.2f} of ${cap:.2f}")
+        if spent + estimate_usd > cap:
+            raise BudgetExceeded(
+                f"{name}: the next call (up to ${estimate_usd:.2f}) would cross it: "
+                f"${spent:.2f} of ${cap:.2f} spent"
+            )
+
+
+# Characters per token for the pre-flight estimate: low on purpose (JSON and numbers tokenise
+# densely), so the estimate errs high.
+CHARS_PER_TOKEN = 3.0
+
+
+def estimate_usd(request: dict, *, batch: bool = False) -> float:
+    """Worst-case cost of one request before it is sent: every prompt character as an uncached
+    cache-write token, plus max_tokens of output."""
+    model = request["model"]
+    prompt = json.dumps(
+        [request.get(k) for k in ("system", "messages", "tools")],
+        separators=(",", ":"),
+        default=str,
+    )
+    usage = Usage(
+        cache_write_tokens=int(len(prompt) / CHARS_PER_TOKEN) + 1,
+        output_tokens=int(request.get("max_tokens", 0)),
+    )
+    return usage.cost_usd(model, batch=batch)
+
+
+def preflight(session: str | None, request: dict, *, batch: bool = False) -> None:
+    """check_budget with this request's worst-case cost: call before sending it."""
+    check_budget(session, estimate_usd(request, batch=batch))
 
 
 def system_blocks(*stable_parts: str) -> list[dict]:
@@ -495,14 +536,17 @@ def call_json(
             log_event(run, {"agent": agent, "type": "cached_response", "key": key})
             return hit["data"], usage
 
-    check_budget(session)
+    preflight(session, request)
     log_event(run, {"agent": agent, "type": "request", "request": request})
-    if model in FALLBACK_MODELS:
-        response = client().beta.messages.create(
-            **request, betas=[FALLBACK_BETA], fallbacks="default"
-        )
-    else:
-        response = client().messages.create(**request)
+
+    def send():
+        if model in FALLBACK_MODELS:
+            return client().beta.messages.create(
+                **request, betas=[FALLBACK_BETA], fallbacks="default"
+            )
+        return client().messages.create(**request)
+
+    response = call_with_retries(send, agent=agent, run=run, session=session)
     usage = Usage.from_api(response.usage)
     record_usage(agent, model, usage, run=run, session=session)
     text = next((b.text for b in response.content if b.type == "text"), "")
