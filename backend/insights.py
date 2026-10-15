@@ -45,6 +45,7 @@ from statistics import median
 from typing import Any, Literal, NamedTuple
 
 from backend import economics, timeutil
+from backend.agents import rules
 from backend.contract import (
     DAYS,
     MINUTES_PER_DAY,
@@ -784,9 +785,12 @@ def _window_valid(
     others = [s.open_m if field == "close" else s.close_u]
     if other_m is not None:
         others.append(other_m)
+    limit = rules.max_open_minutes(s.type, s.close_u - s.open_m)
     for other in others:
         open_m, close_m = (other, target) if field == "close" else (target, other)
         if not _window_ok(open_m, close_m, s.licence):
+            return False
+        if (close_m - open_m) % MINUTES_PER_DAY > limit:
             return False
     return True
 

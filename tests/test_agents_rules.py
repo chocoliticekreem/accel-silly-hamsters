@@ -100,8 +100,30 @@ def test_malformed_times_are_rejected(bad):
 def test_window_must_stay_inside_default_licence_cap():
     reason = only_reason(check(hours_change("s1", "close", "18:00", "23:30")))
     assert "licensed hours 06:00-23:00" in reason
-    assert check(hours_change("s1", "close", "18:00", "23:00")).accepted
+    assert check(hours_change("s1", "close", "18:00", "20:00")).accepted
     assert only_reason(check(hours_change("s1", "open", "07:00", "05:30")))
+
+
+def test_advice_never_stretches_a_day_past_the_type_cap():
+    # a cafe trading 07:00-18:00 (11 h) may go to 13 h, not to 16 h even inside its licence
+    assert check(hours_change("s1", "close", "18:00", "20:00")).accepted
+    reason = only_reason(check(hours_change("s1", "close", "18:00", "23:00")))
+    assert "longer than a cafe usually trades" in reason
+    assert "13 h" in reason
+
+
+def test_a_day_already_longer_than_the_cap_is_never_forced_shorter():
+    # a takeaway already trading 20 h keeps that length: moving the window is still allowed
+    base = _base()
+    base["s2"] = StoreConfig(open="06:30", close="02:30", lighting=list(LIGHTING))
+    result = rules.check_changes(
+        base, [hours_change("s2", "open", "06:30", "07:00")], _map(), check_tried=False
+    )
+    assert result.accepted
+    longer = rules.check_changes(
+        base, [hours_change("s2", "open", "06:30", "06:00")], _map(), check_tried=False
+    )
+    assert "longer than a takeaway usually trades" in only_reason(longer)
 
 
 def test_explicit_licensed_hours_override_the_type_default():
@@ -181,7 +203,7 @@ def test_store_config_already_tried_is_rejected():
     cache.run_record("somekey", 7, {"s1": tried})
     assert "already simulated" in only_reason(check(hours_change("s1", "close", "18:00", "20:00")))
     assert check(hours_change("s1", "close", "18:00", "20:00"), check_tried=False).accepted
-    assert check(hours_change("s1", "close", "18:00", "21:00")).accepted
+    assert check(hours_change("s1", "close", "18:00", "19:30")).accepted
 
 
 def test_fresh_policy_only_counts_runs_from_this_session():
