@@ -19,6 +19,10 @@ import { PlaybackBar } from "./ui/PlaybackBar";
 import { StoreCard } from "./ui/StoreCard";
 import { Toast } from "./ui/Toast";
 import { SafetyToggle } from "./ui/SafetyToggle";
+import { Headline } from "./ui/Headline";
+import { HeatmapToggle } from "./ui/HeatmapToggle";
+import { InterveneMenu } from "./ui/InterveneMenu";
+import { PersonCard } from "./ui/PersonCard";
 import World from "./world/World";
 
 export default function App() {
@@ -62,11 +66,14 @@ export default function App() {
           ) : (
             <Hud />
           )}
+          <Headline />
+          <PersonCard />
         </div>
         <div className="top-right">
           <AnalystChip onClick={() => openPanel(panel === "agents" ? null : "agents")} />
           <div className="tool-row">
             <DemoChip />
+            <InterveneMenu />
             <button className={`chip ${panel === "history" ? "on" : ""}`} aria-pressed={panel === "history"} onClick={() => openPanel(panel === "history" ? null : "history")}>
               <Icon name="chart" size={14} /> History
             </button>
@@ -82,6 +89,7 @@ export default function App() {
             <SafetyToggle />
             {dataTag && <span className="chip chip-mock" title={health ? `map: ${health.mapSource} · real runs: ${health.realRuns}` : undefined}>{dataTag}</span>}
           </div>
+          {!compare && <HeatmapToggle />}
         </div>
         {panel === "history" && <HistoryPanel />}
         {panel === "area" && <AreaPanel />}

@@ -25,6 +25,7 @@ function footfallNearby(map: CityMap, res: RunResult): Record<string, number[]> 
   const out: Record<string, number[]> = Object.fromEntries(doors.map((d) => [d.id, Array(24).fill(0)]));
   for (const day of res.days)
     for (const a of day.agents) {
+      if ((a as { role?: string }).role === "owner") continue; // the owner is not a passer-by
       const seen = new Set<string>();
       for (const [t, x, z] of a.path)
         for (const d of doors) {
@@ -68,7 +69,7 @@ export function buildInsights(map: CityMap, run: number, cfg: RunConfig, res: Ru
     const personas = new Map<string, number>();
     const byDow = { weekday: Array(24).fill(0), weekend: Array(24).fill(0) };
     for (const d of res.days)
-      for (const a of d.agents)
+      for (const a of d.agents.filter((x) => (x as { role?: string }).role !== "owner"))
         for (const v of a.visits) {
           if (v.storeId !== storeId) continue;
           const id = a.id.split("~")[0];

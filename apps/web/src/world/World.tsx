@@ -12,7 +12,9 @@ import Buildings from "./modules/Buildings";
 import CameraRig from "./modules/CameraRig";
 import Glow from "./modules/Glow";
 import Ground from "./modules/Ground";
+import Heatmap from "./modules/Heatmap";
 import Infill from "./modules/Infill";
+import Construction from "./modules/Construction";
 import Sky from "./modules/Sky";
 import Stores from "./modules/Stores";
 import StreetLights from "./modules/StreetLights";
@@ -30,10 +32,12 @@ import Police from "./modules/Police";
 export const MODULES: Record<string, ComponentType> = {
   Sky,
   Ground,
+  Heatmap,
   Skyline,
   Streets,
   Buildings,
   Infill,
+  Construction,
   Stores,
   StreetLights,
   StreetDressing,

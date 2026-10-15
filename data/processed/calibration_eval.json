@@ -2,78 +2,78 @@
   "venues": [
     {
       "name": "Typical cafe",
-      "storeId": "s5",
+      "storeId": "s12",
       "type": "cafe",
       "measured": false,
       "weekday": {
-        "mae": 0.1032,
-        "r": 0.8898
+        "mae": 0.1445,
+        "r": 0.7933
       },
       "weekend": {
-        "mae": 0.1148,
-        "r": 0.8543
+        "mae": 0.1267,
+        "r": 0.8285
       },
-      "mae": 0.109
+      "mae": 0.1356
     },
     {
       "name": "Typical restaurant",
-      "storeId": "s10",
+      "storeId": "s27",
       "type": "restaurant",
       "measured": false,
       "weekday": {
-        "mae": 0.1168,
-        "r": 0.8682
+        "mae": 0.118,
+        "r": 0.812
       },
       "weekend": {
-        "mae": 0.1498,
-        "r": 0.7589
+        "mae": 0.1203,
+        "r": 0.8501
       },
-      "mae": 0.1333
+      "mae": 0.1192
     },
     {
       "name": "Typical bar",
-      "storeId": "s18",
+      "storeId": "s45",
       "type": "bar",
       "measured": false,
       "weekday": {
-        "mae": 0.1047,
-        "r": 0.914
+        "mae": 0.11,
+        "r": 0.87
       },
       "weekend": {
-        "mae": 0.198,
-        "r": 0.7156
+        "mae": 0.1859,
+        "r": 0.7322
       },
-      "mae": 0.1514
+      "mae": 0.1479
     },
     {
       "name": "Typical club",
-      "storeId": "c1",
+      "storeId": "c3",
       "type": "club",
       "measured": false,
       "weekday": {
-        "mae": 0.1242,
-        "r": 0.5546
+        "mae": 0.1324,
+        "r": 0.5094
       },
       "weekend": {
-        "mae": 0.1042,
-        "r": 0.5648
+        "mae": 0.0883,
+        "r": 0.6907
       },
-      "mae": 0.1142
+      "mae": 0.1104
     },
     {
       "name": "Typical late-night takeaway",
-      "storeId": "s13",
+      "storeId": "s29",
       "type": "takeaway",
       "measured": false,
       "weekday": {
-        "mae": 0.2195,
-        "r": 0.7732
+        "mae": 0.1643,
+        "r": 0.7963
       },
       "weekend": {
-        "mae": 0.3024,
-        "r": 0.2537
+        "mae": 0.1285,
+        "r": 0.728
       },
-      "mae": 0.261
+      "mae": 0.1464
     }
   ],
   "measuredCount": 0,

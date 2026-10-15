@@ -2,8 +2,8 @@
 // pulse with the bass on open nights, a glowing entrance, a roped queue that builds from 21:15 and peaks around
 // midnight (longest Thu–Sat), two door staff, and the spill-out at close (the crowd heading for takeaways and the
 // Night Tube). A club shut by a licence review gets a roller shutter and a "Closed by licensing" notice.
-// XOYO is drawn in the surroundings (dark brick warehouse on Cowper St, sawtooth roof, lit XOYO sign) when the map
-// doesn't carry it; it is decoration only there (no sim data).
+// XOYO (Cowper St, off today's map) gets its door life at its real position: queue, door staff and the entrance glow;
+// its exterior shell belongs to the hero-models layer. Decoration only there (no sim data).
 import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { Gavel } from "lucide-react";
@@ -28,34 +28,6 @@ const CLUB_SHIRTS = ["#a463ff", "#ff4fd8", "#4fd8ff", "#ffe14f", "#ff6b6b", "#f2
 const NEON = ["#e04fd0", "#4fd8ff", "#a463ff", "#ffb84f"];
 
 const frame = (v: Venue) => localFrame(v.b, v.nx, v.nz);
-
-/** XOYO's exterior: a dark brick warehouse with a sawtooth roof (only when the map doesn't carry XOYO). */
-function XoyoBuilding({ v }: { v: Venue }) {
-  const f = frame(v);
-  const teeth = 4;
-  return (
-    <group position={[f.x, 0, f.z]} rotation-y={f.rot} name="xoyo-building">
-      <mesh position-y={v.b.h / 2} castShadow receiveShadow>
-        <boxGeometry args={[f.width, v.b.h, f.depth]} />
-        <meshStandardMaterial color="#4b2d25" roughness={0.92} />
-      </mesh>
-      {/* sawtooth roof */}
-      {Array.from({ length: teeth }, (_, k) => (
-        <mesh key={k} position={[-f.width / 2 + (f.width / teeth) * (k + 0.5), v.b.h + 1.2, 0]} rotation-z={0.42} castShadow>
-          <boxGeometry args={[f.width / teeth + 0.6, 0.35, f.depth]} />
-          <meshStandardMaterial color="#3a2420" roughness={0.9} />
-        </mesh>
-      ))}
-      {/* blocked-up brick arches on the front */}
-      {[-0.32, -0.11, 0.11, 0.32].map((k) => (
-        <mesh key={k} position={[k * f.width, 3.2, f.depth / 2 + 0.05]}>
-          <boxGeometry args={[f.width * 0.13, 4.2, 0.1]} />
-          <meshStandardMaterial color="#2a1a17" roughness={0.95} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
 
 function VenueDressing({ v, signMat, neonMats, doorMat, poolMat, shutter, notice }: {
   v: Venue;
@@ -165,6 +137,18 @@ function useVenueFx(v: Venue, closedBy: (t: number) => Incident | null) {
   return { signMat, neonMats, doorMat, poolMat, shutter };
 }
 
+function DoorGlow({ v, poolMat }: { v: Venue; poolMat: RefObject<MeshBasicMaterial | null> }) {
+  const f = frame(v);
+  return (
+    <group position={[f.x, 0, f.z]} rotation-y={f.rot}>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.17, f.depth / 2 + 4]} renderOrder={2}>
+        <planeGeometry args={[14, 9]} />
+        <meshBasicMaterial ref={poolMat} map={glowTexture()} color="#d36bff" transparent opacity={0} blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
 function VenueView({ v, incidents }: { v: Venue; incidents: Incident[] }) {
   const closedBy = useMemo(() => (t: number) => (v.storeId ? licenceClosure(incidents, v.storeId, nightOf(t)) : null), [incidents, v.storeId]);
   const fx = useVenueFx(v, closedBy);
@@ -172,8 +156,8 @@ function VenueView({ v, incidents }: { v: Venue; incidents: Incident[] }) {
   const notice = useSim((s) => !!closedBy(s.t));
   return (
     <>
-      {v.key === "xoyo" && <XoyoBuilding v={v} />}
-      <VenueDressing v={v} {...fx} notice={notice} />
+      {/* off-map XOYO: the exterior shell is the hero-models layer's; here only its door life (queue, staff, glow) */}
+      {v.storeId ? <VenueDressing v={v} {...fx} notice={notice} /> : <DoorGlow v={v} poolMat={fx.poolMat} />}
     </>
   );
 }

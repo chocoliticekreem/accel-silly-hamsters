@@ -12,6 +12,7 @@ import { CanvasTexture, Color, SRGBColorSpace, type MeshBasicMaterial } from "th
 import type { CityMap } from "../../api/contract";
 import { useIncidents, type Incident } from "../../api/incidents";
 import { callLabel, densityGrid, fightPhase } from "../../sim/incidents";
+import { useEconomy } from "../../state/economy";
 import { useSafety } from "../../state/safety";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
@@ -210,7 +211,10 @@ function useFigures(scenes: Scene[]) {
 
 /** The Safety layer: incident density so far this run (severity-weighted), as a soft heat over the ground. */
 function SafetyHeat({ incidents, map }: { incidents: Incident[]; map: CityMap }) {
-  const on = useSafety((s) => s.heat);
+  // one ground layer at a time: another heatmap switched on hides this one
+  const heat = useSafety((s) => s.heat);
+  const other = useEconomy((s) => s.heatmap);
+  const on = heat && !other;
   // recount once per sim hour
   const hour = useSim((s) => Math.floor(s.t / 60));
   const past = useMemo(() => incidents.filter((i) => i.t <= (hour + 1) * 60), [incidents, hour]);
