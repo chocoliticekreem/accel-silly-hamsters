@@ -1,0 +1,13 @@
+{
+  "name": "smart-city-sim",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w web",
+    "build": "npm run build -w web",
+    "test": "npm run test -w web",
+    "typecheck": "npm run typecheck -w web"
+  }
+}
