@@ -38,6 +38,17 @@ function hash(s: string) {
   return Math.abs(h);
 }
 
+/**
+ * OSM footprints are bounding boxes that overlap their neighbours, often with walls and roofs in exactly the same
+ * plane: the GPU can't decide which is in front and the facade flickers (z-fighting). Pull each wall in by a few
+ * centimetres and nudge the roof, by a per-building amount, so no two faces are ever coplanar.
+ */
+function unclash(b: Building): Building {
+  const k = hash(b.id) % 7;
+  const inset = 0.08 + k * 0.05;
+  return { ...b, w: Math.max(1, b.w - inset), d: Math.max(1, b.d - inset), h: b.h + 0.03 + k * 0.06 };
+}
+
 export default function Buildings() {
   const { map } = useWorld();
 
@@ -54,7 +65,10 @@ export default function Buildings() {
     ) as Record<(typeof kinds)[number], MeshStandardMaterial[]>;
     const items = map.buildings
       .filter((b) => b.kind === "residential" || b.kind === "office")
-      .map((b) => ({ b, geo: facadeBox(b), mat: mats[b.kind as "residential" | "office"][hash(b.id) % VARIANTS] }));
+      .map((raw) => {
+        const b = unclash(raw);
+        return { b, geo: facadeBox(b), mat: mats[b.kind as "residential" | "office"][hash(b.id) % VARIANTS] };
+      });
     return { mats, items };
   }, [map]);
 
