@@ -336,6 +336,11 @@ class AnalystState(Model):
     config: TrainingConfig | None = None  # the config the session ran with (None before configs)
     owner: str | None = None  # "host:pid" of the process that started or resumed it last
     wrappedUp: bool = False  # the last stop's proposals and reports are written; nothing ran since
+    # Runs rejected by the sanity guards or that crashed on every attempt: files kept, status
+    # "failed" in the index, never reused or compared. They count toward maxRuns.
+    quarantinedRuns: list[int] = Field(default_factory=list)
+    # Recovery counts for the session (llm.RECOVERY_COUNTS values: retries, fallbacks, ...).
+    recoveries: dict[str, int] = Field(default_factory=dict)
 
 
 class Decision(Model):

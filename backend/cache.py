@@ -241,6 +241,24 @@ def run_record(key: str, run: int, stores: dict[str, StoreConfig]) -> None:
     policy.session_runs.add(run)
 
 
+def run_quarantine(key: str, run: int, stores: dict[str, StoreConfig]) -> None:
+    """A run that crashed or failed a sanity guard: never reused for its config (the key leaves
+    the run cache) and its store configs count as tried, so nobody proposes them again."""
+    with _lock:
+        data = _load_run_cache()
+        if data["runs"].get(key) == run:
+            del data["runs"][key]
+        data.setdefault("quarantined", {})[key] = run
+        for sid, config in stores.items():
+            runs = (
+                data["storeConfigs"].setdefault(sid, {}).setdefault(store_config_hash(config), [])
+            )
+            if run not in runs:
+                runs.append(run)
+        write_json(_run_cache_path(), data, backup=True)
+    policy.session_runs.add(run)
+
+
 def store_config_tried(store_id: str, config: StoreConfig) -> bool:
     """True if this exact store config was already simulated (never re-propose it).
 

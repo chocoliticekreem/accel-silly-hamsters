@@ -57,9 +57,14 @@ RETRY_BASE_SECONDS = 1.0
 RETRY_MAX_WAIT_SECONDS = 30.0
 RETRY_TOTAL_SECONDS = float(os.getenv("RETRY_TOTAL_SECONDS", "120"))
 LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
-# Circuit breaker: this many failed attempts in a row (a fatal error counts as all of them) and
+# Circuit breaker: this many failed attempts in a row (an auth error counts as all of them) and
 # every agent uses its heuristic for the rest of the training step.
 BREAKER_THRESHOLD = int(os.getenv("BREAKER_THRESHOLD", "6"))
+# A run is simulated this many times before it is quarantined (a crash may be transient).
+SIM_ATTEMPTS = 2
+# Sanity guard: a run whose objective moves more than this vs the best run (3.0 = 300%) is an
+# outlier, quarantined rather than trusted.
+MAX_PLAUSIBLE_GAIN = 3.0
 
 # Business-tariff electricity price used for £ impact when energy.json has no hourly price.
 DEFAULT_PRICE_GBP_PER_KWH = 0.27
