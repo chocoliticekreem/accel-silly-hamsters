@@ -4,9 +4,9 @@ street events."""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
-from backend import store
+from backend import settings, store
 from backend.api import common, footfall
 from backend.contract import (
     DAYS,
@@ -45,9 +45,14 @@ def get_run_stores(run: int) -> JSONResponse:
 
 
 @router.get("/api/runs/{run}/days/{day}", response_model=DayData)
-def get_run_day(run: int, day: int) -> FileResponse:
+def get_run_day(run: int, day: int) -> Response:
     """The day file as written by the sim (already contract JSON), streamed without re-parsing:
-    day files are the bulk of a run (up to ~2.5 MB each)."""
+    day files are the bulk of a run (up to ~5 MB each). On Vercel they are static CDN files
+    (deploy/api/README.md), so the function only redirects there."""
+    if settings.ON_VERCEL:
+        if not 1 <= day <= DAYS:
+            raise HTTPException(404, f"day {day} not found: days are 1-{DAYS}")
+        return RedirectResponse(f"/runs/{run}/days/{day}.json", status_code=307)
     common.run_path(run)
     if not 1 <= day <= DAYS:
         raise HTTPException(404, f"day {day} not found: days are 1-{DAYS}")
@@ -67,9 +72,12 @@ def get_run_summary(run: int) -> JSONResponse:
 
 
 @router.get("/api/runs/{run}/footfall", response_model=RunFootfall)
-def get_run_footfall(run: int) -> JSONResponse:
+def get_run_footfall(run: int) -> Response:
     """Sim agents on the street by day and clock hour, for the background crowd (area totals: no
-    store or agent ids). Built from the day files on first request, then cached in the run."""
+    store or agent ids). Built from the day files on first request, then cached in the run. On
+    Vercel the tables are precomputed static files (deploy/api/README.md)."""
+    if settings.ON_VERCEL:
+        return RedirectResponse(f"/runs/{run}/footfall.json", status_code=307)
     return common.contract_json(footfall.run_footfall(run))
 
 
