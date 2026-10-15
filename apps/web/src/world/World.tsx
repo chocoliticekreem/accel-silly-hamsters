@@ -33,6 +33,7 @@ import ClubLife from "./modules/ClubLife";
 import Incidents from "./modules/Incidents";
 import Interiors from "./modules/Interiors";
 import Landmarks from "./modules/Landmarks";
+import FreeCam from "./modules/FreeCam";
 import Police from "./modules/Police";
 import Photoreal from "./modules/Photoreal";
 import MapGround from "./modules/MapGround";
@@ -66,6 +67,7 @@ export const MODULES: Record<string, ComponentType> = {
   Footfall,
   Agents,
   CameraRig,
+  FreeCam,
   Glow,
 };
 

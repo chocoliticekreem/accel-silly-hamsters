@@ -2,9 +2,10 @@
 // the station and the Goodsyard cranes); "More" lists the map's clubs and stations. Places with an interior get an
 // Enter button that opens the multi-floor cutaway (world/modules/Landmarks), with a floor stepper above the playback bar.
 // Positions: world/landmarks/places (map stores and buildings, sim/london landmarks, fallbacks).
-// Keys: PgUp/PgDn or ] / [ step floors, Esc leaves the interior. (Number keys stay playback speed.)
+// Keys: ↑/↓ (or PgUp/PgDn, ] / [) step floors while inside, Esc leaves; F toggles the free camera (world/modules/
+// FreeCam), Esc leaves it first. ←/→ stay time scrub and number keys playback speed (state/clock).
 // Deep links: #goto=xoyo flies there; #goto=encode&floor=1 opens the interior on that floor.
-import { Building2, ChevronDown, ChevronUp, Construction, DoorOpen, Hotel, LogOut, MapPin, MoreHorizontal, Music, ShoppingBag, TrainFront } from "lucide-react";
+import { Building2, Move3d, ChevronDown, ChevronUp, Construction, DoorOpen, Hotel, LogOut, MapPin, MoreHorizontal, Music, ShoppingBag, TrainFront } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMap } from "../state/data";
 import { useTravel } from "../state/travel";
@@ -77,15 +78,25 @@ export function GoToBar() {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
       const t = useTravel.getState();
-      if (e.key === "Escape" && menu) {
+      if (e.code === "KeyF" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        t.setFreecam(!t.freecam);
+      } else if (e.key === "Escape" && t.freecam) {
+        // Esc leaves free cam first; a second Esc then leaves the interior
+        t.setFreecam(false);
+        e.stopImmediatePropagation();
+      } else if (e.key === "Escape" && menu) {
         setMenu(false);
         e.stopImmediatePropagation();
       } else if (!t.interiorOpen) return;
-      else if (e.key === "PageUp" || e.key === "]") {
+      else if (e.key === "ArrowUp" || e.key === "PageUp" || e.key === "]") {
+        // ↑/↓ only while inside (←/→ stay time scrub); keep OrbitControls and the page from also using them
         e.preventDefault();
+        e.stopImmediatePropagation();
         t.stepFloor(1);
-      } else if (e.key === "PageDown" || e.key === "[") {
+      } else if (e.key === "ArrowDown" || e.key === "PageDown" || e.key === "[") {
         e.preventDefault();
+        e.stopImmediatePropagation();
         t.stepFloor(-1);
       } else if (e.key === "Escape") {
         t.exit();
@@ -144,7 +155,9 @@ export function GoToBar() {
             </button>
           </div>
         )}
+        <FreeCamButton />
       </nav>
+      <FreeCamHint />
       {menu && (
         <div className="goto-menu panel" role="menu" ref={menuEl}>
           {(["clubs", "stations"] as const).map((g) => {
@@ -215,7 +228,7 @@ function FloorStepper({ list }: { list: Place[] }) {
         </button>
       </header>
       <div className="floor-row">
-        <button className="floor-step" onClick={() => t.stepFloor(-1)} disabled={floor <= 0} aria-label="Floor down" title="Floor down (PgDn or [)">
+        <button className="floor-step" onClick={() => t.stepFloor(-1)} disabled={floor <= 0} aria-label="Floor down" title="Floor down (↓ or [)">
           <ChevronDown size={16} />
         </button>
         <ol className="floor-list">
@@ -227,11 +240,30 @@ function FloorStepper({ list }: { list: Place[] }) {
             </li>
           ))}
         </ol>
-        <button className="floor-step" onClick={() => t.stepFloor(1)} disabled={floor >= levels.length - 1} aria-label="Floor up" title="Floor up (PgUp or ])">
+        <button className="floor-step" onClick={() => t.stepFloor(1)} disabled={floor >= levels.length - 1} aria-label="Floor up" title="Floor up (↑ or ])">
           <ChevronUp size={16} />
         </button>
       </div>
-      <div className="floor-hint">PgUp/PgDn or [ ] · Esc to leave</div>
+      <div className="floor-hint">↑ ↓ floors · Esc exit</div>
     </section>
+  );
+}
+
+function FreeCamButton() {
+  const on = useTravel((s) => s.freecam);
+  return (
+    <button className={`goto-btn ${on ? "on" : ""}`} aria-pressed={on} title="Free camera: WASD to move, E/Q up/down, drag to look (F)" onClick={() => useTravel.getState().setFreecam(!on)}>
+      <Move3d size={15} /> Free cam
+    </button>
+  );
+}
+
+function FreeCamHint() {
+  const on = useTravel((s) => s.freecam);
+  if (!on) return null;
+  return (
+    <div className="freecam-hint panel" role="status">
+      <b>Free cam</b> WASD move · E/Q up/down · Shift fast · drag to look · F or Esc to exit
+    </div>
   );
 }
