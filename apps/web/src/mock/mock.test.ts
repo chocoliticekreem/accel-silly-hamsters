@@ -53,6 +53,18 @@ describe("hard rules", () => {
   });
 });
 
+describe("area summary", () => {
+  it("serves 24-hour area curves and a smaller footprint for the best run", async () => {
+    const a = (await api.summary(1))!;
+    const b = (await api.summary(state.bestRun()))!;
+    expect(a.demandByHourKw).toHaveLength(24);
+    expect(a.footfallByHour).toHaveLength(24);
+    expect(a.demandByHourKw[a.peakHour]).toBe(a.peakKw);
+    expect(b.co2Kg).toBeLessThan(a.co2Kg);
+    expect(b.energyCostGbp).toBeLessThan(a.energyCostGbp);
+  });
+});
+
 describe("mock runs", () => {
   it("returns runs whose main KPI improves from run 1 to the best run", async () => {
     const runs = await api.runs();

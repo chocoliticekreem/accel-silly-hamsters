@@ -1290,3 +1290,12 @@ button.chip:hover {
   text-align: right;
   color: var(--text);
 }
+
+/* ---------- area view ---------- */
+
+.area {
+  bottom: auto;
+}
+.area-kpis {
+  grid-template-columns: repeat(2, 1fr);
+}

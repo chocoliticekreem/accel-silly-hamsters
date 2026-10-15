@@ -213,6 +213,8 @@ export interface OwnerReport {
 // ---------- POST /api/decision ----------
 
 export interface DecisionRequest {
+  /** The run whose report the owner saw (sent as ?run=). */
+  run?: number;
   storeId: string;
   suggestionIndex: number;
   decision: "approve" | "reject";
@@ -246,6 +248,37 @@ export interface Calibration {
   sources?: Source[];
 }
 
+// ---------- GET /api/runs/{run}/summary (additive) ----------
+// Area totals for the city view (anonymised: no store ids). Totals cover the 14-day run.
+
+export interface RunAreaSummary {
+  run: number;
+  seed: number;
+  kpis: RunKpis;
+  objective: string;
+  objectiveValue: number;
+  peakKw: number;
+  peakHour: number;
+  co2Kg: number;
+  energyCostGbp: number;
+  /** 24 values: the area's power demand by hour, averaged over the 14 days. */
+  demandByHourKw: number[];
+  /** 24 values: people in the area by hour. */
+  footfallByHour: number[];
+  agents: { returning: number; oneOff: number; total: number };
+  durationSec: number;
+}
+
+// ---------- GET /api/health (additive) ----------
+
+export interface Health {
+  ok: boolean;
+  simVersion: string;
+  /** "sample" = hand-made demo map; "processed" = the real pipeline output. */
+  mapSource: "processed" | "sample" | "missing";
+  realRuns: number;
+}
+
 // ---------- The client interface (mock and http both implement it) ----------
 
 export interface Api {
@@ -260,4 +293,8 @@ export interface Api {
   decision(req: DecisionRequest): Promise<DecisionResponse>;
   /** null when the backend doesn't serve calibration yet. */
   calibration(): Promise<Calibration | null>;
+  /** null when the run has no summary (404). */
+  summary(run: number): Promise<RunAreaSummary | null>;
+  /** null when the backend has no health endpoint. */
+  health(): Promise<Health | null>;
 }

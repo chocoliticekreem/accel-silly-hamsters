@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { api } from "../api/client";
 import { hourOf, isOpenAt, minuteOfDay } from "../sim/time";
-import { invalidate, useMap, useRunStores, useSuggestions } from "../state/data";
+import { invalidate, useMap, watchRun, useRunStores, useSuggestions } from "../state/data";
 import { useSim } from "../state/store";
 import { STORE_COLORS } from "../world/palette";
 import { Delta } from "./Delta";
@@ -38,6 +38,11 @@ export function StoreCard() {
       const res = await api.apply(scope === "store" ? { run, scope, storeIds: [id] } : { run, scope });
       invalidate("runs");
       useSim.getState().showToast(`Queued run ${res.queuedRun}`);
+      // the backend runs it in the background; tell the owner when it lands
+      void watchRun(res.queuedRun).then((status) => {
+        if (status === "done") useSim.getState().showToast(`Run ${res.queuedRun} ready · open History to replay`);
+        else if (status === "failed") useSim.getState().showToast(`Run ${res.queuedRun} failed`);
+      });
     } catch {
       useSim.getState().showToast("Apply failed");
     } finally {
