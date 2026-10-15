@@ -35,7 +35,7 @@ export function createMockState(): MockState {
     return configs.get(run)!;
   };
   const result = (run: number) => {
-    if (!results.has(run)) results.set(run, simulateRun(map, config(run), MOCK_SEED));
+    if (!results.has(run)) results.set(run, simulateRun(map, config(run), MOCK_SEED, run));
     return results.get(run)!;
   };
   // additive map fields the real backend serves: licence, current hours, floor area, sources
@@ -257,6 +257,8 @@ export function mockApi(state: MockState = createMockState()): Api {
         bestRun: state.bestRun(),
         stoppedReason: "threshold",
       })),
+    ownerEvents: (run) => later(() => state.result(run).ownerEvents),
+    streetEvents: (run) => later(() => state.result(run).streetEvents),
     health: () => later(() => ({ ok: true, simVersion: "mock", mapSource: "sample" as const, realRuns: MOCK_RUN_COUNT })),
     decision: (req) =>
       later(() => {

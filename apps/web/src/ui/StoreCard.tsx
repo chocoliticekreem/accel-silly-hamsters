@@ -2,8 +2,11 @@
 // and the way into the owner's weekly report.
 import { useState } from "react";
 import { api } from "../api/client";
+import { storeStateAt } from "../sim/storeState";
 import { hourOf, isOpenAt, minuteOfDay } from "../sim/time";
-import { invalidate, useAnalyst, useMap, watchRun, useRunStores, useSuggestions } from "../state/data";
+import { OwnerTimeline } from "./OwnerTimeline";
+import { WeekSchedule } from "./WeekSchedule";
+import { invalidate, useAnalyst, useMap, useOwnerEvents, watchRun, useRunStores, useSuggestions } from "../state/data";
 import { useSim } from "../state/store";
 import { STORE_COLORS } from "../world/palette";
 import { Delta } from "./Delta";
@@ -20,6 +23,8 @@ export function StoreCard() {
   const run = useSim((s) => s.run);
   const hour = useSim((s) => Math.floor(hourOf(s.t) * 4) / 4);
   const minute = useSim((s) => Math.floor(minuteOfDay(s.t)));
+  const tNow = useSim((s) => Math.floor(s.t));
+  const ownerEvents = useOwnerEvents(run).data;
   const map = useMap().data;
   const stores = useRunStores(run).data;
   const prevStores = useRunStores(run > 1 ? run - 1 : null).data;
@@ -33,8 +38,10 @@ export function StoreCard() {
   const cfg = stores?.[id];
   const prev = prevStores?.[id];
   const mine = suggestions?.filter((s) => s.storeId === id) ?? [];
-  const open = cfg ? isOpenAt(cfg.open, cfg.close, minute) : false;
-  const light = cfg?.lighting[Math.floor(hour) % 24] ?? "off";
+  // what the shop is really doing now: the owner's schedule and today-only decisions, not just the starting hours
+  const state = cfg ? storeStateAt(cfg, (ownerEvents ?? []).filter((e) => e.storeId === id), tNow) : null;
+  const open = state ? state.open : cfg ? isOpenAt(cfg.open, cfg.close, minute) : false;
+  const light = state?.lighting ?? cfg?.lighting[Math.floor(hour) % 24] ?? "off";
   const isClub = store.type === "club";
 
   const apply = async (scope: "store" | "all") => {
@@ -79,7 +86,9 @@ export function StoreCard() {
       </header>
 
       <div className="status-row">
-        <span className={`status ${open ? "status-open" : "status-closed"}`}>{open ? "Open" : "Closed"}</span>
+        <span className={`status ${open ? "status-open" : "status-closed"}`}>
+          {state?.closedForGood ? "Closed for good" : open ? (state?.todayAction === "open_late" ? "Open late tonight" : "Open") : state?.shutAllDay ? "Shut today" : state?.todayAction === "shut_early" ? "Shut early" : "Closed"}
+        </span>
         <span className={`status status-light light-${light}`}>
           <Icon name="bolt" size={12} /> {light}
         </span>
@@ -111,7 +120,14 @@ export function StoreCard() {
         </>
       ) : (
       <>
+      {state?.reason && <div className="owner-now">“{state.reason}”</div>}
       {cfg && <HourStrip cfg={cfg} hour={hour} prev={prev} licence={store.licensedHours ?? undefined} />}
+      {!isClub && (
+        <>
+          <WeekSchedule storeId={id} run={run} />
+          <OwnerTimeline storeId={id} run={run} />
+        </>
+      )}
 
       <div className="mini-kpis">
         {kpis.map((k) => (

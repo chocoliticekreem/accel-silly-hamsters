@@ -11,6 +11,8 @@ import { invalidate, useReport, useResource, watchRun } from "../state/data";
 import { useSim } from "../state/store";
 import { fmtInt, fmtPct, TYPE_LABEL } from "../ui/format";
 import { InsightsPanel } from "../ui/InsightsPanel";
+import { OwnerTimeline } from "../ui/OwnerTimeline";
+import { WeekSchedule } from "../ui/WeekSchedule";
 import { DemoBar } from "../ui/DemoBar";
 import { Toast } from "../ui/Toast";
 import { TypeIcon } from "../ui/TypeIcon";
@@ -237,6 +239,11 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
                 )}
               </div>
             )}
+          </section>
+
+          <section className="sp-card">
+            <OwnerTimeline storeId={storeId} run={o.run} title="What I changed this fortnight" />
+            <WeekSchedule storeId={storeId} run={o.run} />
           </section>
 
           <section className="sp-card">

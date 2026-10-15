@@ -1983,6 +1983,348 @@ button.chip:hover {
   text-align: right;
 }
 
+/* ---------- owner actions: city feed, week schedule, owner timeline (docs/OWNER_ACTIONS.md) ---------- */
+
+.map-label-works svg {
+  color: #f07f1e;
+}
+
+.city-feed-mount {
+  position: absolute;
+  left: 16px;
+  bottom: 86px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+}
+.city-feed {
+  padding: 10px 10px 8px;
+  animation: rise 0.25s ease-out both;
+}
+.city-feed-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.city-feed-head svg {
+  color: var(--lamp);
+}
+.city-feed-window {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--faint);
+}
+.city-feed-now {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.feed-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 11.5px;
+  color: var(--text);
+}
+.feed-now-roadworks {
+  border-color: rgba(240, 127, 30, 0.55);
+  color: #ffb27a;
+}
+.feed-now-heavy_traffic {
+  border-color: rgba(255, 138, 122, 0.35);
+  color: var(--bad);
+}
+.feed-now-club_night {
+  border-color: rgba(164, 99, 255, 0.5);
+  color: #c9a6ff;
+}
+.city-feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 210px;
+  overflow-y: auto;
+}
+.feed-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 20px auto 1fr;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+.feed-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.feed-item:focus-visible,
+.feed-now:focus-visible,
+.tl-row:focus-visible {
+  outline: 2px solid var(--lamp);
+  outline-offset: 1px;
+}
+.feed-icon,
+.tl-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  align-self: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
+.feed-when {
+  font-size: 10.5px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.feed-text {
+  color: var(--text);
+}
+.feed-action-shut_early .feed-icon,
+.feed-action-temporary_closure .feed-icon,
+.feed-action-day_closed .feed-icon,
+.tl-shut_early .tl-icon,
+.tl-temporary_closure .tl-icon,
+.tl-day_closed .tl-icon {
+  color: var(--bad);
+  background: rgba(255, 138, 122, 0.12);
+}
+.feed-action-open_late .feed-icon,
+.feed-action-day_reopened .feed-icon,
+.tl-open_late .tl-icon,
+.tl-day_reopened .tl-icon {
+  color: var(--good);
+  background: rgba(111, 211, 160, 0.12);
+}
+.feed-action-hours_changed .feed-icon,
+.tl-hours_changed .tl-icon {
+  color: var(--blue);
+  background: rgba(127, 178, 255, 0.12);
+}
+.feed-action-lighting_changed .feed-icon,
+.tl-lighting_changed .tl-icon {
+  color: var(--lamp);
+  background: var(--lamp-soft);
+}
+.feed-action-closed_permanently .feed-icon,
+.tl-closed_permanently .tl-icon {
+  color: var(--ink);
+  background: var(--bad);
+}
+.feed-street-roadworks .feed-icon {
+  color: #f07f1e;
+  background: rgba(240, 127, 30, 0.14);
+}
+.feed-street-club_night .feed-icon {
+  color: #c9a6ff;
+  background: rgba(164, 99, 255, 0.14);
+}
+.feed-street-heavy_traffic .feed-text,
+.feed-street-club_night .feed-text,
+.feed-street-roadworks .feed-text {
+  color: var(--muted);
+}
+.city-feed-empty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--faint);
+  text-align: center;
+}
+
+/* week grid: 7 rows × 24 cells */
+.week-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.week-grid {
+  padding: 8px 8px 2px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--line);
+}
+.week-row {
+  display: grid;
+  grid-template-columns: 30px 1fr 74px;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.week-day {
+  font-size: 11px;
+  color: var(--muted);
+}
+.week-row.today .week-day {
+  color: var(--lamp);
+  font-weight: 700;
+}
+.week-cells {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+}
+.wcell {
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.wcell.on {
+  background: #57d68d;
+}
+.wcell.added {
+  background: #57d68d;
+  outline: 1.5px solid #fff;
+  outline-offset: -1px;
+}
+.wcell.removed {
+  background: repeating-linear-gradient(135deg, rgba(255, 138, 122, 0.55) 0 2px, transparent 2px 4px);
+  box-shadow: inset 0 0 0 1px rgba(255, 138, 122, 0.6);
+}
+.wcell.now {
+  box-shadow: 0 0 0 1.5px var(--lamp), 0 0 6px var(--lamp);
+}
+.week-row.today .week-cells {
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(255, 200, 87, 0.35);
+}
+.week-hours {
+  font-size: 10.5px;
+  color: var(--faint);
+  text-align: right;
+  white-space: nowrap;
+}
+.week-row.today .week-hours {
+  color: var(--text);
+}
+.week-axis {
+  margin: 0;
+}
+.week-axis-labels {
+  position: relative;
+  height: 14px;
+}
+.week-axis-labels span {
+  position: absolute;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+}
+.week-axis-labels span:first-child {
+  transform: none;
+}
+.week-axis-labels span:last-child {
+  transform: translateX(-100%);
+}
+.sw-added {
+  background: #57d68d;
+  outline: 1.5px solid #fff;
+  outline-offset: -1.5px;
+}
+.sw-removed {
+  background: repeating-linear-gradient(135deg, rgba(255, 138, 122, 0.7) 0 2px, transparent 2px 4px);
+  box-shadow: inset 0 0 0 1px rgba(255, 138, 122, 0.7);
+}
+
+/* owner timeline */
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 10px;
+  border-left: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tl-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 8px;
+  padding: 6px;
+  margin-left: -21px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+}
+.tl-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.tl-icon {
+  align-self: start;
+  box-shadow: 0 0 0 3px var(--glass-strong);
+}
+.tl-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tl-when {
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.tl-what {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.tl-reason {
+  font-size: 12px;
+  color: var(--muted);
+  quotes: "\201C" "\201D";
+}
+.tl-trigger {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.tl-item.upcoming {
+  opacity: 0.45;
+}
+.tl-item.upcoming .tl-when::after {
+  content: " · upcoming";
+}
+
+@media (max-width: 640px) {
+  .city-feed-mount {
+    bottom: 132px;
+    width: auto;
+    right: 16px;
+  }
+  .city-feed-list {
+    max-height: 120px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .city-feed {
+    animation: none;
+  }
+}
 /* ---------- spec pass: honesty notes, focus, demo bar, narrow screens ---------- */
 
 /* the honesty notes must stay readable: muted (about 6:1 on ink), not faint */
@@ -2190,4 +2532,18 @@ button.chip:disabled {
 }
 .store-page:has(.demo-bar) .sp-main {
   padding-bottom: 110px;
+}
+
+/* ---------- owner state on the store card ---------- */
+
+.owner-now {
+  margin: -2px 0 10px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--lamp);
+}
+.store-card .week-schedule,
+.store-card .owner-timeline,
+.sp-card .week-schedule {
+  margin-top: 12px;
 }

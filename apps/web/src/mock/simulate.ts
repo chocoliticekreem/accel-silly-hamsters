@@ -1,12 +1,14 @@
 // Mock simulation: persona agents live 14 days on the street grid, choosing open, lit stores.
 // Decisions are seeded per (day, agent), so two runs differ only because store configs differ (fixed seed rule).
 // KPIs are computed from the generated visits, so what you see in 3D matches the numbers in the HUD.
-import type { AgentDay, CityMap, DayData, LightLevel, PathKey, RunKpis, RunStores, StoreKpis, StoreType, StoreVisit } from "../api/contract";
+// Owners adapt day by day (mock/owners.ts): opening, lighting and energy follow each owner's evolving schedule.
+import type { AgentDay, CityMap, DayData, LightLevel, OwnerEvent, PathKey, RunKpis, RunStores, StoreKpis, StoreType, StoreVisit, StreetEvent } from "../api/contract";
 import { DAYS_PER_RUN, MINUTES_PER_DAY } from "../api/contract";
 import { frontage } from "../sim/geometry";
-import { isOpenAt, parseHHMM } from "../sim/time";
-import type { RunConfig, StoreConfig } from "./configs";
+import type { RunConfig } from "./configs";
 import { H_STREETS, V_STREETS } from "./map";
+import { OwnerBook, type DayStats } from "./owners";
+import { generateStreetEvents, storeStreets } from "./streetEvents";
 import { between, intBetween, pick, rng, seedOf, weighted, type Rng } from "./rng";
 
 export const WALK_M_PER_MIN = 45; // an amble, not a commute sprint
@@ -21,10 +23,7 @@ const NIGHT_FACTOR = [0.3, 0.3, 0.45, 0.7, 1, 1, 0.4]; // Mon..Sun (Day 1 = Mond
 const dow = (day: number) => (day - 1) % 7;
 const isWeekend = (day: number) => dow(day) >= 5;
 
-// ---------- energy model (kWh per m² per hour) ----------
-
-const OPEN_KWH: Record<StoreType, number> = { cafe: 0.004, restaurant: 0.005, takeaway: 0.0045, bar: 0.004, shop: 0.0025, offlicence: 0.003, club: 0.006 };
-export const LIGHT_KWH: Record<LightLevel, number> = { off: 0, low: 0.001, high: 0.003 };
+export { LIGHT_KWH } from "./owners";
 
 // ---------- network: everyone walks the sidewalks of the street grid ----------
 
@@ -88,16 +87,25 @@ function route(w: Walker, a: Loc, b: Loc): [number, number][] {
 
 interface StorePlace {
   id: string;
+  /** Index into map.stores (and the owner book). */
+  idx: number;
   type: StoreType;
   loc: Loc;
   area: number;
+  streetId: string;
 }
 
 interface Ctx {
   map: CityMap;
   cfg: RunConfig;
+  /** The owners: what each shop's hours and lights are at any minute of this run. */
+  book: OwnerBook;
+  /** streetId → footfall factor windows from street events (roadworks, heavy traffic). */
+  streetCuts: Map<string, { fromT: number; toT: number; factor: number }[]>;
   /** storeId → people who walked over and found it shut, by hour of day (14-day total). */
   missed: Map<string, number[]>;
+  /** The same, for the day being simulated (what each owner reads that evening). */
+  missedToday: Map<string, number[]>;
   stores: StorePlace[];
   byId: Map<string, StorePlace>;
   homes: Loc[];
@@ -114,14 +122,15 @@ function buildingLoc(map: CityMap, buildingId: string): Loc {
   return { x: f.doorX, z: f.doorZ, axis: vertical ? "v" : "h", line: vertical ? sx : sz };
 }
 
-const ctxCache = new WeakMap<CityMap, Omit<Ctx, "cfg" | "missed">>();
+const ctxCache = new WeakMap<CityMap, Omit<Ctx, "cfg" | "missed" | "missedToday" | "book" | "streetCuts">>();
 
-function context(map: CityMap, cfg: RunConfig): Ctx {
+function context(map: CityMap, cfg: RunConfig, street: StreetEvent[], run: number): Ctx {
   let base = ctxCache.get(map);
   if (!base) {
-    const stores = map.stores.map((s) => {
+    const streets = storeStreets(map);
+    const stores = map.stores.map((s, idx) => {
       const b = map.buildings.find((x) => x.id === s.buildingId)!;
-      return { id: s.id, type: s.type, loc: buildingLoc(map, s.buildingId), area: b.w * b.d };
+      return { id: s.id, idx, type: s.type, loc: buildingLoc(map, s.buildingId), area: b.w * b.d, streetId: streets.get(s.id) ?? "" };
     });
     const entries: Loc[] = map.entryPoints.map((e) =>
       e.kind === "station" || Math.abs(e.z) >= Math.abs(e.x)
@@ -139,23 +148,37 @@ function context(map: CityMap, cfg: RunConfig): Ctx {
     };
     ctxCache.set(map, base);
   }
-  return { ...base, cfg, missed: new Map() };
+  const streetCuts = new Map<string, { fromT: number; toT: number; factor: number }[]>();
+  for (const e of street) {
+    if (!e.streetId || (e.kind !== "roadworks" && e.kind !== "heavy_traffic")) continue;
+    // roadworks: fewer people can get to the doors; heavy traffic: slower walking, fewer stops
+    const factor = e.kind === "roadworks" ? 1 - e.severity : 1 - 0.5 * e.severity;
+    streetCuts.set(e.streetId, [...(streetCuts.get(e.streetId) ?? []), { fromT: e.fromT, toT: e.toT, factor }]);
+  }
+  return { ...base, cfg, book: new OwnerBook(map, cfg, street, run), streetCuts, missed: new Map(), missedToday: new Map() };
 }
 
 // ---------- store rules ----------
 
-function isOpen(c: StoreConfig, t: number) {
-  return isOpenAt(c.open, c.close, ((t % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY);
+function isOpen(ctx: Ctx, s: StorePlace, t: number) {
+  return ctx.book.isOpen(ctx.book.shops[s.idx], t);
 }
 
-function minutesToClose(c: StoreConfig, t: number) {
-  const m = ((t % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
-  const close = parseHHMM(c.close);
-  return (close - m + MINUTES_PER_DAY) % MINUTES_PER_DAY || MINUTES_PER_DAY;
+function minutesToClose(ctx: Ctx, s: StorePlace, t: number) {
+  return ctx.book.minutesToClose(ctx.book.shops[s.idx], t);
 }
 
-function lightAt(c: StoreConfig, t: number): LightLevel {
-  return c.lighting[Math.floor((((t % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY) / 60)];
+function lightAt(ctx: Ctx, s: StorePlace, t: number): LightLevel {
+  return ctx.book.light(ctx.book.shops[s.idx], t);
+}
+
+/** Street events cutting how many people reach a door on this street at t. */
+function streetFactor(ctx: Ctx, s: StorePlace, t: number) {
+  const cuts = ctx.streetCuts.get(s.streetId);
+  if (!cuts) return 1;
+  let f = 1;
+  for (const c of cuts) if (t >= c.fromT && t < c.toT) f *= c.factor;
+  return f;
 }
 
 function isDark(t: number) {
@@ -236,33 +259,34 @@ interface Choice {
 function visitOne(ctx: Ctx, a: Agent, choice: Choice, r: Rng, stayScale = 1): boolean {
   const candidates = ctx.stores.filter((s) => (choice.prefs[s.type] ?? 0) > 0);
   const weights = candidates.map((s) => {
-    const c = ctx.cfg[s.id];
     const d = Math.hypot(s.loc.x - a.at.x, s.loc.z - a.at.z);
     if (choice.maxDist && d > choice.maxDist) return 0;
     const arrive = a.t + d / WALK_M_PER_MIN;
-    const open = isOpen(c, arrive);
+    const open = isOpen(ctx, s, arrive);
     // strangers can't know hours (they go by the lights); regulars mostly remember
     const knowsHours = a.memory ? 0.85 : 0.2;
     const openW = open ? 1 : 1 - knowsHours;
     const mem = a.memory?.affinity.get(s.id) ?? 1;
-    return (choice.prefs[s.type] ?? 0) * Math.exp(-d / 160) * lightFactor(lightAt(c, arrive), arrive) * openW * mem;
+    return (choice.prefs[s.type] ?? 0) * Math.exp(-d / 160) * lightFactor(lightAt(ctx, s, arrive), arrive) * openW * mem * streetFactor(ctx, s, arrive);
   });
   const i = weighted(r, [...weights, choice.outside]);
   if (i < 0 || i >= candidates.length) return false;
   const s = candidates[i];
-  const c = ctx.cfg[s.id];
   walkTo(a, s.loc);
-  if (!isOpen(c, a.t)) {
+  if (!isOpen(ctx, s, a.t)) {
     // walked over, it's shut: remember that (this changes tomorrow's route)
-    const row = ctx.missed.get(s.id) ?? Array(24).fill(0);
-    row[Math.floor((((a.t % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY) / 60)] += 1;
-    ctx.missed.set(s.id, row);
+    const hour = Math.floor((((a.t % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY) / 60);
+    for (const m of [ctx.missed, ctx.missedToday]) {
+      const row = m.get(s.id) ?? Array(24).fill(0);
+      row[hour] += 1;
+      m.set(s.id, row);
+    }
     wait(a, 1);
     a.memory?.affinity.set(s.id, (a.memory.affinity.get(s.id) ?? 1) * 0.4);
     return false;
   }
   const [lo, hi] = STAY[s.type];
-  const dur = Math.min(between(r, lo, hi) * stayScale, minutesToClose(c, a.t));
+  const dur = Math.min(between(r, lo, hi) * stayScale, minutesToClose(ctx, s, a.t));
   const tIn = round(a.t);
   wait(a, Math.max(2, dur));
   a.visits.push({ storeId: s.id, tIn, tOut: round(a.t) });
@@ -314,11 +338,10 @@ function nightOut(ctx: Ctx, a: Agent, day: number, r: Rng) {
   const club = ctx.stores.filter((s) => s.type === "club");
   const target = pick(r, club);
   walkTo(a, target.loc);
-  const c = ctx.cfg[target.id];
-  if (isOpen(c, a.t) || a.t < at(day, 22)) {
-    if (!isOpen(c, a.t)) wait(a, at(day, 22) - a.t + between(r, 0, 10));
+  if (isOpen(ctx, target, a.t) || a.t < at(day, 22)) {
+    if (!isOpen(ctx, target, a.t)) wait(a, at(day, 22) - a.t + between(r, 0, 10));
     const tIn = round(a.t);
-    wait(a, Math.max(30, minutesToClose(c, a.t) - between(r, 0, 50)));
+    wait(a, Math.max(30, minutesToClose(ctx, target, a.t) - between(r, 0, 50)));
     a.visits.push({ storeId: target.id, tIn, tOut: round(a.t) });
   }
   // after the club: hungry, looking for anything open and lit nearby
@@ -460,29 +483,48 @@ export interface RunResult {
   agents: { returning: number; oneOff: number; total: number };
   /** storeId → people who found it shut, per day, by hour. */
   missedByHour: Record<string, number[]>;
-  /** storeId → kWh drawn in each hour of a day. */
+  /** storeId → kWh drawn in each hour of a day, averaged over the 14 days. */
   kwhByHour: Record<string, number[]>;
+  /** Every owner's day-by-day decisions, oldest first. */
+  ownerEvents: OwnerEvent[];
+  /** What the owners reacted to (same in every run: fixed seed). */
+  streetEvents: StreetEvent[];
 }
 
-/** kWh drawn in each hour of a day (= average kW over that hour). */
+/** kWh drawn in each hour of a day (= average kW over that hour), averaged over the run's days. */
 function storeKwhByHour(ctx: Ctx, s: StorePlace): number[] {
-  const c = ctx.cfg[s.id];
-  return Array.from({ length: 24 }, (_, h) => {
-    // half-hour resolution, so 30-minute hour changes cost what they should
-    const openShare = (Number(isOpenAt(c.open, c.close, h * 60 + 15)) + Number(isOpenAt(c.open, c.close, h * 60 + 45))) / 2;
-    return s.area * (OPEN_KWH[s.type] * openShare + LIGHT_KWH[c.lighting[h]]);
-  });
+  const shop = ctx.book.shops[s.idx];
+  const out = Array(24).fill(0);
+  for (let day = 1; day <= DAYS_PER_RUN; day++) ctx.book.kwhByHour(shop, day).forEach((k, h) => (out[h] += k / DAYS_PER_RUN));
+  return out;
 }
 
-function storeKwhPerDay(ctx: Ctx, s: StorePlace) {
-  return storeKwhByHour(ctx, s).reduce((a, b) => a + b, 0);
+const streetCache = new WeakMap<CityMap, Map<number, StreetEvent[]>>();
+/** The run's street events (deterministic per map + seed, shared by every run). */
+export function streetEventsFor(map: CityMap, seed: number): StreetEvent[] {
+  let m = streetCache.get(map);
+  if (!m) streetCache.set(map, (m = new Map()));
+  if (!m.has(seed)) m.set(seed, generateStreetEvents(map, seed));
+  return m.get(seed)!;
 }
 
-export function simulateRun(map: CityMap, cfg: RunConfig, seed: number): RunResult {
-  const ctx = context(map, cfg);
+/** `run` = which run of the session (owners never close for good in run 1). */
+export function simulateRun(map: CityMap, cfg: RunConfig, seed: number, run = 1): RunResult {
+  const street = streetEventsFor(map, seed);
+  const ctx = context(map, cfg, street, run);
   const regs = regulars(ctx, seed);
   const days: DayData[] = [];
-  for (let day = 1; day <= DAYS_PER_RUN; day++) days.push({ day, agents: dayAgents(ctx, regs, day, seed) });
+  for (let day = 1; day <= DAYS_PER_RUN; day++) {
+    ctx.book.morning(day);
+    ctx.missedToday = new Map();
+    const agents = dayAgents(ctx, regs, day, seed);
+    days.push({ day, agents });
+    // each owner reads only its own shop's day
+    const stats = new Map<string, DayStats>();
+    for (const s of ctx.stores) stats.set(s.id, { visits: Array(24).fill(0), missed: ctx.missedToday.get(s.id) ?? Array(24).fill(0) });
+    for (const a of agents) for (const v of a.visits) stats.get(v.storeId)!.visits[Math.floor((((v.tIn % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY) / 60)] += 1;
+    ctx.book.evening(day, stats);
+  }
 
   // ---- per-store results ----
   const visits = new Map<string, number>();
@@ -508,9 +550,11 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number): RunResu
   const stores: RunStores = {};
   let totalVisits = 0;
   let totalKwh = 0;
+  const kwhHourly = new Map(ctx.stores.map((s) => [s.id, storeKwhByHour(ctx, s)]));
   for (const s of ctx.stores) {
     const c = cfg[s.id];
-    const kwh = storeKwhPerDay(ctx, s) * DAYS_PER_RUN;
+    const shop = ctx.book.shops[s.idx];
+    const kwh = kwhHourly.get(s.id)!.reduce((a, b) => a + b, 0) * DAYS_PER_RUN;
     const vd = [...visitorDays.get(s.id)!.values()];
     const returnRate = vd.length ? vd.filter((x) => x.size > 1).length / vd.length : 0;
     const kpis: StoreKpis = { visits: visits.get(s.id)!, kwh: round(kwh), returnRate: round2(returnRate) };
@@ -520,6 +564,7 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number): RunResu
       lighting: [...c.lighting],
       kpis,
       visitsByHour: byHour.get(s.id)!.map((n) => round2(n / DAYS_PER_RUN)),
+      ...(s.type === "club" ? {} : { schedule: structuredClone(shop.src.schedule), closedFromDay: shop.src.closedFromDay }),
     };
     if (s.type !== "club") {
       totalVisits += kpis.visits;
@@ -535,7 +580,7 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number): RunResu
     returnRate: round2(pairs.length ? pairs.filter((x) => x.size > 1).length / pairs.length : 0),
   };
   const demandByHourKw = Array(24).fill(0);
-  for (const s of ctx.stores) if (s.type !== "club") storeKwhByHour(ctx, s).forEach((k, h) => (demandByHourKw[h] += k));
+  for (const s of ctx.stores) if (s.type !== "club") kwhHourly.get(s.id)!.forEach((k, h) => (demandByHourKw[h] += k));
   const footfall = Array(24).fill(0);
   const returningIds = new Set<string>();
   const oneOffIds = new Set<string>();
@@ -554,7 +599,9 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number): RunResu
     footfallByHour: footfall.map((n) => round(n / DAYS_PER_RUN)),
     agents: { returning: returningIds.size, oneOff: oneOffIds.size, total: returningIds.size + oneOffIds.size },
     missedByHour: Object.fromEntries(ctx.stores.map((s) => [s.id, (ctx.missed.get(s.id) ?? Array(24).fill(0)).map((n) => round2(n / DAYS_PER_RUN))])),
-    kwhByHour: Object.fromEntries(ctx.stores.map((s) => [s.id, storeKwhByHour(ctx, s).map(round2)])),
+    kwhByHour: Object.fromEntries(ctx.stores.map((s) => [s.id, kwhHourly.get(s.id)!.map(round2)])),
+    ownerEvents: ctx.book.allEvents(),
+    streetEvents: street,
   };
 }
 
