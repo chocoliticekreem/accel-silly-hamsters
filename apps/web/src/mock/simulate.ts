@@ -6,6 +6,7 @@ import type { PersonDay } from "../api/economy";
 import type { AgentDay, CityMap, DayData, LightLevel, OwnerEvent, PathKey, RunDay, RunKpis, RunStores, StoreKpis, StoreType, StoreVisit, StreetEvent } from "../api/contract";
 import { DAYS_PER_RUN, MINUTES_PER_DAY } from "../api/contract";
 import { frontage } from "../sim/geometry";
+import { mergeDays } from "../sim/interp";
 import type { RunConfig } from "./configs";
 import { H_STREETS, V_STREETS } from "./map";
 import { aggregateDaily } from "./daily";
@@ -530,6 +531,8 @@ export interface RunResult {
   demandByHourKw: number[];
   /** People in the area by hour of day, averaged over the 14 days. */
   footfallByHour: number[];
+  /** [day - 1][hour]: mean agents on the street in that clock hour (GET /api/runs/{run}/footfall). */
+  onStreetByDayHour: number[][];
   agents: { returning: number; oneOff: number; total: number };
   /** storeId → people who found it shut, per day, by hour. */
   missedByHour: Record<string, number[]>;
@@ -671,6 +674,7 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number, run = 1,
     owners: owners.map(({ loc: _loc, ...o }) => o),
     demandByHourKw: demandByHourKw.map(round2),
     footfallByHour: footfall.map((n) => round(n / DAYS_PER_RUN)),
+    onStreetByDayHour: onStreetByDayHour(days),
     agents: { returning: returningIds.size, oneOff: oneOffIds.size, total: returningIds.size + oneOffIds.size },
     missedByHour: Object.fromEntries(ctx.stores.map((s) => [s.id, (ctx.missed.get(s.id) ?? Array(24).fill(0)).map((n) => round2(n / DAYS_PER_RUN))])),
     kwhByHour: Object.fromEntries(ctx.stores.map((s) => [s.id, kwhHourly.get(s.id)!.map(round2)])),
@@ -678,6 +682,38 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number, run = 1,
     streetEvents: street,
     daily,
   };
+}
+
+/**
+ * Mean agents on the street (between first and last keyframe, not inside a store) in each clock hour of each day,
+ * counted minute by minute like the backend's footfall endpoint. A mock trip past midnight is listed only in the
+ * day it started, so each day also reads the day before.
+ */
+function onStreetByDayHour(days: DayData[]): number[][] {
+  return days.map((d, i) => {
+    const start = (d.day - 1) * MINUTES_PER_DAY;
+    const diff = new Float64Array(MINUTES_PER_DAY + 1);
+    /** `delta` on every whole minute m with from <= m < to inside this day. */
+    const add = (from: number, to: number, delta: number) => {
+      const lo = Math.max(Math.ceil(from) - start, 0);
+      const hi = Math.min(Math.ceil(to) - start, MINUTES_PER_DAY);
+      if (lo >= hi) return;
+      diff[lo] += delta;
+      diff[hi] -= delta;
+    };
+    for (const a of mergeDays(days.slice(Math.max(0, i - 1), i + 1))) {
+      if (!a.path.length) continue;
+      add(a.path[0][0], Math.floor(a.path[a.path.length - 1][0]) + 1, 1);
+      for (const v of a.visits) add(v.tIn, v.tOut, -1);
+    }
+    const hours = Array<number>(24).fill(0);
+    let onStreet = 0;
+    for (let m = 0; m < MINUTES_PER_DAY; m++) {
+      onStreet += diff[m];
+      hours[Math.floor(m / 60)] += onStreet;
+    }
+    return hours.map((h) => round2(h / 60));
+  });
 }
 
 // ---------- owners as people ----------

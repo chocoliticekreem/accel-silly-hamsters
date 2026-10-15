@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import demandData from "../../../../data/processed/demand.json";
 import { DAYS_PER_RUN } from "../api/contract";
+import { mergeDays } from "../sim/interp";
 import { createMockState, mockApi } from ".";
 
 const state = createMockState();
@@ -62,6 +64,36 @@ describe("area summary", () => {
     expect(a.demandByHourKw[a.peakHour]).toBe(a.peakKw);
     expect(b.co2Kg).toBeLessThan(a.co2Kg);
     expect(b.energyCostGbp).toBeLessThan(a.energyCostGbp);
+  });
+});
+
+describe("street footfall", () => {
+  it("publishes the pipeline's people-per-agent scale, as the backend does", async () => {
+    const stated = /Scale: 1 sim agent ~ (\d+) real arrivals/.exec(demandData.notes.join(" "));
+    expect(stated, "demand.py no longer states its scale in demand.json's notes").not.toBeNull();
+    expect((await api.health())!.peoplePerAgent).toBe(Number(stated![1]));
+  });
+
+  it("counts the agents on the street per day and hour, minute by minute", async () => {
+    const f = (await api.footfall(1))!;
+    expect(f.run).toBe(1);
+    expect(f.onStreetByDayHour).toHaveLength(DAYS_PER_RUN);
+    for (const day of f.onStreetByDayHour) expect(day).toHaveLength(24);
+    // day 2 by brute force: everyone between their first and last keyframe and not inside a store
+    const agents = mergeDays([await api.day(1, 1), await api.day(1, 2)]);
+    const hours = Array.from({ length: 24 }, (_, h) => {
+      let n = 0;
+      for (let m = 1440 + h * 60; m < 1440 + (h + 1) * 60; m++)
+        for (const a of agents) {
+          const inside = a.visits.some((v) => v.tIn <= m && m < v.tOut);
+          if (a.path[0][0] <= m && m <= a.path[a.path.length - 1][0] && !inside) n++;
+        }
+      return Math.round((n / 60) * 100) / 100;
+    });
+    expect(f.onStreetByDayHour[1]).toEqual(hours);
+    // a weekday 04:00 is quieter than its evening, and Saturday is not a copy of Tuesday
+    expect(f.onStreetByDayHour[1][4]).toBeLessThan(f.onStreetByDayHour[1][18]);
+    expect(f.onStreetByDayHour[5]).not.toEqual(f.onStreetByDayHour[1]);
   });
 });
 
