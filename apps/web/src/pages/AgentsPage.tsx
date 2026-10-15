@@ -70,11 +70,11 @@ export function AgentsPage({ storeId: requested }: { storeId: string | null }) {
   const [message, setMessage] = useState<string | null>(null);
   const [decided, setDecided] = useState<Record<string, "approve" | "reject">>({});
 
-  // /agents without a shop: the demo shop when the map has it, else the first shop
+  // no shop, or one this map doesn't have (the mock city): the demo shop when present, else the first shop
   useEffect(() => {
-    if (storeId) return;
     void api.map().then((m) => {
       const shops = m.stores.filter((s) => s.type !== "club");
+      if (storeId && shops.some((s) => s.id === storeId)) return;
       setStoreId(shops.find((s) => s.id === DEMO_STORE)?.id ?? shops[0]?.id ?? null);
     });
   }, [storeId]);

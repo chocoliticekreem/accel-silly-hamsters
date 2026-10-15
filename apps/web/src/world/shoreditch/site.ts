@@ -1,6 +1,6 @@
 // Where the Shoreditch High Street station box sits and how it is laid out (shared by world/Station.tsx, which draws
 // it, and the ShoreditchStation module, which walks people in and out of its ticket hall). Cached per map.
-import { Group, Mesh, type BufferGeometry, type Material } from "three";
+import { CanvasTexture, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, SRGBColorSpace, type BufferGeometry, type Material } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Building, CityMap, Street } from "../../api/contract";
 import { toScene } from "../../sim/geometry";
@@ -122,15 +122,87 @@ export function modelObject(model: HeroModel, opts: { shadows?: boolean; noRayca
     if (opts.noRaycast) mesh.raycast = noRay;
     root.add(mesh);
   }
-  const byKey = new Map<string, SignSpec[]>();
-  for (const s of model.signs) byKey.set(s.key, [...(byKey.get(s.key) ?? []), s]);
-  for (const [key, list] of byKey) {
-    const geo = list.length === 1 ? list[0].geo : mergeGeometries(list.map((s) => s.geo), false);
-    if (!geo) continue;
-    const mesh = new Mesh(geo, signMaterial(list[0]) as Material);
-    mesh.name = `sign:${key}`;
+  // signs: every distinct sign painted once into an atlas, so all self-lit signs are one draw call and all painted
+  // (scene-lit) ones another, however many kinds there are
+  for (const glow of [true, false]) {
+    const list = model.signs.filter((s) => s.glow === glow);
+    if (!list.length) continue;
+    const atlas = signAtlas(list);
+    if (!atlas) {
+      for (const s of list) root.add(new Mesh(s.geo, signMaterial(s) as Material));
+      continue;
+    }
+    const mesh = new Mesh(atlas.geo, atlas.material(glow));
+    mesh.name = `${model.name}:signs-${glow ? "lit" : "painted"}`;
     if (opts.noRaycast) mesh.raycast = noRay;
     root.add(mesh);
   }
   return root;
+}
+
+const ATLAS_W = 2048;
+const PAD = 3;
+
+/** Shelf-pack each distinct sign key's canvas into one texture and remap every sign plane's uvs into it. */
+function signAtlas(signs: SignSpec[]) {
+  const kinds = new Map<string, SignSpec>();
+  for (const s of signs) if (!kinds.has(s.key)) kinds.set(s.key, s);
+  const order = [...kinds.values()].sort((a, b) => b.h - a.h);
+  const slot = new Map<string, { x: number; y: number; w: number; h: number }>();
+  let x = 0;
+  let y = 0;
+  let shelf = 0;
+  for (const s of order) {
+    const w = Math.min(s.w, ATLAS_W - 2 * PAD);
+    if (x + w + 2 * PAD > ATLAS_W) {
+      x = 0;
+      y += shelf;
+      shelf = 0;
+    }
+    slot.set(s.key, { x: x + PAD, y: y + PAD, w, h: s.h });
+    x += w + 2 * PAD;
+    shelf = Math.max(shelf, s.h + 2 * PAD);
+  }
+  const H = Math.pow(2, Math.ceil(Math.log2(Math.max(64, y + shelf))));
+  if (H > 4096 || typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = ATLAS_W;
+  canvas.height = H;
+  const g = canvas.getContext("2d");
+  if (!g) return null;
+  for (const s of order) {
+    const r = slot.get(s.key)!;
+    // paint at the sign's own size on a scratch canvas, then copy (keeps each painter's clearRect/fill local)
+    const c = document.createElement("canvas");
+    c.width = s.w;
+    c.height = s.h;
+    const cg = c.getContext("2d");
+    if (!cg) continue;
+    s.draw(cg, s.w, s.h);
+    g.drawImage(c, r.x, r.y, r.w, r.h);
+  }
+  const geos = signs.map((s) => {
+    const r = slot.get(s.key)!;
+    const geo = (s.geo.index ? s.geo.toNonIndexed() : s.geo.clone()) as BufferGeometry;
+    const uv = geo.getAttribute("uv");
+    for (let i = 0; i < uv.count; i++) {
+      const u = uv.getX(i);
+      const v = uv.getY(i);
+      uv.setXY(i, (r.x + u * r.w) / ATLAS_W, 1 - (r.y + (1 - v) * r.h) / H);
+    }
+    return geo;
+  });
+  const geo = mergeGeometries(geos, false);
+  geos.forEach((g2) => g2.dispose());
+  if (!geo) return null;
+  const tex = new CanvasTexture(canvas);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = 8;
+  return {
+    geo,
+    material: (glow: boolean): Material =>
+      glow
+        ? new MeshBasicMaterial({ map: tex, toneMapped: false, side: DoubleSide, alphaTest: 0.3, polygonOffset: true, polygonOffsetFactor: -2 })
+        : new MeshStandardMaterial({ map: tex, roughness: 0.7, alphaTest: 0.3, polygonOffset: true, polygonOffsetFactor: -2 }),
+  };
 }
