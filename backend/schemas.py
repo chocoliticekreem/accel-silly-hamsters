@@ -1,0 +1,218 @@
+"""Internal shapes: processed pipeline data (data/processed/*.json) and run files.
+
+These are the seams between pipeline -> sim -> agents -> api. The frontend contract lives in
+backend/contract.py; map.json is contract.MapData (served as-is by GET /api/map).
+Every processed file carries `sources` (citations) and `fallback` (True when hand-written
+defaults were used because a source was unreachable or needed a key we don't have).
+"""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from backend.contract import Kpis, LightingLevel, Source, StoreType
+
+Hourly = list[float]  # always 24 values, index = clock hour
+
+
+class Model(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ProcessedFile(Model):
+    sources: list[Source] = Field(default_factory=list)
+    fallback: bool = False
+    notes: list[str] = Field(default_factory=list)
+
+
+# --- personas.json --------------------------------------------------------------------------
+
+
+class Persona(Model):
+    id: str  # kebab-case, e.g. "night-owl"; appears as DayAgent.persona
+    label: str
+    share: float  # share of all arrivals, sums to 1 across personas
+    returningProb: float  # probability that an agent of this persona is a regular (returning)
+    activeHours: Hourly = Field(min_length=24, max_length=24)  # relative arrival weight by hour
+    weekendMultiplier: float = 1.0  # arrival weight multiplier on Sat/Sun
+    storePrefs: dict[StoreType, float]  # preference weight per store type, 0..1
+    lightingSensitivity: float  # 0..1, how much a lit facade at night attracts them
+    stopsPerTrip: tuple[float, float]  # min/max store visits per trip
+    dwellMinutes: dict[StoreType, tuple[int, int]]  # min/max dwell per store type
+    entryKinds: dict[Literal["street", "station"], float]  # where they arrive from
+    evidence: list[Source] = Field(default_factory=list)  # anonymous citations only
+
+
+class PersonasFile(ProcessedFile):
+    personas: list[Persona]
+
+
+# --- demand.json ----------------------------------------------------------------------------
+
+
+class EntryDemand(Model):
+    weekday: Hourly = Field(min_length=24, max_length=24)  # arrivals per hour
+    weekend: Hourly = Field(min_length=24, max_length=24)
+
+
+class ClubNight(Model):
+    clubId: str  # a MapStore.id with type "club"
+    days: list[str]  # weekday names from timeutil.WEEKDAYS, e.g. ["thu", "fri", "sat"]
+    open: str
+    close: str
+    capacity: int  # people inside at peak; drives spill-out at close
+
+
+class DemandFile(ProcessedFile):
+    entryPoints: dict[str, EntryDemand]  # keyed by contract.EntryPoint.id
+    returningPoolSize: int  # size of the fixed pool of regulars across all 14 days
+    returningShare: float  # share of daily arrivals that come from the returning pool
+    clubNights: list[ClubNight]
+
+
+# --- energy.json ----------------------------------------------------------------------------
+
+
+class EnergyFile(ProcessedFile):
+    kwhPerM2PerOpenHour: dict[StoreType, float]  # baseline while open
+    standbyKwhPerM2PerHour: dict[StoreType, float]  # fridges, alarms, etc. while closed
+    lightingKw: dict[LightingLevel, float]  # facade + window lighting load by level
+    carbonGPerKwh: Hourly = Field(min_length=24, max_length=24)  # typical London profile
+    priceGbpPerKwh: Hourly = Field(min_length=24, max_length=24)
+
+
+# --- calibration.json -----------------------------------------------------------------------
+
+
+class CalibrationVenue(Model):
+    name: str
+    storeId: str | None  # matching MapStore.id, if the venue is in the map
+    type: StoreType
+    weekday: Hourly = Field(min_length=24, max_length=24)  # busyness 0..100 by hour
+    weekend: Hourly = Field(min_length=24, max_length=24)
+    measured: bool  # False when the shape is a labelled placeholder, not real Popular Times
+    source: Source | None = None
+
+
+class CalibrationFile(ProcessedFile):
+    venues: list[CalibrationVenue]
+
+
+# --- run files (runs/{run}/...) -------------------------------------------------------------
+
+
+class StoreConfig(Model):
+    open: str
+    close: str
+    lighting: list[LightingLevel] = Field(min_length=24, max_length=24)
+
+
+class RunConfig(Model):
+    """runs/{run}/config.json: everything needed to reproduce a run."""
+
+    run: int
+    seed: int
+    simVersion: str
+    stores: dict[str, StoreConfig]  # every MapStore.id, clubs included (clubs never change)
+    parentRun: int | None = None
+    appliedChanges: list[dict] = Field(default_factory=list)  # contract.Suggestion dicts
+    configHash: str
+
+
+class CostSummary(Model):
+    calls: int = 0
+    inputTokens: int = 0
+    outputTokens: int = 0
+    cacheReadTokens: int = 0
+    cacheWriteTokens: int = 0
+    costGbp: float = 0.0
+    savedByCachingGbp: float = 0.0
+    costPerStoreWeekGbp: float = 0.0
+    byAgent: dict[str, float] = Field(default_factory=dict)  # GBP per agent name
+
+
+class CacheStats(Model):
+    hits: dict[str, int] = Field(default_factory=dict)  # per cache layer
+    misses: dict[str, int] = Field(default_factory=dict)
+
+
+class RunSummary(Model):
+    """runs/{run}/summary.json."""
+
+    run: int
+    seed: int
+    kpis: Kpis
+    objective: str
+    objectiveValue: float
+    peakKw: float
+    peakHour: int
+    co2Kg: float
+    energyCostGbp: float
+    demandByHourKw: Hourly = Field(min_length=24, max_length=24)  # city curve, avg over 14 days
+    footfallByHour: Hourly = Field(min_length=24, max_length=24)  # people in the area
+    agents: dict[str, int]  # {"returning": n, "oneOff": n, "total": n}
+    durationSec: float
+    cost: CostSummary = Field(default_factory=CostSummary)
+    cache: CacheStats = Field(default_factory=CacheStats)
+
+
+class NotebookEntry(Model):
+    run: int
+    line: str  # <= 12 words
+    objectiveValue: float | None = None
+    at: str
+
+
+class AnalystState(Model):
+    """runs/analyst_state.json: checkpoint written after every step; resume reads it."""
+
+    sessionId: str
+    state: Literal["running", "stopped"]
+    startedAt: str
+    updatedAt: str
+    backend: str
+    fresh: bool
+    seed: int
+    baselineRun: int | None = None
+    currentRun: int | None = None
+    bestRun: int | None = None
+    bestObjective: float | None = None
+    iterations: int = 0
+    runsThisSession: list[int] = Field(default_factory=list)
+    lowGainStreak: int = 0
+    step: str = "start"  # last completed step, for resume
+    stoppedReason: Literal["threshold", "max_runs", "budget", "error"] | None = None
+    spentGbp: float = 0.0
+    error: str | None = None
+
+
+class Decision(Model):
+    """runs/decisions.json entries: the owner's approve/reject, read by store agents next week."""
+
+    storeId: str
+    run: int | None
+    suggestionIndex: int
+    suggestion: dict | None
+    decision: Literal["approve", "reject"]
+    reason: str | None = None
+    at: str
+
+
+class StoreStats(Model):
+    """runs/{run}/store_stats.json[storeId]: per-store detail the agents read (not served raw).
+
+    All hourly arrays are averages per day over the 14 days, index = clock hour.
+    """
+
+    visitsByHourWeekday: Hourly = Field(min_length=24, max_length=24)
+    visitsByHourWeekend: Hourly = Field(min_length=24, max_length=24)
+    footfallNearbyByHour: Hourly = Field(min_length=24, max_length=24)  # passers-by within ~60 m
+    foundClosedByHour: Hourly = Field(min_length=24, max_length=24)  # would have entered, was shut
+    kwhByHour: Hourly = Field(min_length=24, max_length=24)
+    uniqueVisitors: int
+    repeatVisitors: int  # visited on 2+ different days
+    visitsByPersona: dict[str, int]
+    energyCostGbp: float
+    co2Kg: float
