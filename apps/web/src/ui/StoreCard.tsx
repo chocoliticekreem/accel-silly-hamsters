@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { api } from "../api/client";
 import { hourOf, isOpenAt, minuteOfDay } from "../sim/time";
-import { invalidate, useMap, watchRun, useRunStores, useSuggestions } from "../state/data";
+import { invalidate, useAnalyst, useMap, watchRun, useRunStores, useSuggestions } from "../state/data";
 import { useSim } from "../state/store";
 import { STORE_COLORS } from "../world/palette";
 import { Delta } from "./Delta";
@@ -21,6 +21,7 @@ export function StoreCard() {
   const stores = useRunStores(run).data;
   const prevStores = useRunStores(run > 1 ? run - 1 : null).data;
   const suggestions = useSuggestions(run).data;
+  const analystRan = (useAnalyst().data?.iterations ?? 0) > 0;
   const [busy, setBusy] = useState<null | "store" | "all">(null);
 
   const store = map?.stores.find((s) => s.id === id);
@@ -103,7 +104,7 @@ export function StoreCard() {
           <h3 className="section-title">
             Suggestions <span className="muted">{mine.length} change{mine.length === 1 ? "" : "s"}</span>
           </h3>
-          {suggestions ? <SuggestionList items={mine} /> : <div className="empty">…</div>}
+          {suggestions ? <SuggestionList items={mine} empty={analystRan ? undefined : "No suggestions yet · agents haven't run"} /> : <div className="empty">…</div>}
           <div className="btn-row">
             <button className="btn btn-lamp" disabled={!mine.length || !!busy} onClick={() => apply("store")}>
               {busy === "store" ? "Applying…" : "Apply to this store"}

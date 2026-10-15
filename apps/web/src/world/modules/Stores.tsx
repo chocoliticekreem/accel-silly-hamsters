@@ -154,6 +154,14 @@ function StoreBox({ store, b, nx, nz }: { store: Store; b: Building; nx: number;
         <meshStandardMaterial color={LAMP} emissive={LAMP} emissiveIntensity={0.9} transparent opacity={0.85} toneMapped={false} />
       </mesh>
 
+      {/* selection beacon: findable among real-map office blocks */}
+      {selected && (
+        <mesh position-y={h + 30} renderOrder={3}>
+          <cylinderGeometry args={[0.6, 1.6, 60, 16, 1, true]} />
+          <meshBasicMaterial color={LAMP} transparent opacity={0.35} blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
+        </mesh>
+      )}
+
       {/* selection ring */}
       <group ref={ring} visible={false}>
         <mesh rotation-x={-Math.PI / 2} position-y={0.2}>

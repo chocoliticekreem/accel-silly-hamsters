@@ -60,7 +60,7 @@ export function OwnerReport() {
           </button>
         </header>
 
-        {error && <div className="empty">Report unavailable</div>}
+        {error && <div className="empty">No report for run {run} yet · the store agents write it after a training run</div>}
         {!report && !error && <div className="empty">…</div>}
         {report && (
           <>

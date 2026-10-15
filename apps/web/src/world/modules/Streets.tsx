@@ -1,7 +1,7 @@
 // Module: Streets. Each street polyline segment becomes a flat asphalt strip with a dashed centre line,
 // plus zebra crossings where two streets meet. Pure geometry, built once.
 import { useMemo } from "react";
-import { BoxGeometry, Object3D, type InstancedMesh } from "three";
+import { BoxGeometry, CylinderGeometry, Object3D, type InstancedMesh } from "three";
 import type { Street } from "../../api/contract";
 import { toScene } from "../../sim/geometry";
 import { useWorld } from "../context";
@@ -38,7 +38,7 @@ function fill(mesh: InstancedMesh | null, mats: Object3D[]) {
 
 export default function Streets() {
   const { map } = useWorld();
-  const { roads, dashes, zebras } = useMemo(() => {
+  const { roads, dashes, zebras, joints } = useMemo(() => {
     const segs = segments(map.streets);
     const mk = (x: number, y: number, z: number, sx: number, sz: number, rot: number) => {
       const o = new Object3D();
@@ -72,14 +72,25 @@ export default function Streets() {
           for (let i = -2; i <= 2; i++) zebras.push(mk(x + dir * offV, 0.12, z + i * (h.width / 5.5), 3, h.width / 12, 0));
         }
       }
-    return { roads, dashes, zebras };
+    // round joints at every polyline vertex: fills the notches where angled segments meet
+    const joints: Object3D[] = [];
+    for (const st of map.streets)
+      for (const p of st.points) {
+        const [jx, jz] = toScene(...p);
+        joints.push(mk(jx, 0.05, jz, st.width / 2, st.width / 2, 0));
+      }
+    return { roads, dashes, zebras, joints };
   }, [map]);
 
   const box = useMemo(() => new BoxGeometry(1, 0.1, 1), []);
+  const disc = useMemo(() => new CylinderGeometry(1, 1, 0.1, 20), []);
 
   return (
     <group name="streets">
       <instancedMesh args={[box, undefined, roads.length]} receiveShadow ref={(m) => fill(m, roads)}>
+        <meshStandardMaterial color={GROUND.asphalt} roughness={0.9} />
+      </instancedMesh>
+      <instancedMesh args={[disc, undefined, Math.max(1, joints.length)]} receiveShadow ref={(m) => fill(m, joints)}>
         <meshStandardMaterial color={GROUND.asphalt} roughness={0.9} />
       </instancedMesh>
       <instancedMesh args={[box, undefined, Math.max(1, dashes.length)]} ref={(m) => fill(m, dashes)}>

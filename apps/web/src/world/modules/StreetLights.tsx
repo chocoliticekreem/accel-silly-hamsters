@@ -3,7 +3,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { Object3D, type InstancedMesh, type MeshStandardMaterial } from "three";
-import { toScene } from "../../sim/geometry";
+import { closestOnStreet, toScene } from "../../sim/geometry";
 import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
@@ -30,16 +30,14 @@ export default function StreetLights() {
         for (let d = SPACING / 2; d < len; d += SPACING) {
           const x = ax + ux * d;
           const z = az + uz * d;
-          // skip junctions: too close to any crossing street centre line
-          const nearJunction = map.streets.some((o) => {
-            if (o === s) return false;
-            const [px, pz] = o.points[0];
-            // crossing streets run the other way: compare along our direction of travel
-            return Math.abs(ux) > 0.5 ? Math.abs(x - px) < o.width + 2 : Math.abs(z - pz) < o.width + 2;
-          });
-          if (nearJunction) continue;
           const side = (Math.floor(d / SPACING) % 2) * 2 - 1; // alternate sides
-          out.push(toScene(x - uz * off * side, z + ux * off * side));
+          const lx = x - uz * off * side;
+          const lz = z + ux * off * side;
+          // skip junctions (lamp would stand in another street) and lamps inside a building footprint
+          const inStreet = map.streets.some((o) => o !== s && closestOnStreet(o, lx, lz)[2] < o.width / 2 + 1);
+          const inBuilding = map.buildings.some((b) => Math.abs(lx - b.x) < b.w / 2 && Math.abs(lz - b.z) < b.d / 2);
+          if (inStreet || inBuilding) continue;
+          out.push(toScene(lx, lz));
         }
       }
     return out;
