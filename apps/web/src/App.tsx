@@ -31,6 +31,7 @@ import { Clock, Hud } from "./ui/Hud";
 import { Icon } from "./ui/icons";
 import { Legend } from "./ui/Legend";
 import { PlaybackBar } from "./ui/PlaybackBar";
+import { OwnerReport } from "./ui/OwnerReport";
 import { StoreCard } from "./ui/StoreCard";
 import { Toast } from "./ui/Toast";
 import { SafetyToggle } from "./ui/SafetyToggle";
@@ -113,6 +114,7 @@ export default function App() {
         {panel === "area" && <AreaPanel />}
         {panel === "agents" && <AgentsPanel />}
         {!compare && <StoreCard />}
+        {panel === "report" && <OwnerReport />}
         <CityFeedMount />
         <div className="bottom">
           <Legend />
