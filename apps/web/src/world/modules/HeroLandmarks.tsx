@@ -1,8 +1,7 @@
 // Module: HeroLandmarks (decorative). Places the procedural Shoreditch hero landmarks (world/models/landmarks.ts):
 // XOYO, art'otel, Encode Hub, Boxpark and the Old Street roundabout. A landmark goes where `map.landmarks` says
-// (optional, additive: { id, x, z, rotation? } in contract coords) or else at its real-world offset from
-// Shoreditch High St station. If that spot is covered by a map building it nudges outwards to the nearest
-// free spot, and it turns its street face toward the station so the default camera sees the front.
+// (optional, additive: { id, x, z, rotation? } in contract coords) or else at its real OSM position. It turns
+// its street face toward Shoreditch High St station (snapped to a quarter turn) so the default camera sees it.
 // Group names are stable (`landmark-xoyo`, `landmark-artotel`, `landmark-encode`, `landmark-boxpark`,
 // `landmark-oldstreet`) so other modules (interiors, quick travel) can find and hide them.
 import { useFrame } from "@react-three/fiber";
@@ -25,13 +24,13 @@ interface MapLandmark {
   rotation?: number;
 }
 
-/** Contract-coord offsets (x east, z north) from Shoreditch High St station. */
-const FALLBACK: { name: string; match: RegExp; dx: number; dz: number; nudge: boolean }[] = [
-  { name: "landmark-xoyo", match: /xoyo/i, dx: -640, dz: 220, nudge: true },
-  { name: "landmark-artotel", match: /art.?otel/i, dx: -530, dz: 320, nudge: true },
-  { name: "landmark-encode", match: /encode/i, dx: -540, dz: 630, nudge: true },
-  { name: "landmark-oldstreet", match: /old.?street/i, dx: -850, dz: 270, nudge: false },
-  { name: "landmark-boxpark", match: /boxpark/i, dx: -20, dz: -40, nudge: true },
+/** Real OSM positions in contract coords (x east, z north). `nudge` moves off map buildings if they overlap. */
+const FALLBACK: { name: string; match: RegExp; x: number; z: number; nudge: boolean }[] = [
+  { name: "landmark-xoyo", match: /xoyo/i, x: -786, z: 248, nudge: false }, // store c4, building b72
+  { name: "landmark-artotel", match: /art.?otel/i, x: -601, z: 339, nudge: false },
+  { name: "landmark-encode", match: /encode/i, x: -645, z: 481, nudge: false },
+  { name: "landmark-oldstreet", match: /old.?street/i, x: -880, z: 255, nudge: false },
+  { name: "landmark-boxpark", match: /boxpark/i, x: -124, z: 26, nudge: false },
 ];
 
 function footprintFree(map: CityMap, x: number, z: number, hw: number, hd: number) {
@@ -57,8 +56,8 @@ function place(map: CityMap) {
   return FALLBACK.map((f) => {
     const hit = listed.find((l) => f.match.test(l.id));
     const size = heroModel(f.name).size;
-    let x = hit?.x ?? station.x + f.dx;
-    let z = hit?.z ?? station.z + f.dz;
+    let x = hit?.x ?? f.x;
+    let z = hit?.z ?? f.z;
     // contract → scene, then face the station (scene rotation y = atan2(dx, dz) points +z at it)
     const [sx0, sz0] = toScene(station.x, station.z);
     let [sx, sz] = toScene(x, z);

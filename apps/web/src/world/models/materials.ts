@@ -67,8 +67,8 @@ export function heroMaterials(): Record<Slot, MeshStandardMaterial> {
   mats.glass.onBeforeCompile = (s) => {
     s.fragmentShader = s.fragmentShader.replace(
       "#include <emissivemap_fragment>",
-      // lit windows: brighter glass colours glow more, so dark tinted glass stays dark
-      "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= 0.25 + 2.5 * max(vColor.r, max(vColor.g, vColor.b));",
+      // lit windows: only the warmer/brighter glass colours glow, so dark tinted glass (cars, unlit rooms) stays dark
+      "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= 1.4 * smoothstep(0.055, 0.1, max(vColor.r, max(vColor.g, vColor.b)));",
     );
   };
   mats.glass.customProgramCacheKey = () => "hero-glass";
@@ -78,7 +78,7 @@ export function heroMaterials(): Record<Slot, MeshStandardMaterial> {
 /** 0 = day, 1 = deep night: windows light up, signs get punchier. */
 export function setHeroNight(level: number) {
   const m = heroMaterials();
-  m.glass.emissiveIntensity = 0.55 * level;
+  m.glass.emissiveIntensity = 0.65 * level;
   m.glow.emissiveIntensity = 1.1 + 1.4 * level;
 }
 

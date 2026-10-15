@@ -10,7 +10,7 @@ import { label } from "./materials";
 const TYRE = "#17181b";
 const HUB = "#9aa1a9";
 const DARK = "#1c1d21";
-const GLASS = "#1d2a36";
+const GLASS = "#203142";
 const CHROME = "#c9ced4";
 const HEAD = "#fff4d6";
 const TAIL = "#ff2a1a";
@@ -288,7 +288,7 @@ export function ambulance(): HeroModel {
     k.rbox("glow", 0.12, 0.4, 0.05, hw - 0.12, 1.1, -hl - 0.01, TAIL, 0.03);
   });
   for (const s of [1, -1])
-    k.sign("amb-side", 2.6, 0.42, [s * (hw + 0.03), 2.15, -0.9], [512, 96], (c, w, h) => {
+    k.sign("amb-side", 2.6, 0.42, [s * (hw + 0.03), 2.15, -1.45], [512, 96], (c, w, h) => {
       c.clearRect(0, 0, w, h);
       label(c, "AMBULANCE", w / 2, h / 2 + 2, w - 12, 76, "#0b5a2a");
     }, false, [0, (s * Math.PI) / 2, 0]);
