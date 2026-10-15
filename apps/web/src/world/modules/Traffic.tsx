@@ -14,6 +14,7 @@ import { BatchedMesh, Color, Matrix4, MeshBasicMaterial, MeshStandardMaterial, Q
 import type { CityMap } from "../../api/contract";
 import { rng } from "../../mock/rng";
 import { extendStreets } from "../../sim/edges";
+import { isOldGyratory } from "../../sim/oldStreetArea";
 import { newPoint, polyline, type Polyline } from "../../sim/polyline";
 import { toScene } from "../../sim/geometry";
 import { nightLevel } from "../../sim/sky";
@@ -177,7 +178,7 @@ function build(map: CityMap) {
   const all: Vehicle[] = [];
   // streets that leave the map run on into the surroundings: cars drive out of sight and come back in
   for (const s of extendStreets(map)) {
-    if (s.width < 7) continue; // footpaths and alleys
+    if (s.width < 7 || isOldGyratory(s)) continue; // footpaths and alleys; the removed gyratory (OldStreet runs that)
     const path = polyline(s.points);
     const R = s.width / 4;
     const Ls = path.length - 2 * R;

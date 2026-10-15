@@ -131,8 +131,12 @@ export function buildOldStreet(data: OldStreetData): Built {
   /** A lit atlas sign w × h, centre (X, y, Z) scene-local, facing local +z after ry. */
   const sign = (spec: [string, number, number, (c: CanvasRenderingContext2D, w: number, h: number) => void], w: number, h: number, X: number, y: number, Z: number, ry: number, both = false) => {
     const cell = atlas.cell(spec[0], spec[1], spec[2], spec[3]);
-    atlas.quad(cell, w, h, m4.compose(new Vector3(X, y, Z), q.setFromAxisAngle(UP, ry), new Vector3(1, 1, 1)));
-    if (both) atlas.quad(cell, w, h, m4.compose(new Vector3(X, y, Z), q.setFromAxisAngle(UP, ry + Math.PI), new Vector3(1, 1, 1)));
+    // two-sided signs: two quads a few cm apart, so each face shows its own (unmirrored) side
+    const o = both ? 0.03 : 0;
+    const nx = Math.sin(ry) * o;
+    const nz = Math.cos(ry) * o;
+    atlas.quad(cell, w, h, m4.compose(new Vector3(X + nx, y, Z + nz), q.setFromAxisAngle(UP, ry), new Vector3(1, 1, 1)));
+    if (both) atlas.quad(cell, w, h, m4.compose(new Vector3(X - nx, y, Z - nz), q.setFromAxisAngle(UP, ry + Math.PI), new Vector3(1, 1, 1)));
   };
   /** Kit signs (from shared street furniture builders) go into the same atlas. */
   const adoptSigns = (specs: SignSpec[]) => {
@@ -271,10 +275,11 @@ export function buildOldStreet(data: OldStreetData): Built {
   const doors = { n: [-5.4, 0.6] as [number, number], w: [-3.5, 2.5] as [number, number], s: [-1, 5] as [number, number] };
   k.at(pc[0], 0, pc[1], pry, () => {
     // floor inside: polished stone
-    k.slab("solid", -GX, GX, PY, PY + 0.02, -GZ, WELL.z0, "#d9d5cc");
-    k.slab("solid", WELL.x1, GX, PY, PY + 0.02, WELL.z0, GZ, "#d9d5cc");
-    k.slab("solid", -GX, WELL.x0, PY, PY + 0.02, WELL.z0, GZ, "#d9d5cc");
-    k.slab("solid", WELL.x0, WELL.x1, PY, PY + 0.02, WELL.z1, GZ, "#d9d5cc");
+    const FLOOR = "#cfc2a8"; // glass slot: polished stone by day, lit hall after dark
+    k.slab("glass", -GX, GX, PY, PY + 0.02, -GZ, WELL.z0, FLOOR);
+    k.slab("glass", WELL.x1, GX, PY, PY + 0.02, WELL.z0, GZ, FLOOR);
+    k.slab("glass", -GX, WELL.x0, PY, PY + 0.02, WELL.z0, GZ, FLOOR);
+    k.slab("glass", WELL.x0, WELL.x1, PY, PY + 0.02, WELL.z1, GZ, FLOOR);
     // glazing: transparent panes between steel mullions, gaps at the doors
     const glassLocal: { l: number; mm: Matrix4 }[] = [];
     const pane = (x0: number, z0: number, x1: number, z1: number) => {
@@ -386,7 +391,7 @@ export function buildOldStreet(data: OldStreetData): Built {
     ]) {
       const l = Math.hypot(bx - ax, bz - az);
       const ry = Math.atan2(-(bz - az), bx - ax);
-      k.box("glass", l, 1.1, 0.05, (ax + bx) / 2, CY1 + 0.8, (az + bz) / 2, "#a7bcc4", [0, ry, 0]);
+      k.box("paint", l, 1.1, 0.04, (ax + bx) / 2, CY1 + 0.8, (az + bz) / 2, "#7f8c90", [0, ry, 0]);
       k.box("metal", l, 0.06, 0.1, (ax + bx) / 2, CY1 + 1.36, (az + bz) / 2, "#3a3833", [0, ry, 0]);
     }
 
@@ -928,8 +933,19 @@ export function buildOldStreet(data: OldStreetData): Built {
     const FH = 4.3;
     const GROUND = 6.0;
     const top = GROUND + (FLOORS - 1) * FH;
-    slab("glass", scale(0.975), 0, GROUND, "#2b3237");
-    slab("glass", scale(0.965), GROUND, top, "#3c4850");
+    // glazing per floor and facade: some offices lit after dark, some not (unlit glass is darker than the glow cut-off)
+    const inner = scale(0.972);
+    for (let f = 0; f < FLOORS; f++) {
+      const y0 = f === 0 ? 0 : GROUND + (f - 1) * FH;
+      const y1 = (f === 0 ? GROUND : GROUND + f * FH) - 0.55;
+      for (let i = 0; i < inner.length; i++) {
+        const [ax, az] = S(...inner[i]);
+        const [bx, bz] = S(...inner[(i + 1) % inner.length]);
+        const lit = f === 0 || r() < 0.62;
+        wallXZ("glass", ax, az, bx, bz, y0, y1, 0.12, f === 0 ? "#6b5a44" : lit ? "#3c4850" : "#0b0e11");
+      }
+    }
+    slab("solid", scale(0.95), 0, top, "#2a2d30");
     for (let f = 0; f <= FLOORS - 1; f++) {
       const y = f === 0 ? GROUND : GROUND + f * FH;
       slab("solid", scale(1.0), y - 0.55, y, "#c9c4b9"); // exposed concrete slab edge
@@ -1047,6 +1063,6 @@ export function buildOldStreet(data: OldStreetData): Built {
   const cap = mergeGeometries(capParts, false) ?? new BufferGeometry();
   capParts.forEach((g) => g.dispose());
   const signs = atlas.mesh("old-street-signs");
-  return { parts, signs, glass, cap, screens, pools, heads, lanes, crossings, routes, strolls, label: [pc[0], 34, pc[1]] };
+  return { parts, signs, glass, cap, screens, pools, heads, lanes, crossings, routes, strolls, label: [pc[0], 16, pc[1]] };
 }
 
