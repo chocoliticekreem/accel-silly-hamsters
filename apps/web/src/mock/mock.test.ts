@@ -65,6 +65,33 @@ describe("area summary", () => {
   });
 });
 
+describe("store insights", () => {
+  it("serves a store-scoped insights panel with ranked, short insights", async () => {
+    const id = state.map.stores.find((s) => s.name === "Kebab Co")!.id;
+    const ins = (await api.insights(id, 1))!;
+    expect(ins.storeId).toBe(id);
+    expect(ins.hourly.visits).toHaveLength(24);
+    expect(ins.hourly.missedDemand).toHaveLength(24);
+    expect(ins.funnel.passersBy).toBeGreaterThan(ins.funnel.visits);
+    expect(ins.insights.length).toBeGreaterThan(0);
+    expect(ins.insights.length).toBeLessThanOrEqual(5);
+    for (const i of ins.insights) {
+      expect(i.title.length).toBeLessThanOrEqual(60);
+      expect(i.detail.length).toBeLessThanOrEqual(140);
+    }
+    // the data firewall: no other store's id anywhere in the payload
+    const others = state.map.stores.filter((s) => s.id !== id).map((s) => `"${s.id}"`);
+    const json = JSON.stringify(ins);
+    for (const o of others) expect(json).not.toContain(o);
+    // Kebab Co shuts at 23:00 in run 1 while the club crowd is out: that shows up as missed demand
+    expect(ins.hourly.missedDemand.slice(0, 4).reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
+  });
+
+  it("returns null for clubs", async () => {
+    expect(await api.insights("c1", 1)).toBeNull();
+  });
+});
+
 describe("mock runs", () => {
   it("returns runs whose main KPI improves from run 1 to the best run", async () => {
     const runs = await api.runs();

@@ -10,6 +10,7 @@ import { Delta } from "./Delta";
 import { change, fmtInt, TYPE_LABEL } from "./format";
 import { HourStrip } from "./HourStrip";
 import { Icon } from "./icons";
+import { InsightsPanel } from "./InsightsPanel";
 import { SuggestionList } from "./SuggestionList";
 
 export function StoreCard() {
@@ -23,6 +24,7 @@ export function StoreCard() {
   const suggestions = useSuggestions(run).data;
   const analystRan = (useAnalyst().data?.iterations ?? 0) > 0;
   const [busy, setBusy] = useState<null | "store" | "all">(null);
+  const [tab, setTab] = useState<"overview" | "insights">("overview");
 
   const store = map?.stores.find((s) => s.id === id);
   if (!id || !store) return null;
@@ -86,6 +88,25 @@ export function StoreCard() {
         {store.floorArea ? <span className="status">{Math.round(store.floorArea)} m²</span> : null}
       </div>
 
+      {!isClub && (
+        <div className="tabs" role="tablist">
+          {(["overview", "insights"] as const).map((t) => (
+            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
+              {t === "overview" ? "Overview" : "Insights"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === "insights" && !isClub ? (
+        <>
+          <InsightsPanel storeId={id} run={run} onApply={() => apply("store")} />
+          <button className="btn btn-report" onClick={() => useSim.getState().openPanel("report")}>
+            <Icon name="report" /> Weekly report
+          </button>
+        </>
+      ) : (
+      <>
       {cfg && <HourStrip cfg={cfg} hour={hour} prev={prev} licence={store.licensedHours ?? undefined} />}
 
       <div className="mini-kpis">
@@ -117,6 +138,8 @@ export function StoreCard() {
             <Icon name="report" /> Weekly report
           </button>
         </>
+      )}
+      </>
       )}
     </aside>
   );

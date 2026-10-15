@@ -1303,3 +1303,242 @@ button.chip:hover {
 .area-kpis {
   grid-template-columns: repeat(2, 1fr);
 }
+
+/* ---------- store insights ---------- */
+
+.insight-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.insight {
+  padding: 9px 10px 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--faint);
+}
+.insight.sev-high {
+  border-left-color: var(--lamp);
+}
+.insight.sev-medium {
+  border-left-color: #c9a35a;
+}
+.insight-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.insight-icon {
+  font-size: 14px;
+}
+.insight-title {
+  font-size: 13px;
+  line-height: 1.25;
+}
+.insight-metric {
+  margin-top: 3px;
+  font-size: 12.5px;
+}
+.insight-detail {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.insight .sugg-deltas {
+  margin-top: 5px;
+}
+.gbp-chip {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 5px;
+  margin-right: 6px;
+}
+.gbp-chip.pos {
+  color: var(--ink);
+  background: var(--lamp);
+}
+.gbp-chip.neg {
+  color: var(--bad);
+  border: 1px solid rgba(255, 138, 122, 0.4);
+}
+.insight-sugg {
+  margin-top: 7px;
+}
+.insight-sugg .sugg {
+  background: rgba(0, 0, 0, 0.18);
+  padding: 7px 8px;
+}
+.insight-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.insight-evidence .evidence-chip {
+  font-size: 11px;
+  padding: 3px 7px;
+}
+.funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.funnel-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 54px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.funnel-bar {
+  height: 10px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+.funnel-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--blue), var(--lamp));
+}
+.funnel-v {
+  text-align: right;
+  color: var(--text);
+}
+.day-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.dc-closed {
+  fill: rgba(10, 14, 30, 0.6);
+}
+.dc-foot {
+  fill: rgba(127, 178, 255, 0.28);
+}
+.dc-visit {
+  fill: var(--lamp);
+}
+.dc-missed {
+  fill: var(--bad);
+}
+.dc-axis {
+  fill: var(--faint);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+.sw.dc-foot {
+  background: rgba(127, 178, 255, 0.5);
+}
+.sw.dc-visit {
+  background: var(--lamp);
+}
+.sw.dc-missed {
+  background: var(--bad);
+}
+.sw.dc-closed {
+  background: rgba(10, 14, 30, 0.9);
+  border: 1px solid var(--line-strong);
+}
+.energy-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+}
+.energy-bar i {
+  display: block;
+  height: 100%;
+}
+.en-light {
+  background: var(--bad);
+}
+.en-closed {
+  background: #b0705f;
+}
+.en-dead {
+  background: #c9a35a;
+}
+.en-good {
+  background: var(--good);
+}
+.energy-legend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 10px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.energy-legend b {
+  color: var(--text);
+  margin-left: 2px;
+}
+.meter + .meter {
+  margin-top: 8px;
+}
+.meter-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+.meter-top b {
+  color: var(--text);
+}
+.meter-track {
+  position: relative;
+  height: 6px;
+  margin-top: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(255, 138, 122, 0.45), rgba(255, 200, 87, 0.45), rgba(111, 211, 160, 0.55));
+}
+.meter-track i {
+  position: absolute;
+  top: -3px;
+  width: 4px;
+  height: 12px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.6);
+}
+.personas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.persona-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.persona-chip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.persona-chip b {
+  color: var(--text);
+}
+.insights-note {
+  display: block;
+  margin-top: 12px;
+}

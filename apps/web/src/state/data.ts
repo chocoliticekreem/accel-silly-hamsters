@@ -2,7 +2,7 @@
 // Agent days are loaded one at a time; the next day is prefetched while playing (spec: performance).
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api } from "../api/client";
-import type { AgentDay, AnalystStatus, Calibration, Health, RunAreaSummary, CityMap, OwnerReport, RunStores, RunSummary, Suggestion } from "../api/contract";
+import type { AgentDay, AnalystStatus, Calibration, Health, RunAreaSummary, StoreInsights, CityMap, OwnerReport, RunStores, RunSummary, Suggestion } from "../api/contract";
 import { DAYS_PER_RUN } from "../api/contract";
 import { mergeDays, prepareAgents, type PreparedAgent } from "../sim/interp";
 
@@ -85,6 +85,8 @@ export const useRuns = () => useResource<RunSummary[]>("runs", () => api.runs())
 export const useAnalyst = () => useResource<AnalystStatus>("analyst", () => api.analyst());
 export const useHealth = () => useResource<Health | null>("health", () => api.health());
 export const useSummary = (run: number | null) => useResource<RunAreaSummary | null>(run == null ? null : `summary:${run}`, () => api.summary(run!));
+export const useInsights = (storeId: string | null, run: number) =>
+  useResource<StoreInsights | null>(storeId ? `insights:${storeId}:${run}` : null, () => api.insights(storeId!, run));
 export const useCalibration = () => useResource<Calibration | null>("calibration", () => api.calibration());
 export const useRunStores = (run: number | null) => useResource<RunStores>(run == null ? null : `stores:${run}`, () => api.runStores(run!));
 export const useSuggestions = (run: number) => useResource<Suggestion[]>(`suggestions:${run}`, () => api.suggestions(run));
