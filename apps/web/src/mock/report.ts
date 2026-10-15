@@ -1,7 +1,8 @@
 // Suggestions = the config diff between a run and the next one. Owner report = the diff between what a store
 // runs in a given run and the best run found, with impact taken from the simulated results.
 import type { ExpectedDelta, LightLevel, OwnerReport, RunStores, StoreType, Suggestion } from "../api/contract";
-import { DAYS_PER_RUN } from "../api/contract";
+import { DAYS_PER_RUN, type Confidence } from "../api/contract";
+import { parseHHMM } from "../sim/time";
 import type { RunConfig, StoreConfig } from "./configs";
 import { LIGHT_KWH } from "./simulate";
 
@@ -59,11 +60,32 @@ function withDeltas(changes: Change[], from: RunStores[string], to: RunStores[st
   const restK = frac(from.kpis.kwh, to.kpis.kwh) - lightK.reduce((a, b) => a + b, 0);
   const vW: number[] = changes.map((c) => (c.field === "lighting" ? (rank[c.to] > rank[c.from] ? 0.25 : 0) : 1));
   const vs = vW.reduce((x, y) => x + y, 0) || 1;
+  const confidence = confidenceFor(from.kpis.visits + to.kpis.visits);
   return changes.map((c, i) => {
     const kwh = c.field === "lighting" ? lightK[i] : hourChanges ? restK / hourChanges : 0;
     const expectedDelta: ExpectedDelta = { visits: round2((dv * vW[i]) / vs), kwh: round2(kwh) };
-    return { ...c, expectedDelta } as Suggestion;
+    return { ...c, expectedDelta, confidence, reason: reasonFor(c) } as Suggestion;
   });
+}
+
+export function confidenceFor(visits: number): Confidence {
+  return visits > 400 ? "high" : visits > 120 ? "medium" : "low";
+}
+
+/** Minutes after 05:00, so "03:00" counts as later than "23:00". */
+const late = (hhmm: string) => (parseHHMM(hhmm) - 300 + 1440) % 1440;
+
+/** One short line, never a paragraph. */
+export function reasonFor(c: Change): string {
+  const rank = { off: 0, low: 1, high: 2 } as const;
+  switch (c.field) {
+    case "close":
+      return late(c.to) > late(c.from) ? `Foot traffic continues after ${c.from}` : `Quiet after ${c.to}`;
+    case "open":
+      return late(c.to) < late(c.from) ? `Demand before ${c.from}` : `Empty before ${c.to}`;
+    default:
+      return rank[c.to] > rank[c.from] ? "Dark window loses night trade" : "Lit while shut or quiet";
+  }
 }
 
 export function suggestionsBetween(cfgA: RunConfig, cfgB: RunConfig, resA: RunStores, resB: RunStores, areas: Record<string, number>): Suggestion[] {
@@ -92,7 +114,7 @@ export function buildReport(
   const b = resBest[storeId].kpis;
   const weeks = 2;
   const gbpPerWeek = Math.round(((b.visits - a.visits) * SPEND_GBP[type] * GROSS_MARGIN - (b.kwh - a.kwh) * GBP_PER_KWH) / weeks);
-  const confidence = a.visits + b.visits > 400 ? "high" : a.visits + b.visits > 120 ? "medium" : "low";
+  const confidence = confidenceFor(a.visits + b.visits);
   return {
     storeId,
     changes,
@@ -105,6 +127,7 @@ export function buildReport(
       { label: "Opening hours, OpenStreetMap", url: "https://www.openstreetmap.org/#map=17/51.5265/-0.0777" },
     ],
     pdfUrl,
+    note: "Simulated, not guaranteed.",
   };
 }
 

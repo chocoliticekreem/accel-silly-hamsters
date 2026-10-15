@@ -31,6 +31,28 @@ describe("mock map", () => {
   });
 });
 
+describe("hard rules", () => {
+  it("never opens a store outside its licence, in any run", async () => {
+    const { isOpenAt } = await import("../sim/time");
+    const runs = await api.runs();
+    for (const r of runs) {
+      const cfg = state.config(r.run);
+      for (const s of state.map.stores) {
+        const lic = s.licensedHours!;
+        for (let m = 0; m < 1440; m += 30)
+          if (isOpenAt(cfg[s.id].open, cfg[s.id].close, m)) expect(isOpenAt(lic.open, lic.close, m), `${s.name} run ${r.run} at ${m}`).toBe(true);
+      }
+    }
+  });
+
+  it("gives every suggestion a confidence and a short reason", async () => {
+    for (const s of await api.suggestions(1)) {
+      expect(["low", "medium", "high"]).toContain(s.confidence);
+      expect(s.reason!.length).toBeLessThan(45);
+    }
+  });
+});
+
 describe("mock runs", () => {
   it("returns runs whose main KPI improves from run 1 to the best run", async () => {
     const runs = await api.runs();

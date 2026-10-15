@@ -13,6 +13,7 @@ export function SuggestionRow({ s, actions }: { s: Suggestion; actions?: ReactNo
         <span className="sugg-from">{l.from}</span>
         <span className="sugg-arrow">→</span>
         <span className="sugg-to">{l.to}</span>
+        {s.confidence && <Pips level={s.confidence} />}
       </div>
       <div className="sugg-deltas">
         <Delta value={s.expectedDelta.visits} metric="visits" />
@@ -20,8 +21,26 @@ export function SuggestionRow({ s, actions }: { s: Suggestion; actions?: ReactNo
         <Delta value={s.expectedDelta.kwh} metric="kwh" />
         <span className="unit">kWh</span>
       </div>
+      {s.reason && (
+        <div className="sugg-reason" title={s.reason}>
+          {s.reason}
+        </div>
+      )}
       {actions && <div className="sugg-actions">{actions}</div>}
     </li>
+  );
+}
+
+const PIPS = { low: 1, medium: 2, high: 3 } as const;
+
+/** Three-pip confidence meter (same look as the report's badge). */
+export function Pips({ level }: { level: keyof typeof PIPS }) {
+  return (
+    <span className="pips" title={`${level} confidence`} aria-label={`${level} confidence`}>
+      {[1, 2, 3].map((i) => (
+        <i key={i} className={i <= PIPS[level] ? "on" : ""} />
+      ))}
+    </span>
   );
 }
 

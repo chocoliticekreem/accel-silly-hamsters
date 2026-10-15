@@ -1,10 +1,12 @@
 // Persona colours and map symbols, hidden behind one click.
 import { useState } from "react";
+import { useMap } from "../state/data";
 import { PERSONA_COLORS } from "../world/palette";
 import { Icon } from "./icons";
 
 export function Legend() {
   const [open, setOpen] = useState(false);
+  const sources = useMap().data?.sources ?? [];
   return (
     <div className={`legend ${open ? "open" : ""}`}>
       <button className="chip" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
@@ -26,6 +28,15 @@ export function Legend() {
           <span className="legend-item">
             <i className="lg-glow" /> lit window
           </span>
+          {sources.length > 0 && (
+            <div className="legend-sources">
+              {sources.map((s) => (
+                <a key={s.url} href={s.url} target="_blank" rel="noreferrer">
+                  {s.label}
+                </a>
+              ))}
+            </div>
+          )}
           <span className="legend-keys">space · ←/→ · 1 2 3 · esc</span>
         </div>
       )}
