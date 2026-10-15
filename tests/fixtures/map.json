@@ -1,0 +1,358 @@
+{
+  "bounds": {
+    "minX": -200,
+    "maxX": 200,
+    "minZ": -200,
+    "maxZ": 200
+  },
+  "streets": [
+    {
+      "id": "main-st",
+      "name": "Main St",
+      "points": [
+        [
+          0,
+          -200
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          200
+        ]
+      ],
+      "width": 12
+    },
+    {
+      "id": "cross-st",
+      "name": "Cross St",
+      "points": [
+        [
+          -200,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          200,
+          0
+        ]
+      ],
+      "width": 10
+    },
+    {
+      "id": "north-ln",
+      "name": "North Ln",
+      "points": [
+        [
+          -200,
+          100
+        ],
+        [
+          0,
+          100
+        ],
+        [
+          200,
+          100
+        ]
+      ],
+      "width": 8
+    },
+    {
+      "id": "east-ln",
+      "name": "East Ln",
+      "points": [
+        [
+          100,
+          0
+        ],
+        [
+          100,
+          200
+        ]
+      ],
+      "width": 8
+    }
+  ],
+  "buildings": [
+    {
+      "id": "b1",
+      "kind": "club",
+      "x": -60,
+      "z": 14,
+      "w": 30,
+      "d": 12,
+      "h": 9,
+      "storeId": "c1"
+    },
+    {
+      "id": "b2",
+      "kind": "store",
+      "x": -25,
+      "z": 12,
+      "w": 10,
+      "d": 8,
+      "h": 10,
+      "storeId": "s1"
+    },
+    {
+      "id": "b3",
+      "kind": "store",
+      "x": 150,
+      "z": 108,
+      "w": 10,
+      "d": 8,
+      "h": 10,
+      "storeId": "s2"
+    },
+    {
+      "id": "b4",
+      "kind": "store",
+      "x": 14,
+      "z": 50,
+      "w": 12,
+      "d": 10,
+      "h": 10,
+      "storeId": "s3"
+    },
+    {
+      "id": "b5",
+      "kind": "store",
+      "x": -14,
+      "z": -40,
+      "w": 12,
+      "d": 10,
+      "h": 10,
+      "storeId": "s4"
+    },
+    {
+      "id": "b6",
+      "kind": "store",
+      "x": 50,
+      "z": 108,
+      "w": 12,
+      "d": 10,
+      "h": 10,
+      "storeId": "s5"
+    },
+    {
+      "id": "b7",
+      "kind": "store",
+      "x": 108,
+      "z": 150,
+      "w": 10,
+      "d": 10,
+      "h": 10,
+      "storeId": "s6"
+    },
+    {
+      "id": "b8",
+      "kind": "store",
+      "x": -100,
+      "z": 107,
+      "w": 10,
+      "d": 8,
+      "h": 10,
+      "storeId": "s7"
+    },
+    {
+      "id": "b9",
+      "kind": "station",
+      "x": 25,
+      "z": -30,
+      "w": 30,
+      "d": 30,
+      "h": 12
+    },
+    {
+      "id": "b10",
+      "kind": "office",
+      "x": -60,
+      "z": -60,
+      "w": 40,
+      "d": 30,
+      "h": 25
+    },
+    {
+      "id": "b11",
+      "kind": "residential",
+      "x": 60,
+      "z": 50,
+      "w": 40,
+      "d": 30,
+      "h": 15
+    }
+  ],
+  "stores": [
+    {
+      "id": "c1",
+      "name": "Fixture Club",
+      "type": "club",
+      "buildingId": "b1",
+      "licensedHours": {
+        "open": "21:00",
+        "close": "06:00"
+      },
+      "defaultHours": {
+        "open": "22:00",
+        "close": "03:00"
+      },
+      "floorArea": 400.0
+    },
+    {
+      "id": "s1",
+      "name": "Club Kebab",
+      "type": "takeaway",
+      "buildingId": "b2",
+      "licensedHours": {
+        "open": "06:00",
+        "close": "04:00"
+      },
+      "defaultHours": {
+        "open": "11:00",
+        "close": "23:00"
+      },
+      "floorArea": 120.0
+    },
+    {
+      "id": "s2",
+      "name": "Far Kebab",
+      "type": "takeaway",
+      "buildingId": "b3",
+      "licensedHours": {
+        "open": "06:00",
+        "close": "04:00"
+      },
+      "defaultHours": {
+        "open": "11:00",
+        "close": "23:00"
+      },
+      "floorArea": 120.0
+    },
+    {
+      "id": "s3",
+      "name": "Corner Bar",
+      "type": "bar",
+      "buildingId": "b4",
+      "licensedHours": {
+        "open": "10:00",
+        "close": "02:00"
+      },
+      "defaultHours": {
+        "open": "16:00",
+        "close": "00:00"
+      },
+      "floorArea": 120.0
+    },
+    {
+      "id": "s4",
+      "name": "Station Cafe",
+      "type": "cafe",
+      "buildingId": "b5",
+      "licensedHours": {
+        "open": "06:00",
+        "close": "23:00"
+      },
+      "defaultHours": {
+        "open": "07:00",
+        "close": "18:00"
+      },
+      "floorArea": 120.0
+    },
+    {
+      "id": "s5",
+      "name": "North Bistro",
+      "type": "restaurant",
+      "buildingId": "b6",
+      "licensedHours": {
+        "open": "07:00",
+        "close": "00:30"
+      },
+      "defaultHours": {
+        "open": "12:00",
+        "close": "23:00"
+      },
+      "floorArea": 120.0
+    },
+    {
+      "id": "s6",
+      "name": "East Shop",
+      "type": "shop",
+      "buildingId": "b7",
+      "licensedHours": {
+        "open": "06:00",
+        "close": "23:00"
+      },
+      "defaultHours": {
+        "open": "10:00",
+        "close": "19:00"
+      },
+      "floorArea": 120.0
+    },
+    {
+      "id": "s7",
+      "name": "Corner Off-Licence",
+      "type": "offlicence",
+      "buildingId": "b8",
+      "licensedHours": {
+        "open": "06:00",
+        "close": "23:00"
+      },
+      "defaultHours": {
+        "open": "08:00",
+        "close": "23:00"
+      },
+      "floorArea": 120.0
+    }
+  ],
+  "entryPoints": [
+    {
+      "id": "e1",
+      "kind": "street",
+      "x": 0,
+      "z": 200
+    },
+    {
+      "id": "e2",
+      "kind": "street",
+      "x": 0,
+      "z": -200
+    },
+    {
+      "id": "e3",
+      "kind": "street",
+      "x": -200,
+      "z": 0
+    },
+    {
+      "id": "e4",
+      "kind": "street",
+      "x": 200,
+      "z": 0
+    },
+    {
+      "id": "e5",
+      "kind": "street",
+      "x": -200,
+      "z": 100
+    },
+    {
+      "id": "st1",
+      "kind": "station",
+      "name": "Fixture Station",
+      "x": 0,
+      "z": -30
+    }
+  ],
+  "sources": [
+    {
+      "label": "Hand-written test fixture (not measured)",
+      "url": "tests/fixtures"
+    }
+  ]
+}
