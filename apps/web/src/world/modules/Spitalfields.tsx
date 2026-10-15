@@ -455,7 +455,7 @@ export function build(map: CityMap, data: AreaData) {
   for (const s of brick) {
     for (const run of clipped(s, (x, z) => inArea(x, z) && z > -330 && z < -70)) {
       const path = polyline(run);
-      const lat = s.width / 2 - PAVE_W - 1.4;
+      const lat = s.width / 2 - PAVE_W - 1.0;
       for (let d = 2; d < path.length - 2; d += 3.1) {
         for (const side of [-1, 1]) {
           path.at(d, side * lat, pt);
@@ -464,7 +464,7 @@ export function build(map: CityMap, data: AreaData) {
         }
       }
       for (let k = 0; k < 90; k++) {
-        const w = makeWalker("sundayRoad", run, r, { lateral: (r() - 0.5) * 4.5, minLen: 15, maxLen: 80, speed: [0.6, 1.1], pause: [1, 6] });
+        const w = makeWalker("sundayRoad", run, r, { lateral: (r() - 0.5) * 3.4, minLen: 15, maxLen: 80, speed: [0.6, 1.1], pause: [1, 6] });
         if (w) walkers.push(w);
       }
     }

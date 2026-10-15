@@ -1,6 +1,7 @@
 // Areas that a hand-built area module fills itself from real OSM data, so the generic Infill planner leaves them
 // alone (no made-up blocks on top of real gardens, yards and buildings). Contract coords (x east, z north).
 // Area modules add their outline here; keep each entry one polygon.
+import { SPITALFIELDS_SITES } from "./spitalfieldsSites";
 
 export interface AreaKeepout {
   name: string;
@@ -19,7 +20,7 @@ export const HOXTON_AREA: [number, number][] = [
   [-880, 296],
 ];
 
-export const AREA_KEEPOUTS: AreaKeepout[] = [{ name: "Hoxton", poly: HOXTON_AREA }];
+export const AREA_KEEPOUTS: AreaKeepout[] = [{ name: "Hoxton", poly: HOXTON_AREA }, ...SPITALFIELDS_SITES];
 
 export function inPoly(x: number, z: number, poly: [number, number][]): boolean {
   let inside = false;
