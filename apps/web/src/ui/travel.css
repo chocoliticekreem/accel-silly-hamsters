@@ -1,0 +1,228 @@
+/* Go-to bar extras: Enter buttons, More menu, floor stepper, beacon labels (ui/GoToBar, world/modules/Landmarks) */
+.goto-item {
+  display: inline-flex;
+  align-items: center;
+}
+.goto-item.has-enter .goto-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.goto-btn.on {
+  border-color: var(--lamp);
+}
+.goto-hero.on {
+  box-shadow: 0 0 0 2px rgba(255, 200, 87, 0.35);
+}
+.goto-enter {
+  display: inline-grid;
+  place-items: center;
+  height: 33px;
+  width: 30px;
+  border: 1px solid var(--line);
+  border-left: none;
+  border-radius: 0 999px 999px 0;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--lamp);
+  cursor: pointer;
+}
+.goto-enter:hover {
+  background: rgba(255, 200, 87, 0.16);
+}
+.goto-enter.on {
+  background: var(--lamp);
+  color: var(--ink);
+  border-color: var(--lamp);
+}
+.goto-out {
+  font: 500 10px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  border: 1px dashed var(--line-strong);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.goto-hero .goto-out {
+  color: var(--ink);
+}
+.goto-menu {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 21;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 8px;
+}
+.goto-group + .goto-group {
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+.goto-group-title {
+  font: 500 10.5px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  padding: 4px 6px;
+}
+.goto-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.goto-row-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: 500 13px var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+.goto-row-main:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.goto-row .goto-enter {
+  border-radius: 8px;
+  border-left: 1px solid var(--line);
+}
+
+.floor-stepper {
+  position: absolute;
+  left: 50%;
+  bottom: 92px;
+  transform: translateX(-50%);
+  z-index: 15;
+  max-width: calc(100vw - 32px);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.floor-stepper header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.floor-place {
+  font-weight: 700;
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.floor-now {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.floor-exit {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+.floor-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.floor-step {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  cursor: pointer;
+}
+.floor-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.floor-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+}
+.floor-btn {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.floor-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.floor-btn.above {
+  color: var(--faint);
+}
+.floor-btn.on {
+  border-color: var(--lamp);
+  color: var(--lamp);
+}
+.floor-short {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 24px;
+  border-radius: 6px;
+  font: 600 12px var(--mono);
+  background: rgba(255, 255, 255, 0.06);
+}
+.floor-btn.on .floor-short {
+  background: var(--lamp);
+  color: var(--ink);
+}
+.floor-hint {
+  font: 500 10.5px var(--mono);
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.beacon-label {
+  white-space: nowrap;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 200, 87, 0.6);
+  background: rgba(15, 21, 34, 0.82);
+  color: var(--lamp);
+  font: 600 12px var(--font);
+  cursor: pointer;
+  user-select: none;
+}
+.beacon-label.club {
+  border-color: rgba(199, 139, 255, 0.6);
+  color: #d9b8ff;
+}
+.beacon-label:hover {
+  background: rgba(40, 33, 18, 0.92);
+}
+
+@media (max-width: 760px) {
+  .floor-stepper {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    bottom: 120px;
+  }
+  .floor-hint {
+    display: none;
+  }
+}
