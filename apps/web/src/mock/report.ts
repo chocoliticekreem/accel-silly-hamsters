@@ -7,6 +7,9 @@ import type { RunConfig, StoreConfig } from "./configs";
 export const SPEND_GBP: Record<StoreType, number> = { cafe: 6, restaurant: 22, takeaway: 9, bar: 14, shop: 15, offlicence: 8, club: 0 };
 export const GBP_PER_KWH = 0.28;
 
+/** A suggestion before its expected delta is known (Omit that keeps the field union intact). */
+export type Change = Suggestion extends infer S ? (S extends Suggestion ? Omit<S, "expectedDelta"> : never) : never;
+
 /** Groups consecutive hours whose lighting changed the same way into one suggestion. */
 function lightingDiff(storeId: string, a: LightLevel[], b: LightLevel[]): Omit<Extract<Suggestion, { field: "lighting" }>, "expectedDelta">[] {
   const out: Omit<Extract<Suggestion, { field: "lighting" }>, "expectedDelta">[] = [];
@@ -27,8 +30,8 @@ function lightingDiff(storeId: string, a: LightLevel[], b: LightLevel[]): Omit<E
   return out;
 }
 
-export function diffStore(storeId: string, a: StoreConfig, b: StoreConfig): Omit<Suggestion, "expectedDelta">[] {
-  const out: Omit<Suggestion, "expectedDelta">[] = [];
+export function diffStore(storeId: string, a: StoreConfig, b: StoreConfig): Change[] {
+  const out: Change[] = [];
   if (a.open !== b.open) out.push({ storeId, field: "open", from: a.open, to: b.open });
   if (a.close !== b.close) out.push({ storeId, field: "close", from: a.close, to: b.close });
   out.push(...lightingDiff(storeId, a.lighting, b.lighting));
@@ -38,7 +41,7 @@ export function diffStore(storeId: string, a: StoreConfig, b: StoreConfig): Omit
 const frac = (a: number, b: number) => (a > 0 ? Math.round(((b - a) / a) * 100) / 100 : 0);
 
 /** Spreads a store's measured change across its suggestions: hours drive visits, lighting drives kWh. */
-function withDeltas(changes: Omit<Suggestion, "expectedDelta">[], from: RunStores[string], to: RunStores[string]): Suggestion[] {
+function withDeltas(changes: Change[], from: RunStores[string], to: RunStores[string]): Suggestion[] {
   const dv = frac(from.kpis.visits, to.kpis.visits);
   const dk = frac(from.kpis.kwh, to.kpis.kwh);
   const vW = changes.map((c) => (c.field === "lighting" ? 0.25 : 1));
