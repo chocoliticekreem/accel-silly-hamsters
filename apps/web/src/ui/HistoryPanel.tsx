@@ -4,11 +4,15 @@ import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Too
 import { useState } from "react";
 import { useAnalyst, useCalibration, useRuns } from "../state/data";
 import { useSim } from "../state/store";
+import { LAMP } from "../world/palette";
 import { CalibrationPanel } from "./CalibrationPanel";
 import { fmtNum } from "./format";
 import { Icon } from "./icons";
 
-const LAMP = "#ffc857";
+// SVG attributes take literal colours; these mirror --muted, --grid and --plate in styles.css.
+const TICK = "#bfb6a6";
+const GRID = "rgba(240,234,221,0.08)";
+const PLATE = "#181613";
 
 export function HistoryPanel() {
   const runs = useRuns().data ?? [];
@@ -51,17 +55,17 @@ export function HistoryPanel() {
       <div className="chart">
         <ResponsiveContainer width="100%" height={170}>
           <LineChart data={data} margin={{ top: 22, right: 18, bottom: 0, left: -18 }}>
-            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-            <XAxis dataKey="run" tick={{ fill: "#8b97ad", fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: "#8b97ad", fontSize: 11 }} axisLine={false} tickLine={false} domain={["dataMin - 0.05", "dataMax + 0.03"]} tickFormatter={(v: number) => v.toFixed(2)} />
+            <CartesianGrid stroke={GRID} vertical={false} />
+            <XAxis dataKey="run" tick={{ fill: TICK, fontSize: 12 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: TICK, fontSize: 12 }} axisLine={false} tickLine={false} domain={["dataMin - 0.05", "dataMax + 0.03"]} tickFormatter={(v: number) => v.toFixed(2)} />
             <Tooltip
-              cursor={{ stroke: "rgba(255,255,255,0.15)" }}
-              contentStyle={{ background: "#141b2b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontFamily: "IBM Plex Mono", fontSize: 12 }}
+              cursor={{ stroke: "rgba(240,234,221,0.2)" }}
+              contentStyle={{ background: "var(--panel-solid)", border: "1px solid var(--line-strong)", borderRadius: 4, fontFamily: "var(--font)", fontSize: 13 }}
               labelFormatter={(l) => `Run ${l}`}
               formatter={(v) => [fmtNum(Number(v)), "visits/kWh"]}
             />
             {stopRun && (
-              <ReferenceLine x={stopRun} stroke="#8b97ad" strokeDasharray="4 4" label={{ value: "stopped · plateau", position: "insideBottomRight", fill: "#8b97ad", fontSize: 10 }} />
+              <ReferenceLine x={stopRun} stroke={TICK} strokeDasharray="4 4" label={{ value: "stopped · plateau", position: "insideBottomRight", fill: TICK, fontSize: 12 }} />
             )}
             <Line
               type="monotone"
@@ -75,7 +79,7 @@ export function HistoryPanel() {
                   cx={p.cx}
                   cy={p.cy}
                   r={p.payload?.run === current ? 6 : 4}
-                  fill={p.payload?.run === current ? LAMP : "#141b2b"}
+                  fill={p.payload?.run === current ? LAMP : PLATE}
                   stroke={LAMP}
                   strokeWidth={2}
                   style={{ cursor: "pointer" }}

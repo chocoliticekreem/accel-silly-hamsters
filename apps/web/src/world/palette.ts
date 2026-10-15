@@ -2,13 +2,13 @@
 import type { BuildingKind, LightLevel, StoreType } from "../api/contract";
 
 export const PERSONA_COLORS: Record<string, string> = {
-  commuter: "#3d7fe0",
-  resident: "#2fae6a",
-  student: "#f08a2c",
-  shopper: "#e0559a",
-  "night-owl": "#a463ff",
-  tourist: "#f2c230",
-  foodie: "#e34b4b",
+  commuter: "#3987e5",
+  resident: "#199e70",
+  student: "#c98500",
+  shopper: "#d55181",
+  "night-owl": "#9085e9",
+  tourist: "#008300",
+  foodie: "#e66767",
   "passer-by": "#7d8aa0",
 };
 export const PERSONA_FALLBACK = "#b8c1d1";
@@ -45,7 +45,7 @@ export const BUILDING_COLORS: Record<BuildingKind, string> = {
   club: "#3a3150",
 };
 
-export const LAMP = "#ffc857"; // the warm lit-window yellow, also the UI accent
+export const LAMP = "#ff9a3d"; // warm sodium shop light, also the UI accent (--lamp in styles.css)
 export const LIGHT_INTENSITY: Record<LightLevel, number> = { off: 0, low: 0.55, high: 1 };
 
 export const GROUND = { grass: "#7d917a", pavement: "#b9bec6", asphalt: "#5b6270", marking: "#e8e2cf" };

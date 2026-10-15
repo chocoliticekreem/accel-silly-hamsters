@@ -3,12 +3,15 @@
 import { Area, AreaChart, CartesianGrid, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useAnalyst, useRuns, useSummary } from "../state/data";
 import { useSim } from "../state/store";
+import { LAMP } from "../world/palette";
 import { Delta } from "./Delta";
 import { change, fmtInt } from "./format";
 import { Icon } from "./icons";
 
-const LAMP = "#ffc857";
-const BASE = "#7fb2ff";
+// SVG attributes take literal colours; these mirror --context, --muted and --grid in styles.css.
+const BASE = "rgba(240,234,221,0.5)";
+const TICK = "#bfb6a6";
+const GRID = "rgba(240,234,221,0.08)";
 
 export function AreaPanel() {
   const run = useSim((s) => s.run);
@@ -61,16 +64,16 @@ export function AreaPanel() {
           <div className="chart">
             <ResponsiveContainer width="100%" height={150}>
               <AreaChart data={data} margin={{ top: 6, right: 12, bottom: 0, left: -22 }}>
-                <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis dataKey="h" tick={{ fill: "#8b97ad", fontSize: 10 }} axisLine={false} tickLine={false} ticks={[0, 6, 12, 18, 23]} tickFormatter={(h: number) => String(h).padStart(2, "0")} />
-                <YAxis tick={{ fill: "#8b97ad", fontSize: 10 }} axisLine={false} tickLine={false} />
+                <CartesianGrid stroke={GRID} vertical={false} />
+                <XAxis dataKey="h" tick={{ fill: TICK, fontSize: 12 }} axisLine={false} tickLine={false} ticks={[0, 6, 12, 18, 23]} tickFormatter={(h: number) => String(h).padStart(2, "0")} />
+                <YAxis tick={{ fill: TICK, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ background: "#141b2b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontFamily: "IBM Plex Mono", fontSize: 12 }}
+                  contentStyle={{ background: "var(--panel-solid)", border: "1px solid var(--line-strong)", borderRadius: 4, fontFamily: "var(--font)", fontSize: 13 }}
                   labelFormatter={(h) => `${String(h).padStart(2, "0")}:00`}
                   formatter={(v, name) => [`${Number(v).toFixed(1)} kW`, name === "kw" ? `run ${run}` : `baseline ${baseRun}`]}
                 />
                 {!sameRun && <Line type="monotone" dataKey="base" stroke={BASE} strokeDasharray="4 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
-                <Area type="monotone" dataKey="kw" stroke={LAMP} fill="rgba(255,200,87,0.18)" strokeWidth={2} isAnimationActive={false} />
+                <Area type="monotone" dataKey="kw" stroke={LAMP} fill={LAMP} fillOpacity={0.16} strokeWidth={2} isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
