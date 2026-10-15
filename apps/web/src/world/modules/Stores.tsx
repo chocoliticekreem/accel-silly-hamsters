@@ -19,6 +19,7 @@ import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { LAMP, LIGHT_INTENSITY, STORE_COLORS } from "../palette";
 import { glowTexture } from "../textures";
+import { landmarkHostIds } from "../models/plots";
 import { TypeIcon } from "../../ui/TypeIcon";
 
 const NO_EVENTS: OwnerEvent[] = [];
@@ -27,17 +28,17 @@ export default function Stores() {
   const { map, run } = useWorld();
   const owner = useOwnerEvents(run).data;
   const byStore = useMemo(() => eventsByStore(owner ?? []), [owner]);
-  const items = useMemo(
-    () =>
-      map.stores.flatMap((s) => {
+  const items = useMemo(() => {
+    // a store whose building is a hero landmark (XOYO) is drawn by HeroLandmarks, not as a box
+    const hosts = landmarkHostIds(map);
+    return map.stores.flatMap((s) => {
         const b = map.buildings.find((x) => x.id === s.buildingId);
-        if (!b) return [];
+        if (!b || hosts.has(b.id)) return [];
         const f = frontage(b, map.streets);
         // OSM boxes overlap: keep the window and awning to the stretch of facade no neighbour pokes out over
         return [{ s, b, f, span: shopfrontSpan(b, f.nx, f.nz, map.buildings) }];
-      }),
-    [map],
-  );
+      });
+  }, [map]);
   return (
     <group name="stores">
       {items.map(({ s, b, f, span }) => (

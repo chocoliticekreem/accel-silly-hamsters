@@ -142,25 +142,3 @@ export function buildStreetGraph(streets: Street[]): StreetGraph {
     },
   };
 }
-
-// ---------- what people are doing at each hour (background crowd trip mix) ----------
-
-export type TripKind = "toWork" | "fromWork" | "lunch" | "shopping" | "evening" | "nightOut" | "through";
-
-/** Relative weight of each trip kind at an hour of the day (weekday shape; Shoreditch nightlife on top). */
-export function tripMix(hour: number): Record<TripKind, number> {
-  const h = ((hour % 24) + 24) % 24;
-  const bump = (centre: number, width: number) => {
-    const d = ((h - centre + 36) % 24) - 12; // wrapped distance in hours, -12..12
-    return Math.exp(-(d * d) / (2 * width * width));
-  };
-  return {
-    toWork: 5 * bump(8.5, 0.9),
-    fromWork: 4 * bump(18, 1),
-    lunch: 2.5 * bump(13, 0.7),
-    shopping: 1.5 * bump(14.5, 2.5),
-    evening: 2 * bump(20.5, 1.5),
-    nightOut: 2.2 * bump(2.5, 1.2),
-    through: 0.6 + 0.4 * bump(12, 4),
-  };
-}

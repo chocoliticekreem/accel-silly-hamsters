@@ -46,7 +46,7 @@ export default function CameraRig() {
     }
     return groups.get(cameraGroup)!;
   }, [cameraGroup, map]);
-  const fly = useRef<{ target: Vector3; position: Vector3; k: number } | null>(null);
+  const fly = useRef<{ target: Vector3; position: Vector3; k: number; from?: { target: Vector3; position: Vector3 } } | null>(null);
   const selected = useSim((s) => s.selectedStoreId);
 
   // start where the group is (so a compare view opens on the same shot)
@@ -84,17 +84,19 @@ export default function CameraRig() {
       const target = new Vector3(x, req.y ?? 0, z);
       const off = camera.position.clone().sub(controls.target);
       const azimuth = Math.atan2(off.x, off.z);
-      const polar = 0.95;
+      const polar = req.polar ?? 0.95;
       const dir = new Vector3(Math.sin(polar) * Math.sin(azimuth), Math.cos(polar), Math.sin(polar) * Math.cos(azimuth));
-      fly.current = { target, position: target.clone().add(dir.multiplyScalar(req.dist)), k: 0 };
+      fly.current = { target, position: req.position ? new Vector3(...req.position) : target.clone().add(dir.multiplyScalar(req.dist)), k: 0 };
       shared.leader = id;
     }
     const f = fly.current;
     if (f) {
-      f.k = Math.min(1, f.k + delta * 1.6);
-      const e = 1 - Math.pow(1 - f.k, 3);
-      controls.target.lerp(f.target, e * 0.25);
-      camera.position.lerp(f.position, e * 0.25);
+      // ~1 s eased from where the camera was, independent of frame rate
+      f.from ??= { target: controls.target.clone(), position: camera.position.clone() };
+      f.k = Math.min(1, f.k + Math.min(delta, 0.1));
+      const e = f.k < 0.5 ? 4 * f.k ** 3 : 1 - Math.pow(-2 * f.k + 2, 3) / 2;
+      controls.target.lerpVectors(f.from.target, f.target, e);
+      camera.position.lerpVectors(f.from.position, f.position, e);
       if (f.k >= 1) fly.current = null;
       controls.update();
     }

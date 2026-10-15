@@ -7,14 +7,18 @@ export interface FlyRequest {
   dist: number;
   /** Optional height of the point to look at. */
   y?: number;
+  /** Angle from straight down (radians); default 0.95. */
+  polar?: number;
+  /** Exact camera position (scene coords), e.g. to return to a saved shot; overrides dist/polar. */
+  position?: [number, number, number];
   seq: number;
 }
 
 let seq = 0;
 export const flyRequest: { current: FlyRequest | null } = { current: null };
 
-export function flyTo(x: number, z: number, dist = 220, y = 0) {
-  flyRequest.current = { x, z, dist, y, seq: ++seq };
+export function flyTo(x: number, z: number, dist = 220, y = 0, opts: { polar?: number; position?: [number, number, number] } = {}) {
+  flyRequest.current = { x, z, dist, y, ...opts, seq: ++seq };
 }
 
 /** `?cam=px,py,pz,tx,ty,tz` (scene coords): open on an exact shot (screenshots, demos). */

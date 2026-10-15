@@ -2,6 +2,19 @@
 import { USING_MOCK } from "./api/client";
 import { useClock, useHotkeys } from "./state/clock";
 import { useEffect } from "react";
+
+/** Keeps --goto-h = the Go-to bar's height, so the top-right tools sit just below it however it wraps. */
+function useGotoHeight(ready: boolean) {
+  useEffect(() => {
+    const el = document.querySelector<HTMLElement>(".goto-bar");
+    if (!el) return;
+    const set = () => document.documentElement.style.setProperty("--goto-h", `${el.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ready]);
+}
 import { useAnalyst, useHealth, useMap, useRuns, useRunStores } from "./state/data";
 import { RUN_FROM_URL, useSim } from "./state/store";
 import { AreaPanel } from "./ui/AreaPanel";
@@ -31,6 +44,7 @@ export default function App() {
   useClock();
   useHotkeys();
   const { data: map, error } = useMap();
+  useGotoHeight(!!map);
   const run = useSim((s) => s.run);
   const stores = useRunStores(run).data;
   const panel = useSim((s) => s.panel);
