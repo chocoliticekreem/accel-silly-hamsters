@@ -9,11 +9,12 @@
 //   time-of-day curve over the sim clock (busy at night for clubs and bars, daytime for Encode).
 // - Exit (Esc, the bar's Exit, "Back outside" on XOYO's store card) restores the exterior and the camera shot.
 import { Html } from "@react-three/drei";
-import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, type RefObject } from "react";
 import {
   AdditiveBlending,
   BackSide,
+  Box3,
   BoxGeometry,
   Color,
   DoubleSide,
@@ -21,8 +22,10 @@ import {
   LineBasicMaterial,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  Ray,
   ShaderMaterial,
   Vector3,
+  type Camera,
   type Mesh,
   type Object3D,
 } from "three";
@@ -35,7 +38,7 @@ import { useSim } from "../../state/store";
 import { useTravel } from "../../state/travel";
 import { beat, localFrame, queueLength, toWorld, venueNight, type LocalFrame } from "../clubs";
 import { useWorld } from "../context";
-import { flyTo } from "../flyTo";
+import { flyTo, interiorFloor } from "../flyTo";
 import { groundY } from "../ground";
 import { enterable, enterPlace } from "../landmarks/actions";
 import { buildFloors, FLOOR_H, interiorSize, PERSON_SCALE, SIT_DROP, SLAB, type FloorPlan, type Slot } from "../landmarks/floors";
@@ -57,11 +60,14 @@ export default function Landmarks() {
   const places = useMemo(() => placesFor(map), [map]);
   const openKey = useTravel((s) => (s.interiorOpen ? s.focusPlace : null));
   useSync(places, interactive);
+  useBeaconPick(places, openKey, interactive);
   const open = places.find((p) => p.key === openKey && p.interior && p.foot);
   return (
     <group name="landmarks">
-      {places.filter(enterable).map((p) => (p.key === openKey ? null : <Beacon key={p.key} place={p} interactive={interactive} />))}
-      {interactive && places.filter((p) => p.interior && !p.storeId && p.foot && p.key !== openKey).map((p) => <PickBox key={p.key} place={p} />)}
+      {places.filter(enterable).map((p) => (
+        // hidden rather than unmounted while its interior is open (unmounting drei's Html mid-render warns)
+        <Beacon key={p.key} place={p} interactive={interactive} hidden={p.key === openKey} />
+      ))}
       {open && <Interior key={open.key} place={open} />}
     </group>
   );
@@ -98,9 +104,9 @@ const beamMat = () =>
     fragmentShader: "uniform vec3 uColor; uniform float uPulse; varying float vY; void main(){ float a = pow(clamp(1.0 - vY, 0.0, 1.0), 1.6) * 0.32 * clamp(uPulse, 0.0, 2.0); gl_FragColor = vec4(uColor * a, a); }",
   });
 
-function Beacon({ place, interactive }: { place: Place; interactive: boolean }) {
+function Beacon({ place, interactive, hidden }: { place: Place; interactive: boolean; hidden: boolean }) {
   const [x, z] = toScene(place.x, place.z);
-  const r = place.foot ? Math.max(place.foot.w, place.foot.d) / 2 + 3 : 10;
+  const r = ringRadius(place);
   const club = !place.interior;
   const color = club ? "#c78bff" : LAMP;
   const mats = useMemo(() => {
@@ -120,28 +126,25 @@ function Beacon({ place, interactive }: { place: Place; interactive: boolean }) 
     }
     mats.beam.uniforms.uPulse.value = 0.8 + 0.2 * Math.sin(clock.elapsedTime * 2 + seed);
   });
-  const go = (e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation();
-    enterPlace(place);
-  };
-  const H = club ? 45 : 70;
+  const H = beamHeight(place);
   const gy = groundY(x, z);
   return (
-    <group position={[x, gy, z]} name={`beacon-${place.key}`}>
+    <group position={[x, gy, z]} name={`beacon-${place.key}`} visible={!hidden}>
       <mesh position-y={H / 2} material={mats.beam} renderOrder={5} raycast={() => null}>
         <cylinderGeometry args={[2.2, 3.2, H, 20, 1, true]} />
       </mesh>
       <mesh ref={ring} rotation-x={-Math.PI / 2} position-y={0.35} material={mats.ring} renderOrder={5} raycast={() => null}>
         <ringGeometry args={[r * 0.82, r, 48]} />
       </mesh>
-      {interactive && (
-        <mesh position-y={H * 0.5} onClick={go} onPointerOver={() => (document.body.style.cursor = "pointer")} onPointerOut={() => (document.body.style.cursor = "")}>
-          <cylinderGeometry args={[3.5, 3.5, H, 8]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        </mesh>
-      )}
-      <Html position={[0, H + 4, 0]} center zIndexRange={[5, 0]} style={{ pointerEvents: interactive ? "auto" : "none" }}>
-        <button className={`beacon-label ${club ? "club" : ""}`} onClick={() => enterPlace(place)}>
+      <Html position={[0, H + 4, 0]} center zIndexRange={[5, 0]} style={{ pointerEvents: interactive && !hidden ? "auto" : "none", display: hidden ? "none" : undefined }}>
+        <button
+          className={`beacon-label ${club ? "club" : ""}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            enterPlace(place);
+          }}
+        >
           Enter {place.name}
         </button>
       </Html>
@@ -149,27 +152,96 @@ function Beacon({ place, interactive }: { place: Place; interactive: boolean }) 
   );
 }
 
-/** An invisible box over a landmark's host building so clicking the building goes inside. */
-function PickBox({ place }: { place: Place }) {
-  const f = place.foot!;
-  const [x, z] = toScene(f.x, f.z);
-  return (
-    <mesh
-      position={[x, f.h / 2, z]}
-      onClick={(e) => {
-        e.stopPropagation();
-        enterPlace(place);
-      }}
-      onPointerOver={(e) => {
-        e.stopPropagation();
-        document.body.style.cursor = "pointer";
-      }}
-      onPointerOut={() => (document.body.style.cursor = "")}
-    >
-      <boxGeometry args={[f.w + 1, f.h + 1, f.d + 1]} />
-      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-    </mesh>
-  );
+const beamHeight = (p: Place) => (p.interior ? 70 : 45);
+const ringRadius = (p: Place) => (p.foot ? Math.max(p.foot.w, p.foot.d) / 2 + 3 : 10);
+
+/** Pixel distance from (cx, cy) to the projected beam axis of a place, or Infinity when behind the camera. */
+function beamPx(p: Place, cx: number, cy: number, camera: Camera, r: DOMRect, a: Vector3, b: Vector3): number {
+  const [x, z] = toScene(p.x, p.z);
+  const gy = groundY(x, z);
+  a.set(x, gy, z).project(camera);
+  b.set(x, gy + beamHeight(p), z).project(camera);
+  if (a.z >= 1 || b.z >= 1) return Infinity;
+  const ax = r.left + ((a.x + 1) / 2) * r.width;
+  const ay = r.top + ((1 - a.y) / 2) * r.height;
+  const vx = r.left + ((b.x + 1) / 2) * r.width - ax;
+  const vy = r.top + ((1 - b.y) / 2) * r.height - ay;
+  const t = Math.max(0, Math.min(1, ((cx - ax) * vx + (cy - ay) * vy) / (vx * vx + vy * vy || 1)));
+  return Math.hypot(cx - (ax + vx * t), cy - (ay + vy * t));
+}
+
+/**
+ * Clicking a beacon (its beam, its ring, or the building under it) goes inside. Picked in screen space from a
+ * capture-phase listener on the window, before R3F and the canvas's own click handlers (Agents' person picking,
+ * Stores' selection) can swallow it: a fat hit area round the beam (28 px), the ring's disc on the ground, and the
+ * building's footprint box.
+ */
+function useBeaconPick(places: Place[], openKey: string | null, interactive: boolean) {
+  const camera = useThree((s) => s.camera);
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    if (!interactive) return;
+    const el = gl.domElement;
+    const list = places.filter(enterable);
+    let down: [number, number] | null = null;
+    const ray = new Ray();
+    const a = new Vector3();
+    const b = new Vector3();
+    const hit = new Vector3();
+    const box = new Box3();
+    const onDown = (e: PointerEvent) => {
+      down = e.target === el ? [e.clientX, e.clientY] : null;
+    };
+    const onClick = (e: MouseEvent) => {
+      if (e.target !== el || !down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+      const r = el.getBoundingClientRect();
+      const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
+      const ny = -((e.clientY - r.top) / r.height) * 2 + 1;
+      ray.origin.setFromMatrixPosition(camera.matrixWorld);
+      ray.direction.set(nx, ny, 0.5).unproject(camera).sub(ray.origin).normalize();
+      let best: Place | null = null;
+      let bestD = Infinity;
+      for (const p of list) {
+        if (p.key === openKey) continue;
+        const [x, z] = toScene(p.x, p.z);
+        const gy = groundY(x, z);
+        const bp = beamPx(p, e.clientX, e.clientY, camera, r, a, b);
+        let d = bp < 28 ? bp : Infinity;
+        // ring: where the click ray meets the ground
+        if (ray.direction.y < -0.01) {
+          hit.copy(ray.origin).addScaledVector(ray.direction, (gy - ray.origin.y) / ray.direction.y);
+          const dm = Math.hypot(hit.x - x, hit.z - z);
+          if (dm < ringRadius(p)) d = Math.min(d, 30 + dm);
+        }
+        // the building itself
+        if (p.foot) {
+          const [fx, fz] = toScene(p.foot.x, p.foot.z);
+          box.min.set(fx - p.foot.w / 2, gy, fz - p.foot.d / 2);
+          box.max.set(fx + p.foot.w / 2, gy + p.foot.h, fz + p.foot.d / 2);
+          if (ray.intersectBox(box, hit)) d = Math.min(d, 20);
+        }
+        if (d < bestD) [best, bestD] = [p, d];
+      }
+      if (!best) return;
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      enterPlace(best);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (e.target !== el || e.buttons) return;
+      const r = el.getBoundingClientRect();
+      const over = list.some((p) => p.key !== openKey && beamPx(p, e.clientX, e.clientY, camera, r, a, b) < 28);
+      if (over) document.body.style.cursor = "pointer";
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("click", onClick, true);
+    el.addEventListener("pointermove", onMove);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("click", onClick, true);
+      el.removeEventListener("pointermove", onMove);
+    };
+  }, [places, openKey, interactive, camera, gl]);
 }
 
 // ---------------------------------------------------------------- interior
@@ -357,6 +429,14 @@ function Interior({ place }: { place: Place }) {
     // the hack hall's screen cycles through slides
     res.mats.screen.color.setHSL(0.42 + 0.12 * Math.sin(time * 0.25), 0.55, 0.42 + 0.08 * Math.sin(time * 1.7));
   });
+
+  // tell the free camera where the selected slab is (it can't drop through it)
+  useEffect(() => {
+    interiorFloor.current = { x: f.x, z: f.z, rot: f.rot, hw: f.width / 2 + 0.5, hd: f.depth / 2 + 0.5, y: base + floors[floor].y };
+    return () => {
+      interiorFloor.current = null;
+    };
+  }, [f, base, floors, floor]);
 
   const sel = floors[floor];
   const W = f.width;

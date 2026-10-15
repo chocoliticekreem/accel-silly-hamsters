@@ -8,7 +8,7 @@ import { Vector3 } from "three";
 import { toScene } from "../../sim/geometry";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
-import { camFromUrl, flyRequest } from "../flyTo";
+import { camFromUrl, flyRequest, freeCamActive } from "../flyTo";
 
 type Controls = ComponentRef<typeof OrbitControls>;
 
@@ -78,7 +78,11 @@ export default function CameraRig() {
     if (!controls) return;
     // fly to a landmark (world/flyTo): keep the compass direction, come in at a readable angle
     const req = flyRequest.current;
-    if (req && req.seq !== flySeq.current && (shared.leader === null || shared.leader === id)) {
+    if (freeCamActive.current) {
+      // the free camera owns the view: drop flights (requests made meanwhile are skipped, not queued)
+      fly.current = null;
+      if (req) flySeq.current = req.seq;
+    } else if (req && req.seq !== flySeq.current && (shared.leader === null || shared.leader === id)) {
       flySeq.current = req.seq;
       const [x, z] = toScene(req.x, req.z);
       const target = new Vector3(x, req.y ?? 0, z);
