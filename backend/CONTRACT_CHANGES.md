@@ -10,6 +10,7 @@ not sent as `null`.
 
 | Where | Difference |
 | --- | --- |
+| `GET /api/runs/{run}/stores` → `kpis` | `openHours`: hours the shop was open over the 14 days. Staff are paid for these, so every £ figure (advice `gbpPerWeek`, overview profit, `netValueGbp`, `daily[].profitGbp`) is now margin minus energy minus wages (`backend/economics.py`: gross margin after cost of goods by store type, staff on shift x GBP 12.71). Runs saved before it was added get it rebuilt from their hours and schedule. |
 | `GET /api/map` → `stores[]` | Optional `licensedHours` `{open, close}`, `defaultHours` `{open, close}`, `floorArea` (m²) and `osmId`. |
 | `GET /api/map` | `sources`: `[{label, url, fetchedAt?}]`, citations for the map data. |
 | `GET /api/map` | Optional `landmarks`: `[{id, name, kind, buildingId, x, z, h, note?}]`, named real places to label or render specially. `kind` is `venue` \| `hotel` \| `station` \| `market` \| `landmark`; `buildingId` is the map building that is the place, or `null` (Old Street station is underground); `x`/`z` in map metres; `h` = the building's height in metres (where to hang a label; `0` = street level). The OSM map has `shoreditch-high-street` (station, the origin, with its building), `liverpool-street`, `moorgate` and `old-street` (stations at the station node, `buildingId: null`), `encode-hub` (venue, the hackathon), `artotel-london-hoxton` (hotel, 92.2 m) and `boxpark-shoreditch` (market); the fallback map only the station. Absent in maps built before it was added. |
@@ -22,7 +23,7 @@ not sent as `null`.
 | `GET /api/runs` | `status` adds `queued`, `running` and `failed`. `kpis` is `null` until the run is `done`. |
 | `POST /api/decision` | Optional `?run=` query parameter pins the run whose report the owner saw. Default: the report endpoint's default run. |
 | New `GET /files/reports/{run}/{storeId}.pdf` | The PDF behind `pdfUrl` (`application/pdf`). |
-| New `GET /api/runs/{run}/summary` | `RunSummary` (`backend/schemas.py`) for the city view: `kpis`, `objective`, `objectiveValue`, `peakKw`, `peakHour`, `co2Kg`, `energyCostGbp`, `demandByHourKw[24]`, `footfallByHour[24]`, `agents`, `durationSec`, `cost`, `cache`. Area totals only, no store ids. Optional `daily`: the in-run learning curve, 14 entries `{day, visits, kwh, visitsPerKwh, profitGbp, ownerActions}` (e.g. `{"day": 1, "visits": 1012, "kwh": 1603.4, "visitsPerKwh": 0.631, "profitGbp": 412.5, "ownerActions": 3}`): that sim day's area totals over non-club stores; `profitGbp` = margin on the visits (spend per visit x gross margin by store type, `backend/economics.py`) minus that day's energy bill; `ownerActions` = owner events dated that day (0 with adaptation off). Visits count on the day they start (a trip past midnight of day 14 counts on day 14), so the 14 entries sum to `kpis.visits` and, within rounding, to `kpis.kwh`. Every new run has it; runs from before it was added omit it. |
+| New `GET /api/runs/{run}/summary` | `RunSummary` (`backend/schemas.py`) for the city view: `kpis`, `objective`, `objectiveValue`, `peakKw`, `peakHour`, `co2Kg`, `energyCostGbp`, `demandByHourKw[24]`, `footfallByHour[24]`, `agents`, `durationSec`, `cost`, `cache`. Area totals only, no store ids. Optional `daily`: the in-run learning curve, 14 entries `{day, visits, kwh, visitsPerKwh, profitGbp, ownerActions}` (e.g. `{"day": 1, "visits": 1012, "kwh": 1603.4, "visitsPerKwh": 0.631, "profitGbp": 412.5, "ownerActions": 3}`): that sim day's area totals over non-club stores; `profitGbp` = margin on the visits (spend per visit x gross margin by store type, `backend/economics.py`) minus that day's energy bill and wages for the hours open; `ownerActions` = owner events dated that day (0 with adaptation off). Visits count on the day they start (a trip past midnight of day 14 counts on day 14), so the 14 entries sum to `kpis.visits` and, within rounding, to `kpis.kwh`. Every new run has it; runs from before it was added omit it. |
 | New `GET /api/notebook` | Analyst lab notebook: `[{run, line, objectiveValue, at, objective}]`, one line per run. `objective` names what `objectiveValue` measures (`visitsPerKwh`, `visits` or `netValueGbp` in GBP a week; `null` in entries written before training was configurable): sessions with different objectives leave values in different units. A one-shop session (`storeProfitGbp`) notes the run's area value on `settings.OBJECTIVE`, never the shop's profit. |
 | New `GET /api/health` | `{ok, simVersion, mapSource, realRuns, peoplePerAgent?}`. `mapSource` is `processed`, `sample` or `missing`. `peoplePerAgent`: real people one sim agent stands for, from `data/processed/demand.json` (the "1 sim agent ~ N real arrivals" scale in its notes) divided by the sim's arrival rescaling (`sim.citizens.arrival_scale`); omitted while demand.json or the processed map is missing. |
 | New `GET /api/runs/{run}/footfall` | `RunFootfall` (`backend/contract.py`): `{run, onStreetByDayHour[14][24]}`, the mean number of sim agents on the street (between their first and last keyframe, not inside a store) in each clock hour of each day, from the run's day files. × `peoplePerAgent` = people on the street. Area totals only, no store or agent ids. 404 for an unknown run or while a day file is missing (the detail names it). |
@@ -44,7 +45,7 @@ not sent as `null`.
 
 | Field | Accepts | Default |
 | --- | --- | --- |
-| `objective` | `visitsPerKwh` \| `netValueGbp` (weekly margin on visits minus the energy bill, `backend/economics.py`) \| `visits` \| `storeProfitGbp` (one shop's profit change per week vs the session baseline: a one-shop session, as `POST /api/stores/{storeId}/optimize` runs; needs exactly one store in `storeIds` and `analystBackend` `auto` or `heuristic`) | `settings.OBJECTIVE` |
+| `objective` | `visitsPerKwh` \| `netValueGbp` (weekly margin on visits minus the energy bill and wages, `backend/economics.py`) \| `visits` \| `storeProfitGbp` (one shop's profit change per week vs the session baseline: a one-shop session, as `POST /api/stores/{storeId}/optimize` runs; needs exactly one store in `storeIds` and `analystBackend` `auto` or `heuristic`) | `settings.OBJECTIVE` |
 | `threshold` | 0–1: stop when the gain over the best run stays below it... | `settings.THRESHOLD` (0.02) |
 | `patience` | ≥ 1: ...for this many runs in a row | 2 |
 | `maxRuns` | 2–50, the baseline included | `settings.MAX_RUNS` (10) |
@@ -97,11 +98,11 @@ not sent as `null`.
   baseline. Street events cut (roadworks, heavy traffic) or lift (event) stop-ins at the shops on
   that street; walking routes are unchanged. Owners decide with money in mind
   (`backend/economics.py`): a later close only when the margin on the expected extra visits beats
-  the extra energy bill (lights included); a first/last hour is trimmed when its visits don't pay
-  for its energy (an extension that didn't pay is taken back); window lights go off while shut and
+  the extra energy bill (lights included) and the wages for the extra time; a first/last hour is
+  trimmed when its visits don't pay for its energy and staff (an extension that didn't pay is taken back); window lights go off while shut and
   sign lights in daylight (a lit window only draws people at night while open). `day_closed`
   comes from a weekly review at the end of day 7: a weekday that was clearly dead in week 1 (under
-  10% of an average day's visits and its margin below its energy bill) is closed from week 2;
+  10% of an average day's visits and its margin below its energy bill and wages) is closed from week 2;
   `day_reopened` (`trigger.kind` `dead_day`) follows when people keep trying the door or the
   footfall past the shut door is close to an open day's (it applies from the next week, which may
   be past day 14).
