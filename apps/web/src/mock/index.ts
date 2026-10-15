@@ -75,6 +75,12 @@ const pdfUrls = new Map<string, string>();
 export function mockApi(state: MockState = createMockState()): Api {
   const { map } = state;
   const storeName = (id: string) => map.stores.find((s) => s.id === id)?.name ?? id;
+  const areas = Object.fromEntries(
+    map.stores.map((s) => {
+      const b = map.buildings.find((x) => x.id === s.buildingId)!;
+      return [s.id, b.w * b.d];
+    }),
+  );
 
   return {
     map: () => later(() => map),
@@ -92,7 +98,7 @@ export function mockApi(state: MockState = createMockState()): Api {
     suggestions: (run) =>
       later(() => {
         const best = state.bestRun();
-        return run >= best ? [] : suggestionsBetween(state.config(run), state.config(best), state.result(run).stores, state.result(best).stores);
+        return run >= best ? [] : suggestionsBetween(state.config(run), state.config(best), state.result(run).stores, state.result(best).stores, areas);
       }),
     apply: (req) => later(() => ({ queuedRun: Math.max(req.run, MOCK_RUN_COUNT) + 1 })),
     analyst: () =>
@@ -110,7 +116,7 @@ export function mockApi(state: MockState = createMockState()): Api {
         const from = run === best ? 1 : run;
         const store = map.stores.find((s) => s.id === storeId)!;
         const key = `${storeId}:${from}`;
-        let report = buildReport(storeId, store.type, state.config(from), state.config(best), state.result(from).stores, state.result(best).stores, `?run=${best}&store=${storeId}&t=${4 * 1440 + 2 * 60}`, "");
+        let report = buildReport(storeId, store.type, state.config(from), state.config(best), state.result(from).stores, state.result(best).stores, areas[storeId], `?run=${best}&store=${storeId}&t=${4 * 1440 + 2 * 60}`, "");
         if (!pdfUrls.has(key) && typeof URL.createObjectURL === "function") {
           const lines = [
             `Run ${from} -> best run ${best}`,

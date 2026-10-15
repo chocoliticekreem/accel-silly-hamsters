@@ -202,6 +202,7 @@ button.chip:hover {
   background: rgba(255, 255, 255, 0.04);
   font-size: 13px;
   font-weight: 600;
+  color: inherit;
   text-decoration: none;
   transition: transform 0.08s, background 0.15s, border-color 0.15s;
 }
@@ -1068,7 +1069,7 @@ button.chip:hover {
 .compare-label {
   position: absolute;
   left: 50%;
-  top: 16px;
+  bottom: 92px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -1076,11 +1077,7 @@ button.chip:hover {
   padding: 8px 14px;
   white-space: nowrap;
 }
-.compare-pane:first-child .compare-label {
-  left: auto;
-  right: 16px;
-  transform: none;
-}
+
 
 /* ---------- 3D labels & toast ---------- */
 

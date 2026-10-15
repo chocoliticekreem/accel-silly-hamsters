@@ -24,7 +24,7 @@ const isWeekend = (day: number) => dow(day) >= 5;
 // ---------- energy model (kWh per m² per hour) ----------
 
 const OPEN_KWH: Record<StoreType, number> = { cafe: 0.004, restaurant: 0.005, takeaway: 0.0045, bar: 0.004, shop: 0.0025, offlicence: 0.003, club: 0.006 };
-const LIGHT_KWH: Record<LightLevel, number> = { off: 0, low: 0.001, high: 0.003 };
+export const LIGHT_KWH: Record<LightLevel, number> = { off: 0, low: 0.001, high: 0.003 };
 
 // ---------- network: everyone walks the sidewalks of the street grid ----------
 

@@ -6,7 +6,8 @@ import { useMemo, useRef } from "react";
 import { CapsuleGeometry, Color, DynamicDrawUsage, MeshStandardMaterial, Object3D, type InstancedMesh } from "three";
 import { toScene } from "../../sim/geometry";
 import { sampleAgent } from "../../sim/interp";
-import { dayOf } from "../../sim/time";
+import { nightLevel } from "../../sim/sky";
+import { dayOf, hourOf } from "../../sim/time";
 import { useDayAgents } from "../../state/data";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
@@ -24,7 +25,7 @@ export default function Agents() {
   const { geo, mat } = useMemo(
     () => ({
       geo: new CapsuleGeometry(0.55, 1.1, 4, 8).translate(0, 1.1, 0),
-      mat: new MeshStandardMaterial({ roughness: 0.7 }),
+      mat: new MeshStandardMaterial({ roughness: 0.7, emissive: "#ffffff", emissiveIntensity: 0 }),
     }),
     [],
   );
@@ -36,6 +37,8 @@ export default function Agents() {
     if (!m) return;
     const t = useSim.getState().t;
     const bob = clock.elapsedTime * 9;
+    // a faint self-glow at night so people stay readable against dark streets
+    mat.emissiveIntensity = 0.28 * nightLevel(hourOf(t));
     live.occupancy.clear();
     let n = 0;
     for (let i = 0; i < agents.length && n < CAPACITY; i++) {

@@ -31,7 +31,7 @@ export function HistoryPanel() {
 
       <div className="chart">
         <ResponsiveContainer width="100%" height={170}>
-          <LineChart data={data} margin={{ top: 14, right: 16, bottom: 0, left: -18 }}>
+          <LineChart data={data} margin={{ top: 22, right: 18, bottom: 0, left: -18 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
             <XAxis dataKey="run" tick={{ fill: "#8b97ad", fontSize: 11 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill: "#8b97ad", fontSize: 11 }} axisLine={false} tickLine={false} domain={["dataMin - 0.05", "dataMax + 0.03"]} tickFormatter={(v: number) => v.toFixed(2)} />
@@ -42,7 +42,7 @@ export function HistoryPanel() {
               formatter={(v) => [fmtNum(Number(v)), "visits/kWh"]}
             />
             {stopRun && (
-              <ReferenceLine x={stopRun} stroke="#8b97ad" strokeDasharray="4 4" label={{ value: "stopped · plateau", position: "insideTopRight", fill: "#8b97ad", fontSize: 10 }} />
+              <ReferenceLine x={stopRun} stroke="#8b97ad" strokeDasharray="4 4" label={{ value: "stopped · plateau", position: "insideBottomRight", fill: "#8b97ad", fontSize: 10 }} />
             )}
             <Line
               type="monotone"
