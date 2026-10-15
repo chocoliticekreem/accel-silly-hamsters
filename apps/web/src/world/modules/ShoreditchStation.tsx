@@ -23,6 +23,7 @@ import { buildArea, type AreaData, type GraffitiWall } from "../shoreditch/area"
 import { hoardingTexture, muralTexture } from "../shoreditch/paint";
 import { modelObject, stationSite, type StationSite } from "../shoreditch/site";
 import { stationPulse } from "../stationPulse";
+import { fetchJsonTracked } from "../../state/loading";
 
 const noRaycast = () => null;
 const POOL = 110;
@@ -115,8 +116,7 @@ export default function ShoreditchStation() {
   useEffect(() => {
     if (!real) return;
     let live = true;
-    fetch(`${import.meta.env.BASE_URL}areas/shoreditch-station.json`)
-      .then((r) => (r.ok ? r.json() : null))
+    fetchJsonTracked(`${import.meta.env.BASE_URL}areas/shoreditch-station.json`, "landmarks", "shoreditch-station", { optional: true })
       .then((d) => live && d && setData(d as AreaData))
       .catch(() => undefined);
     return () => {

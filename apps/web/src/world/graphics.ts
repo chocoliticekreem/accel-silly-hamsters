@@ -3,7 +3,7 @@
 import { useRealCity } from "./realcity/data";
 
 const NONE: ReadonlySet<string> = new Set();
-const REAL_HIDES: ReadonlySet<string> = new Set(["Buildings", "Streets", "Ground", "Infill", "Surroundings"]);
+export const REAL_HIDES: ReadonlySet<string> = new Set(["Buildings", "Streets", "Ground", "Infill", "Surroundings"]);
 
 export function useModuleHides(): ReadonlySet<string> {
   const real = useRealCity((s) => s.drawn);

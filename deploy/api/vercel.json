@@ -8,5 +8,29 @@
       "maxDuration": 300
     }
   },
-  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+  "headers": [
+    {
+      "source": "/runs/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, s-maxage=86400"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/runs/(.*)",
+      "destination": "/runs/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/api/index"
+    }
+  ]
 }

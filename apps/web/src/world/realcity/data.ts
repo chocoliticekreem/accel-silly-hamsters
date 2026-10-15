@@ -2,7 +2,11 @@
 // public/city/{buildings,roads,land}.json. Loaded once per page; the Real* modules build three.js geometry from it.
 // While it loads (or if it is missing) `ready` stays false and the old procedural modules keep drawing the city.
 // Coordinates here are already in the *scene* frame (x east, z = -north): see toScene in sim/geometry.ts.
+import { useEffect, useState } from "react";
 import { create } from "zustand";
+import type { CityMap } from "../../api/contract";
+import { task } from "../../state/loading";
+import type { BuiltArrays } from "./buildCity";
 
 export type P = [number, number];
 
@@ -135,7 +139,7 @@ export const inPolygon = (x: number, z: number, rings: P[][]) => inRing(x, z, ri
 const rect = (a: number[]) => ({ minX: a[0], maxX: a[2], minZ: -a[3], maxZ: -a[1] });
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function decode(b: any, r: any, l: any): RealCity {
+export function decode(b: any, r: any, l: any): RealCity {
   const buildings: RealBuilding[] = b.b.map((e: any[]) => {
     const rings = orient((e[1] as number[][]).map(ring));
     const [cx, cz] = centroidOf(rings[0]);
@@ -187,6 +191,36 @@ export const useRealCity = create<RealCityState>(() => ({ status: "idle", city: 
 /** ?real=0 keeps the old procedural city (debugging / comparisons). */
 const disabled = () => new URLSearchParams(window.location.search).get("real") === "0";
 
+// The heavy lifting (download, JSON parse, decode, building geometry) runs in a Web Worker (realcity/city.worker.ts)
+// so the page keeps drawing frames; if workers are unavailable or the worker fails, the same code runs here instead.
+let worker: Worker | null = null;
+/** The worker holds its own decoded copy of the city (needed for builds). */
+let workerHasCity = false;
+let nextBuild = 1;
+const builds = new Map<number, { resolve: (b: BuiltArrays) => void; reject: (e: Error) => void }>();
+
+function startWorker(): Worker | null {
+  if (worker) return worker;
+  try {
+    worker = new Worker(new URL("./city.worker.ts", import.meta.url), { type: "module" });
+  } catch (e) {
+    console.warn("[city] no worker, building on the main thread:", e);
+    return null;
+  }
+  return worker;
+}
+
+function mainThreadLoad(onProgress: (p: number) => void): Promise<RealCity> {
+  const base = `${import.meta.env.BASE_URL}city/`;
+  let n = 0;
+  const get = (f: string) =>
+    fetch(base + f).then((res) => {
+      if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json")) throw new Error(`${f}: ${res.status}`);
+      return res.json().then((j) => (onProgress(++n / 3), j));
+    });
+  return Promise.all([get("buildings.json"), get("roads.json"), get("land.json")]).then(([b, r, l]) => decode(b, r, l));
+}
+
 export function loadRealCity() {
   if (useRealCity.getState().status !== "idle") return;
   if (disabled()) {
@@ -194,23 +228,93 @@ export function loadRealCity() {
     return;
   }
   useRealCity.setState({ status: "loading" });
-  const base = `${import.meta.env.BASE_URL}city/`;
-  const get = (f: string) =>
-    fetch(base + f).then((res) => {
-      if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json")) throw new Error(`${f}: ${res.status}`);
-      return res.json();
-    });
-  Promise.all([get("buildings.json"), get("roads.json"), get("land.json")])
-    .then(([b, r, l]) => useRealCity.setState({ status: "ready", city: decode(b, r, l) }))
-    .catch((e) => {
-      console.warn("real city data unavailable, keeping the procedural city:", e);
-      useRealCity.setState({ status: "missing" });
-    });
+  const t = task("city", "data", 3);
+  const ok = (city: RealCity) => {
+    useRealCity.setState({ status: "ready", city });
+    t.done();
+  };
+  const missing = (e: unknown) => {
+    console.warn("real city data unavailable, keeping the procedural city:", e);
+    useRealCity.setState({ status: "missing" });
+    // the procedural city stands in: not an error worth showing
+    t.done();
+  };
+  const fallback = () => mainThreadLoad((p) => t.progress(p)).then(ok, missing);
+  const w = startWorker();
+  if (!w) return void fallback();
+  let settled = false;
+  w.onmessage = (e: MessageEvent) => {
+    const m = e.data;
+    if (m.type === "progress") t.progress(m.p);
+    else if (m.type === "city") {
+      settled = true;
+      workerHasCity = true;
+      ok(m.city as RealCity);
+    } else if (m.type === "built") {
+      builds.get(m.id)?.resolve(m.built as BuiltArrays);
+      builds.delete(m.id);
+    } else if (m.type === "error") {
+      if (m.id != null) {
+        builds.get(m.id)?.reject(new Error(m.message));
+        builds.delete(m.id);
+      } else if (!settled) {
+        settled = true;
+        // a missing bake fails the same way on the main thread: no need to try twice
+        missing(m.message);
+      }
+    }
+  };
+  w.onerror = (e) => {
+    console.warn("[city] worker failed, falling back to the main thread:", e.message);
+    e.preventDefault?.();
+    worker = null;
+    workerHasCity = false;
+    for (const b of builds.values()) b.reject(new Error("worker failed"));
+    builds.clear();
+    if (!settled) {
+      settled = true;
+      fallback();
+    }
+  };
+  w.postMessage({ type: "load", base: new URL(`${import.meta.env.BASE_URL}city/`, location.href).href });
+}
+
+/** The real buildings' merged geometry arrays: built in the worker when it has the city, else here. */
+export async function buildRealBuildings(city: RealCity, map: CityMap): Promise<BuiltArrays> {
+  if (worker && workerHasCity) {
+    try {
+      const id = nextBuild++;
+      const w = worker;
+      return await new Promise<BuiltArrays>((resolve, reject) => {
+        builds.set(id, { resolve, reject });
+        // the map is plain JSON data: structured-cloned (a DataCloneError rejects and falls back below)
+        w.postMessage({ type: "build", id, map });
+      });
+    } catch (e) {
+      console.warn("[city] worker build failed, building on the main thread:", e);
+    }
+  }
+  const { buildCityArrays } = await import("./buildCity");
+  return buildCityArrays(city, map);
 }
 
 /** The baked city once loaded (null meanwhile / when missing). Starts the load on first use. */
-export function useRealCityData(): RealCity | null {
+export function useRealCityData(frames = 0): RealCity | null {
   const city = useRealCity((s) => s.city);
   if (useRealCity.getState().status === "idle") queueMicrotask(loadRealCity);
-  return city;
+  // `frames` > 0: hand the city over that many frames after it arrives, so the modules that build geometry from it
+  // (roads, land, rail) each take their turn instead of all building in the same frame
+  const [late, setLate] = useState<RealCity | null>(null);
+  useEffect(() => {
+    if (!frames || !city) return;
+    let n = frames;
+    let raf = 0;
+    const tick = () => {
+      if (--n <= 0) setLate(city);
+      else raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [city, frames]);
+  return frames ? (late === city ? late : null) : city;
 }

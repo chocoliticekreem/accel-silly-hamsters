@@ -137,7 +137,7 @@ function build(city: RealCity, map: CityMap) {
 }
 
 export default function RealRail() {
-  const city = useRealCityData();
+  const city = useRealCityData(8); // a turn of its own after the city arrives
   const { map } = useWorld();
   const geo = useMemo(() => (city ? build(city, map) : null), [city, map]);
   const mats = useMemo(

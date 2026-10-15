@@ -109,7 +109,7 @@ function fillTrees(trunks: InstancedMesh | null, crowns: InstancedMesh | null, t
 }
 
 export default function RealLand() {
-  const city = useRealCityData();
+  const city = useRealCityData(5); // a turn of its own after the city arrives
   const built = useMemo(() => (city ? build(city) : null), [city]);
   const assets = useMemo(() => {
     const crown = new IcosahedronGeometry(1, 1);
