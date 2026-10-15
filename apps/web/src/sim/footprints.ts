@@ -71,3 +71,32 @@ export function resolveOverlaps(buildings: Building[]): Building[] {
   }
   return out.filter((_, i) => !dropped.has(i));
 }
+
+/**
+ * Generic boxes must not stand inside a hero landmark: `skip` ids (the landmark's own host buildings) are dropped,
+ * and any other box overlapping a keep-out rect (contract x0..x1, z0..z1) is cut back with the same rule as
+ * resolveOverlaps (keep the larger side), or dropped when only a sliver would remain.
+ */
+export function clearKeepouts(buildings: Building[], rects: { x0: number; x1: number; z0: number; z1: number }[], skip: Set<string>): Building[] {
+  const out: Building[] = [];
+  for (const b of buildings) {
+    if (skip.has(b.id)) continue;
+    const m = { ...b };
+    let alive = true;
+    for (let pass = 0; pass < 3 && alive; pass++) {
+      let clean = true;
+      for (const r of rects) {
+        const k: Building = { ...m, x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, w: r.x1 - r.x0, d: r.z1 - r.z0 };
+        if (overlapArea(m, k) <= 1e-6) continue;
+        clean = false;
+        if (!cut(m, k)) {
+          alive = false;
+          break;
+        }
+      }
+      if (clean) break;
+    }
+    if (alive) out.push(m);
+  }
+  return out;
+}

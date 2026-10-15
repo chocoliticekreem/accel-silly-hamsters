@@ -2,7 +2,7 @@
 // Agent days are loaded one at a time; the next day is prefetched while playing (spec: performance).
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api } from "../api/client";
-import type { AgentDay, AgentEvent, AgentSession, AnalystStatus, Calibration, Health, RunAreaSummary, StoreInsights, CityMap, OwnerEvent, OwnerReport, RunStores, RunSummary, StreetEvent, Suggestion } from "../api/contract";
+import type { AgentDay, AgentEvent, AgentSession, AnalystStatus, Calibration, Health, RunAreaSummary, RunFootfall, StoreInsights, CityMap, OwnerEvent, OwnerReport, RunStores, RunSummary, StreetEvent, Suggestion } from "../api/contract";
 import { DAYS_PER_RUN } from "../api/contract";
 import { resolveOverlaps } from "../sim/footprints";
 import { mergeDays, prepareAgents, type PreparedAgent } from "../sim/interp";
@@ -48,6 +48,8 @@ export async function watchRun(run: number, everyMs = 3000, maxTries = 200): Pro
     if (r && (r.status === "done" || r.status === "failed")) {
       invalidate("runs");
       invalidate("analyst");
+      // a footfall asked for while the run was still going came back empty (404)
+      invalidate(`footfall:${run}`);
       return r.status;
     }
     await new Promise((res) => setTimeout(res, everyMs));
@@ -87,6 +89,7 @@ export const useRuns = () => useResource<RunSummary[]>("runs", () => api.runs())
 export const useAnalyst = () => useResource<AnalystStatus>("analyst", () => api.analyst());
 export const useHealth = () => useResource<Health | null>("health", () => api.health());
 export const useSummary = (run: number | null) => useResource<RunAreaSummary | null>(run == null ? null : `summary:${run}`, () => api.summary(run!));
+export const useFootfall = (run: number) => useResource<RunFootfall | null>(`footfall:${run}`, () => api.footfall(run));
 export const useInsights = (storeId: string | null, run: number) =>
   useResource<StoreInsights | null>(storeId ? `insights:${storeId}:${run}` : null, () => api.insights(storeId!, run));
 export const useAgentSession = () => useResource<AgentSession | null>("agents:session", () => api.agentSession());
@@ -103,28 +106,67 @@ export const useReport = (storeId: string | null, run: number) =>
 
 const loadDay = (run: number, day: number) => load(`day:${run}:${day}`, () => api.day(run, day));
 
+const NO_AGENTS: PreparedAgent[] = [];
+
+/** One prepared day ("run:day"): `list` is set once it has loaded, so a render can read it synchronously. */
+interface PreparedDay {
+  promise: Promise<PreparedAgent[]>;
+  list?: PreparedAgent[];
+}
+/** The last few prepared days (each holds ~1–2 MB of typed arrays); oldest first. */
+const preparedDays = new Map<string, PreparedDay>();
+const KEEP_PREPARED_DAYS = 8;
+
+/** Loads and prepares the agents around `day` once, shared by every module that draws them. */
+export function prepareDay(run: number, day: number): PreparedDay {
+  const key = `${run}:${day}`;
+  const known = preparedDays.get(key);
+  if (known) return known;
+  const days = [day - 1, day].filter((d) => d >= 1);
+  const entry: PreparedDay = {
+    promise: Promise.all(days.map((d) => loadDay(run, d))).then((ds) => {
+      // trips past midnight sit in both files: draw (and count) each once
+      const list: AgentDay[] = mergeDays(ds);
+      entry.list = prepareAgents(list);
+      return entry.list;
+    }),
+  };
+  entry.promise.catch(() => {
+    if (preparedDays.get(key) === entry) preparedDays.delete(key); // let a later render retry
+  });
+  preparedDays.set(key, entry);
+  if (preparedDays.size > KEEP_PREPARED_DAYS) preparedDays.delete(preparedDays.keys().next().value!);
+  return entry;
+}
+
 /**
  * Agents to draw around `day`: that day plus the previous one (night-outs spill past midnight).
- * Returns prepared (typed-array) agents; prefetches day + 1.
+ * Returns prepared (typed-array) agents and prepares day + 1 ahead, so crossing midnight swaps lists in the same
+ * frame. Only ever this run and day's agents: [] while they load, and [] when a day fails to load.
  */
 export function useDayAgents(run: number, day: number): PreparedAgent[] {
-  const [agents, setAgents] = useState<{ key: string; list: PreparedAgent[] }>({ key: "", list: [] });
+  const [agents, setAgents] = useState<{ key: string; list: PreparedAgent[] }>({ key: "", list: NO_AGENTS });
   const key = `${run}:${day}`;
   useEffect(() => {
     let alive = true;
-    const days = [day - 1, day].filter((d) => d >= 1);
-    Promise.all(days.map((d) => loadDay(run, d))).then((ds) => {
-      if (!alive) return;
-      // trips past midnight sit in both files: draw (and count) each once
-      const list: AgentDay[] = mergeDays(ds);
-      setAgents({ key, list: prepareAgents(list) });
-    });
-    if (day < DAYS_PER_RUN) void loadDay(run, day + 1).catch(() => {});
+    prepareDay(run, day).promise.then(
+      (list) => {
+        if (alive) setAgents({ key, list });
+      },
+      (e: unknown) => {
+        if (!alive) return;
+        console.warn(`[city] agents for run ${run} day ${day} unavailable`, e);
+        setAgents({ key, list: NO_AGENTS });
+      },
+    );
+    if (day < DAYS_PER_RUN) void prepareDay(run, day + 1).promise.catch(() => {});
     return () => {
       alive = false;
     };
   }, [run, day, key]);
-  return agents.list;
+  if (agents.key === key) return agents.list;
+  // the clock just reached a day prepared ahead: draw it now rather than a blank frame until the effect catches up
+  return preparedDays.get(key)?.list ?? NO_AGENTS;
 }
 
 /** Previous run's summary (for deltas), or undefined for run 1. */

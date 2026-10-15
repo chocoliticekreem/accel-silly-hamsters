@@ -9,7 +9,7 @@ Time: t = sim minutes since Day 1 00:00. 14 days = 20160.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -178,6 +178,20 @@ class DayAgent(Model):
 class DayData(Model):
     day: int
     agents: list[DayAgent]
+
+
+# --- GET /api/runs/{run}/footfall -----------------------------------------------------------
+# Additive: the street crowd behind the frontend's background walkers (backend/api/footfall.py).
+# Area totals only: no store or agent ids.
+
+HourValues = Annotated[list[float], Field(min_length=24, max_length=24)]
+
+
+class RunFootfall(Model):
+    run: int
+    # [day - 1][hour]: mean sim agents on the street (between their first and last keyframe, not
+    # inside a store) over that clock hour of that day. x peoplePerAgent (GET /api/health) = people.
+    onStreetByDayHour: list[HourValues] = Field(min_length=DAYS, max_length=DAYS)
 
 
 # --- GET /api/runs/{run}/suggestions --------------------------------------------------------
