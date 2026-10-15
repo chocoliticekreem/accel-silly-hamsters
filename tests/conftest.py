@@ -18,10 +18,13 @@ def _owner_adaptation_off(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _fresh_llm_state():
-    """The circuit breaker and recovery counts are process-wide: every test starts closed."""
+    """The circuit breaker, recovery counts and per-session caps are process-wide: every test
+    starts closed, at zero and on the settings caps."""
     llm.reset_breaker()
     llm.reset_recoveries()
+    llm._session_budgets_usd.clear()
     yield
+    llm._session_budgets_usd.clear()
     llm.reset_breaker()
     llm.reset_recoveries()
 
