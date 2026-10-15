@@ -33,6 +33,8 @@ export interface Business {
   units: EnergyUnit[];
   /** Short line under the name for landmarks. */
   sub?: string;
+  /** Landmark whose building holds several sim stores: the card lists them (each opens its own store card). */
+  simStores?: { id: string; name: string; type: StoreType }[];
 }
 
 const AMENITY: Record<string, [string, StoreType]> = {
@@ -152,13 +154,15 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 /** Landmarks the sim doesn't model yet, as businesses with estimated units. */
 function landmarkBusinesses(map: CityMap, pois: Business[]): Business[] {
   const out: Business[] = [];
-  const simBuildings = new Set(map.stores.map((s) => s.buildingId));
   for (const p of landmarkPlots(map)) {
     if (p.key === "xoyo") continue; // a sim club already
-    if (p.hostId && simBuildings.has(p.hostId)) continue; // the backend simulates it: its own card wins
     const host = p.hostId ? map.buildings.find((b) => b.id === p.hostId) : undefined;
     const footprint = p.w * p.d;
-    const base = { id: `landmark:${p.key}`, osmType: "landmark", x: p.x, z: p.z, angle: null, website: "", cuisine: "" };
+    const sims = p.hostId ? map.stores.filter((s) => s.buildingId === p.hostId) : [];
+    // one sim store: its own card opens instead (see the travel hook below)
+    if (sims.length === 1) continue;
+    const simStores = sims.length > 1 ? sims.map((s) => ({ id: s.id, name: s.name, type: s.type })) : undefined;
+    const base = { id: `landmark:${p.key}`, osmType: "landmark", x: p.x, z: p.z, angle: null, website: "", cuisine: "", simStores };
     if (p.key === "encode") {
       const levels = Math.max(1, Math.round((host?.h ?? 19) / 4));
       const h = unitHours("shop", "Mo-Fr 09:00-22:00; Sa-Su 10:00-20:00");
@@ -173,7 +177,8 @@ function landmarkBusinesses(map: CityMap, pois: Business[]): Business[] {
       out.push({
         ...base, name: "art'otel London Hoxton", label: "Hotel restaurant & rooftop bar", cat: "restaurant", sub: "Hotel tower · Old St",
         hours: "Mo-Su 07:00-23:00", address: "1-3 Rivington Street, EC2A 3DT",
-        units: [
+        // simulated already (restaurant + rooftop bar as sim stores): nothing left to estimate
+        units: simStores ? [] : [
           { name: "Ground-floor restaurant", type: "restaurant", areaM2: clampArea(footprint * 0.6), ...unitHours("restaurant", "Mo-Su 07:00-23:00") },
           { name: "Rooftop bar", type: "bar", areaM2: 250, ...unitHours("bar", "Mo-Th 17:00-24:00; Fr-Sa 17:00-02:00; Su 17:00-23:00") },
         ],
@@ -227,7 +232,7 @@ useSim.subscribe((s, prev) => {
 /** Map for the landmark hook below (set by the card while mounted). */
 export const landmarkMap: { current: CityMap | null } = { current: null };
 
-// going to (or into) a landmark the sim doesn't model opens its estimate card; one it does opens the store card
+// going to (or into) a landmark the sim doesn't model opens its estimate card (on a map without landmark stores)
 useTravel.subscribe((s, prev) => {
   if (s.focusPlace === prev.focusPlace && s.interiorOpen === prev.interiorOpen) return;
   const key = s.focusPlace as HeroLandmarkKey | null;
@@ -235,8 +240,7 @@ useTravel.subscribe((s, prev) => {
   if (s.focusPlace === prev.focusPlace && !s.interiorOpen) return; // leaving the interior keeps whatever is open
   const map = landmarkMap.current;
   const plot = landmarkPlots(map).find((p) => p.key === key);
-  const store = plot?.hostId ? map.stores.find((st) => st.buildingId === plot.hostId) : undefined;
-  if (store) {
-    if (useSim.getState().selectedStoreId !== store.id) useSim.getState().selectStore(store.id);
-  } else useBusinesses.getState().select(`landmark:${key}`);
+  const here = plot?.hostId ? map.stores.filter((st) => st.buildingId === plot.hostId) : [];
+  // sim stores there: goPlace / enterPlace open the place's store card (world/landmarks/actions)
+  if (!here.length) useBusinesses.getState().select(`landmark:${key}`);
 });
