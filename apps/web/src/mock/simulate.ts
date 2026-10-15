@@ -96,6 +96,8 @@ interface StorePlace {
 interface Ctx {
   map: CityMap;
   cfg: RunConfig;
+  /** storeId → people who walked over and found it shut, by hour of day (14-day total). */
+  missed: Map<string, number[]>;
   stores: StorePlace[];
   byId: Map<string, StorePlace>;
   homes: Loc[];
@@ -112,7 +114,7 @@ function buildingLoc(map: CityMap, buildingId: string): Loc {
   return { x: f.doorX, z: f.doorZ, axis: vertical ? "v" : "h", line: vertical ? sx : sz };
 }
 
-const ctxCache = new WeakMap<CityMap, Omit<Ctx, "cfg">>();
+const ctxCache = new WeakMap<CityMap, Omit<Ctx, "cfg" | "missed">>();
 
 function context(map: CityMap, cfg: RunConfig): Ctx {
   let base = ctxCache.get(map);
@@ -137,7 +139,7 @@ function context(map: CityMap, cfg: RunConfig): Ctx {
     };
     ctxCache.set(map, base);
   }
-  return { ...base, cfg };
+  return { ...base, cfg, missed: new Map() };
 }
 
 // ---------- store rules ----------
@@ -252,6 +254,9 @@ function visitOne(ctx: Ctx, a: Agent, choice: Choice, r: Rng, stayScale = 1): bo
   walkTo(a, s.loc);
   if (!isOpen(c, a.t)) {
     // walked over, it's shut: remember that (this changes tomorrow's route)
+    const row = ctx.missed.get(s.id) ?? Array(24).fill(0);
+    row[Math.floor((((a.t % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY) / 60)] += 1;
+    ctx.missed.set(s.id, row);
     wait(a, 1);
     a.memory?.affinity.set(s.id, (a.memory.affinity.get(s.id) ?? 1) * 0.4);
     return false;
@@ -453,6 +458,10 @@ export interface RunResult {
   /** People in the area by hour of day, averaged over the 14 days. */
   footfallByHour: number[];
   agents: { returning: number; oneOff: number; total: number };
+  /** storeId → people who found it shut, per day, by hour. */
+  missedByHour: Record<string, number[]>;
+  /** storeId → kWh drawn in each hour of a day. */
+  kwhByHour: Record<string, number[]>;
 }
 
 /** kWh drawn in each hour of a day (= average kW over that hour). */
@@ -544,6 +553,8 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number): RunResu
     demandByHourKw: demandByHourKw.map(round2),
     footfallByHour: footfall.map((n) => round(n / DAYS_PER_RUN)),
     agents: { returning: returningIds.size, oneOff: oneOffIds.size, total: returningIds.size + oneOffIds.size },
+    missedByHour: Object.fromEntries(ctx.stores.map((s) => [s.id, (ctx.missed.get(s.id) ?? Array(24).fill(0)).map((n) => round2(n / DAYS_PER_RUN))])),
+    kwhByHour: Object.fromEntries(ctx.stores.map((s) => [s.id, storeKwhByHour(ctx, s).map(round2)])),
   };
 }
 

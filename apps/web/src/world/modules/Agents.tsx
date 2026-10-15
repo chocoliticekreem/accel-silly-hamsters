@@ -14,7 +14,7 @@ import { useWorld } from "../context";
 import { personaColor } from "../palette";
 
 const CAPACITY = 4000;
-const SCALE = 2; // cartoon scale: readable from the default camera
+const SCALE = 3; // cartoon scale: readable from the default camera
 
 export default function Agents() {
   const { run, live } = useWorld();

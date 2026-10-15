@@ -21,19 +21,20 @@ import { useWorld } from "../context";
 export const PEOPLE_PER_AGENT = 48;
 const MAX_WALKERS = 2400;
 /** Floor so a busy London street never looks dead between sim trips. */
-const MIN_WALKERS = 260;
+const MIN_WALKERS = 700;
 /** Walking pace (m/s of real time). Faster than life so flows read at a glance. */
 const PACE = 3.2;
 
 const KINDS: TripKind[] = ["toWork", "fromWork", "lunch", "shopping", "evening", "nightOut", "through"];
+// Cartoon clothing: saturated enough to read against grey pavement from the default camera.
 const TONES: Record<TripKind, string[]> = {
-  toWork: ["#5d6b82", "#7d8aa1", "#4f5a6e", "#8c96a8", "#6b778c", "#c9c2b4"],
-  fromWork: ["#5d6b82", "#7d8aa1", "#4f5a6e", "#8c96a8", "#6b778c", "#c9c2b4"],
-  lunch: ["#7a8698", "#a8a092", "#5f6b7d", "#c2b8a6"],
-  shopping: ["#b98c7a", "#a3a8b5", "#8e7f9c", "#c9b38f", "#7f9c8e"],
-  evening: ["#8a6f86", "#5e6f8f", "#a07a62", "#6d8a7a", "#9a8fb0"],
-  nightOut: ["#7d5f9a", "#4f5f8c", "#9a5f7d", "#3f6f8a", "#b06f8f"],
-  through: ["#9aa3b2", "#b7aea3", "#7f8794", "#a59a8e", "#c4c9d1"],
+  toWork: ["#2f5fb3", "#3d7fe0", "#1f3a68", "#e9e4d8", "#5470a8", "#c0392b"],
+  fromWork: ["#2f5fb3", "#3d7fe0", "#1f3a68", "#e9e4d8", "#5470a8", "#c0392b"],
+  lunch: ["#e08a2c", "#2fae6a", "#3d7fe0", "#f2c230", "#e0559a"],
+  shopping: ["#e0559a", "#f2c230", "#2fae6a", "#ff7f50", "#8e6fd8"],
+  evening: ["#a463ff", "#e34b4b", "#f08a2c", "#2fae6a", "#3d7fe0"],
+  nightOut: ["#a463ff", "#ff4fd8", "#4fd8ff", "#ffe14f", "#ff6b6b"],
+  through: ["#e34b4b", "#3d7fe0", "#2fae6a", "#f2c230", "#e9e4d8", "#8e6fd8"],
 };
 
 interface Places {
@@ -143,7 +144,7 @@ export default function Footfall() {
   }, [map]);
 
   const { geo, mat } = useMemo(
-    () => ({ geo: new CapsuleGeometry(0.42, 0.9, 3, 6).translate(0, 0.9, 0), mat: new MeshStandardMaterial({ roughness: 0.85 }) }),
+    () => ({ geo: new CapsuleGeometry(0.42, 0.9, 3, 6).translate(0, 0.9, 0), mat: new MeshStandardMaterial({ roughness: 0.6, emissive: "#ffffff", emissiveIntensity: 0.06 }) }),
     [],
   );
 
@@ -171,7 +172,7 @@ export default function Footfall() {
       const [x, z] = toScene(pt.x, pt.z);
       o.position.set(x, Math.abs(Math.sin(time * 9 + i)) * 0.12, z);
       o.rotation.set(0, Math.atan2(pt.dx, -pt.dz), 0);
-      o.scale.setScalar(1.75);
+      o.scale.setScalar(3);
       o.updateMatrix();
       m.setMatrixAt(k, o.matrix);
       m.setColorAt(k, w.color);

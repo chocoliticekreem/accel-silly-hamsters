@@ -41,6 +41,7 @@ export function httpApi(base: string): Api {
     calibration: () => getOptional("/api/calibration"),
     summary: (run) => getOptional(`/api/runs/${run}/summary`),
     health: () => getOptional("/api/health"),
+    insights: (storeId, run) => getOptional(`/api/stores/${encodeURIComponent(storeId)}/insights?run=${run}`),
   };
 }
 

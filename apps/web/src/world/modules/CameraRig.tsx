@@ -20,8 +20,8 @@ const groups = new Map<string, Shared>();
 let rigSeq = 0;
 
 // From the north-east looking south-west: Shoreditch in front, the City of London skyline behind it.
-const HOME_POS = new Vector3(300, 150, -340);
-const HOME_TARGET = new Vector3(-30, 0, 40);
+const HOME_POS = new Vector3(190, 105, -230);
+const HOME_TARGET = new Vector3(-10, 0, 20);
 const FOCUS_DIST = 150;
 /** Angle from straight down when focusing a store (radians); ~32°. */
 const FOCUS_POLAR = 0.55;

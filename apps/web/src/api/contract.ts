@@ -279,6 +279,61 @@ export interface Health {
   realRuns: number;
 }
 
+// ---------- GET /api/stores/{storeId}/insights?run={run} (additive) ----------
+// One shop's analytics panel ("PostHog for shop energy"). Store-scoped: no other shop's id, name or numbers;
+// benchmarks are anonymous percentiles over >= 3 peers. kpis/funnel/energy = 14-day totals; hourly and
+// weekdayVsWeekend = per-day averages by clock hour; insight metrics and impact.gbpPerWeek = per week.
+
+export type InsightKind = "missed_demand" | "wasted_energy" | "dead_hours" | "lighting_opportunity" | "benchmark";
+export type Severity = "high" | "medium" | "low";
+
+export interface StoreInsights {
+  storeId: string;
+  run: number;
+  name: string;
+  type: StoreType;
+  days: number;
+  kpis: { visits: number; kwh: number; visitsPerKwh: number; returnRate: number; energyCostGbp: number; co2Kg: number };
+  funnel: { passersBy: number; visits: number; uniqueVisitors: number; returningVisitors: number; captureRate: number; returnRate: number };
+  hourly: {
+    visits: number[];
+    footfall: number[];
+    /** People who walked to the store and found it shut. */
+    missedDemand: number[];
+    kwh: number[];
+    lighting: LightLevel[];
+    /** 0..1 share of the hour the store is open. */
+    openFraction: number[];
+  };
+  weekdayVsWeekend: { weekday: number[]; weekend: number[] };
+  personas: { persona: string; visits: number; share: number }[];
+  energy: { kwh: number; kwhWhileClosed: number; kwhLightingWhileClosed: number; kwhLowTrafficOpen: number; costGbp: number; co2Kg: number; visitsPerKwh: number };
+  /** null when fewer than 3 anonymous peers exist. */
+  benchmarks: {
+    peers: number;
+    peerType: StoreType | "all";
+    areaMedianVisitsPerKwh: number;
+    /** 0..1 share of peers below this store. */
+    visitsPerKwhPercentile: number;
+    areaMedianCaptureRate: number;
+    captureRatePercentile: number;
+  } | null;
+  /** Ranked by £/week then severity; at most 5. */
+  insights: {
+    id: string;
+    kind: InsightKind;
+    severity: Severity;
+    title: string;
+    detail: string;
+    metric: { label: string; value: number; unit: string };
+    impact: { visits: number; kwh: number; gbpPerWeek: number };
+    confidence: Confidence;
+    suggestion: Suggestion | null;
+    evidence: Source[];
+  }[];
+  note?: string;
+}
+
 // ---------- The client interface (mock and http both implement it) ----------
 
 export interface Api {
@@ -297,4 +352,6 @@ export interface Api {
   summary(run: number): Promise<RunAreaSummary | null>;
   /** null when the backend has no health endpoint. */
   health(): Promise<Health | null>;
+  /** null for clubs, runs without store stats, or a backend without insights (404). */
+  insights(storeId: string, run: number): Promise<StoreInsights | null>;
 }

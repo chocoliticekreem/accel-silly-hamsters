@@ -8,6 +8,7 @@ import energyData from "../../../../data/processed/energy.json";
 import { formatHHMM } from "../sim/time";
 import { configForRun, LICENCE, MOCK_RUN_COUNT, notebookLabel, type RunConfig } from "./configs";
 import { generateMap } from "./map";
+import { buildInsights } from "./insights";
 import { buildReport, makePdf, suggestionsBetween } from "./report";
 import { simulateRun, type RunResult } from "./simulate";
 
@@ -187,6 +188,12 @@ export function mockApi(state: MockState = createMockState()): Api {
           agents: r.agents,
           durationSec: 0,
         };
+      }),
+    insights: (storeId, run) =>
+      later(() => {
+        const best = state.bestRun();
+        const sugg = run >= best ? [] : suggestionsBetween(state.config(run), state.config(best), state.result(run).stores, state.result(best).stores, areas);
+        return buildInsights(map, run, state.config(run), state.result(run), sugg, storeId);
       }),
     health: () => later(() => ({ ok: true, simVersion: "mock", mapSource: "sample" as const, realRuns: MOCK_RUN_COUNT })),
     decision: (req) =>

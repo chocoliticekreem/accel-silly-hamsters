@@ -71,7 +71,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
     <Canvas
       shadows
       dpr={dpr}
-      camera={{ position: [300, 150, -340], fov: 42, near: 1, far: 4000 }}
+      camera={{ position: [190, 105, -230], fov: 42, near: 1, far: 4000 }}
       gl={{ antialias: true, powerPreference: "high-performance", stencil: false }}
     >
       <PerformanceMonitor onIncline={() => setDpr(Math.min(2, window.devicePixelRatio))} onDecline={() => setDpr(1)} />
