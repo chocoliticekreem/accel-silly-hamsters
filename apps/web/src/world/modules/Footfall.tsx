@@ -4,20 +4,23 @@
 // station and edge streets to offices in the morning and back in the evening, office workers go out for lunch,
 // shoppers browse, the evening heads to bars and restaurants, and the club crowd walks to the Night Tube.
 // The trip mix follows the sim clock; the head count follows the sim (agents on street × 48).
+// Spacing: walkers keep to the pavements of the streets they are on (each on their own line across the pavement),
+// leave from any corner near a place rather than one node, stagger their departures, and every frame a spatial
+// hash steps anyone who would overlap another person (sim agents included) aside.
 // Drawn, never counted: KPIs come only from the sim.
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
-import { createPeople, SKIN_TONES, TROUSERS } from "../people";
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Color } from "three";
 import type { CityMap } from "../../api/contract";
 import { rng, weighted, type Rng } from "../../mock/rng";
+import { createSeparator, obstacles, PAVEMENT_INSET_MAX, PAVEMENT_INSET_MIN, pavementPath, type PavementPath } from "../../sim/crowd";
 import { toScene } from "../../sim/geometry";
-import { newPoint, polyline, type Polyline } from "../../sim/polyline";
+import { newPoint } from "../../sim/polyline";
 import { buildStreetGraph, tripMix, type StreetGraph, type TripKind } from "../../sim/streetGraph";
 import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
+import { createPeople, SKIN_TONES, TROUSERS } from "../people";
 
 /** Real people per sim agent (demand.json notes: "1 sim agent ~ 48 real arrivals"). */
 export const PEOPLE_PER_AGENT = 48;
@@ -26,6 +29,18 @@ const MAX_WALKERS = 2400;
 const MIN_WALKERS = 700;
 /** Walking pace (m/s of real time). Faster than life so flows read at a glance. */
 const PACE = 3.2;
+/** Figure scale: a 1.75 m person drawn ~3.5 m tall so the crowd reads from the default camera. */
+const SCALE = 2;
+/** Centre-to-centre spacing between two figures at SCALE (shoulders plus swinging limbs). */
+const MIN_GAP = 1.9;
+/** Never shove a walker further than this off their line; past it a brief brush beats walking through walls. */
+const MAX_PUSH = 3;
+/** A place's walkers start/finish at any routable node this close to it, not all at the single nearest node. */
+const PLACE_RADIUS = 25;
+/** A station empties onto every street around it. */
+const STATION_RADIUS = 45;
+/** First stretch of a trip over which departures are staggered (m). */
+const STAGGER = 24;
 
 const KINDS: TripKind[] = ["toWork", "fromWork", "lunch", "shopping", "evening", "nightOut", "through"];
 // Cartoon clothing: saturated enough to read against grey pavement from the default camera.
@@ -39,18 +54,21 @@ const TONES: Record<TripKind, string[]> = {
   through: ["#e34b4b", "#3d7fe0", "#2fae6a", "#f2c230", "#e9e4d8", "#8e6fd8"],
 };
 
+/** A place is a list of candidate street nodes (a building can be reached from several corners). */
+type Place = number[];
+
 interface Places {
-  entries: number[];
-  station: number[];
-  offices: number[];
-  homes: number[];
-  food: number[];
-  shops: number[];
-  night: number[];
+  entries: Place[];
+  station: Place[];
+  offices: Place[];
+  homes: Place[];
+  food: Place[];
+  shops: Place[];
+  night: Place[];
 }
 
 function places(map: CityMap, g: StreetGraph): Places {
-  const node = (x: number, z: number) => g.nearest(x, z);
+  const node = (x: number, z: number, radius = PLACE_RADIUS) => g.near(x, z, radius, 3);
   const bNodes = (kinds: string[]) => map.buildings.filter((b) => kinds.includes(b.kind)).map((b) => node(b.x, b.z));
   const storeNodes = (types: string[]) =>
     map.stores
@@ -60,8 +78,8 @@ function places(map: CityMap, g: StreetGraph): Places {
         return b ? [node(b.x, b.z)] : [];
       });
   const entries = map.entryPoints.map((e) => node(e.x, e.z));
-  const station = map.entryPoints.filter((e) => e.kind === "station").map((e) => node(e.x, e.z));
-  const nonEmpty = (xs: number[], fallback: number[]) => (xs.length ? xs : fallback);
+  const station = map.entryPoints.filter((e) => e.kind === "station").map((e) => node(e.x, e.z, STATION_RADIUS));
+  const nonEmpty = (xs: Place[], fallback: Place[]) => (xs.length ? xs : fallback);
   return {
     entries,
     station: nonEmpty(station, entries),
@@ -73,7 +91,11 @@ function places(map: CityMap, g: StreetGraph): Places {
   };
 }
 
-const pick = (r: Rng, xs: number[]) => xs[Math.floor(r() * xs.length)];
+/** A random node of a random place. */
+const pick = (r: Rng, xs: Place[]) => {
+  const place = xs[Math.floor(r() * xs.length)];
+  return place[Math.floor(r() * place.length)];
+};
 
 /** Origin and destination nodes for a trip of this kind. */
 function endsFor(kind: TripKind, p: Places, r: Rng): [number, number] {
@@ -97,9 +119,12 @@ function endsFor(kind: TripKind, p: Places, r: Rng): [number, number] {
 }
 
 interface Walker {
-  path: Polyline | null;
+  path: PavementPath | null;
   s: number;
+  /** +1 right-hand pavement, -1 left (re-drawn per trip). */
   side: number;
+  /** Metres beyond the kerb: this walker's own line across the pavement (re-drawn per trip). */
+  inset: number;
   speed: number;
   color: Color;
   trousers: Color;
@@ -127,8 +152,11 @@ export default function Footfall() {
         const [a, b] = endsFor(kind, p, r);
         const route = a === b ? [] : g.route(a, b);
         if (route.length < 2) continue;
-        w.path = polyline(route);
-        w.s = midway ? r() * w.path.length : 0;
+        w.path = pavementPath(route, g.routeWidths(a, b));
+        // stagger departures so everyone leaving a busy corner doesn't start on the same spot
+        w.s = midway ? r() * w.path.length : r() * Math.min(STAGGER, w.path.length * 0.3);
+        w.side = r() < 0.5 ? -1 : 1;
+        w.inset = PAVEMENT_INSET_MIN + r() * (PAVEMENT_INSET_MAX - PAVEMENT_INSET_MIN);
         w.color = colors[kind][Math.floor(r() * colors[kind].length)];
         return;
       }
@@ -138,8 +166,8 @@ export default function Footfall() {
     const walkers: Walker[] = Array.from({ length: MAX_WALKERS }, () => ({
       path: null,
       s: 0,
-      // pavement: clear of the carriageway on 8–14 m streets
-      side: (r() < 0.5 ? -1 : 1) * (6 + r() * 1.6),
+      side: 1,
+      inset: PAVEMENT_INSET_MIN,
       speed: PACE * (0.8 + r() * 0.4),
       color: colors.through[0],
       trousers: TROUSERS[Math.floor(r() * TROUSERS.length)],
@@ -152,6 +180,19 @@ export default function Footfall() {
   const people = useMemo(() => createPeople(MAX_WALKERS, { emissive: 0.06 }), []);
   useEffect(() => () => people.dispose(), [people]);
 
+  // this frame's figures in scene x/z (sim agents first, as fixed obstacles), then heading/phase/walker per figure
+  const frame = useMemo(() => {
+    const cap = obstacles.xs.length + MAX_WALKERS;
+    return {
+      xs: new Float32Array(cap),
+      zs: new Float32Array(cap),
+      heading: new Float32Array(MAX_WALKERS),
+      phase: new Float32Array(MAX_WALKERS),
+      who: new Int32Array(MAX_WALKERS),
+      sep: createSeparator(cap),
+    };
+  }, []);
+
   useFrame(({ clock }, delta) => {
     const hour = hourOf(useSim.getState().t);
     // ease toward the data-driven head count so the crowd swells and thins instead of popping
@@ -160,6 +201,10 @@ export default function Footfall() {
     const n = Math.round(shown.current);
     const dt = Math.min(delta, 0.1);
     const time = clock.elapsedTime;
+    const f = frame;
+    const fixed = obstacles.n;
+    f.xs.set(obstacles.xs.subarray(0, fixed));
+    f.zs.set(obstacles.zs.subarray(0, fixed));
     let k = 0;
     for (let i = 0; i < n; i++) {
       const w = world.walkers[i];
@@ -170,11 +215,21 @@ export default function Footfall() {
         world.assign(w, hour, false);
         if (!w.path) continue;
       }
-      w.path.at(w.s, w.side, pt);
+      w.path.at(w.s, w.side, w.inset, pt);
       const [x, z] = toScene(pt.x, pt.z);
-      const phase = time * 7 * (w.speed / PACE) + w.stride;
-      people.set(k, x, Math.abs(Math.sin(phase)) * 0.06, z, Math.atan2(pt.dx, -pt.dz), phase, true, 2.3, w.color, w.trousers, w.skin);
+      f.xs[fixed + k] = x;
+      f.zs[fixed + k] = z;
+      f.heading[k] = Math.atan2(pt.dx, -pt.dz);
+      f.phase[k] = time * 7 * (w.speed / PACE) + w.stride;
+      f.who[k] = i;
       k++;
+    }
+    // step aside: nobody walks through anybody, sim agents included
+    f.sep.separate(f.xs, f.zs, fixed + k, MIN_GAP, { fixed, maxPush: MAX_PUSH });
+    for (let q = 0; q < k; q++) {
+      const w = world.walkers[f.who[q]];
+      const phase = f.phase[q];
+      people.set(q, f.xs[fixed + q], Math.abs(Math.sin(phase)) * 0.05, f.zs[fixed + q], f.heading[q], phase, true, SCALE, w.color, w.trousers, w.skin);
     }
     people.commit(k);
   });
