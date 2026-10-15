@@ -2,7 +2,7 @@
 // back and forth along the real street polylines in their lane. The sim doesn't model traffic: this is ambience,
 // not data, so it never feeds a KPI. Fewer vehicles late at night; headlights come on after dark.
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { BoxGeometry, Color, DynamicDrawUsage, MeshStandardMaterial, Object3D, type InstancedMesh } from "three";
 import { rng } from "../../mock/rng";
 import { newPoint, pingPong, polyline, type Polyline } from "../../sim/polyline";
@@ -11,6 +11,7 @@ import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
+import { newTrafficVehicle, publishTraffic, respawnScale, speedFactor, type TrafficVehicle } from "../physics/traffic";
 
 type Kind = "bus" | "cab" | "car";
 
@@ -19,10 +20,13 @@ interface Vehicle {
   path: Polyline;
   lane: number;
   speed: number; // m/s
-  phase: number; // metres
+  /** Distance travelled along the back-and-forth trip (metres). */
+  d: number;
   /** 0..1: vehicles with a higher value disappear first as the night empties the streets. */
   shy: number;
   color: Color;
+  /** Shared with the physics layer: pose out, crash takeover / hold-back in (world/physics/traffic.ts). */
+  live: TrafficVehicle;
 }
 
 const SIZE: Record<Kind, [number, number, number]> = {
@@ -44,7 +48,7 @@ const o = new Object3D();
 const p = newPoint();
 
 export default function Traffic() {
-  const { map } = useWorld();
+  const { map, interactive } = useWorld();
   const meshes = { bus: useRef<InstancedMesh>(null), cab: useRef<InstancedMesh>(null), car: useRef<InstancedMesh>(null) };
   const windows = { bus: useRef<InstancedMesh>(null), cab: useRef<InstancedMesh>(null), car: useRef<InstancedMesh>(null) };
   const glassMat = useMemo(() => new MeshStandardMaterial({ color: "#27303d", emissive: "#ffe2a8", emissiveIntensity: 0.15, roughness: 0.2 }), []);
@@ -60,19 +64,17 @@ export default function Traffic() {
       const n = Math.max(1, Math.round((path.length / (main ? 70 : 120)) * (main ? 1 : 0.8)));
       for (let i = 0; i < n; i++) {
         const kind: Kind = main && r() < 0.35 ? "bus" : r() < 0.3 ? "cab" : "car";
-        out.push({
-          kind,
-          path,
-          lane: s.width / 4,
-          speed: kind === "bus" ? 6 + r() * 2 : 8 + r() * 4,
-          phase: r() * path.length * 2,
-          shy: r(),
-          color: new Color(kind === "bus" ? "#d42a2a" : kind === "cab" ? "#1d1f24" : CAR_COLORS[Math.floor(r() * CAR_COLORS.length)]),
-        });
+        const speed = kind === "bus" ? 6 + r() * 2 : 8 + r() * 4;
+        const d = r() * path.length * 2;
+        const shy = r();
+        const color = new Color(kind === "bus" ? "#d42a2a" : kind === "cab" ? "#1d1f24" : CAR_COLORS[Math.floor(r() * CAR_COLORS.length)]);
+        out.push({ kind, path, lane: s.width / 4, speed, d, shy, color, live: newTrafficVehicle(kind, SIZE[kind], color, s.id) });
       }
     }
     return out;
   }, [map]);
+  // the main view's traffic is the one physics drives (the compare view stays plain ambience)
+  useEffect(() => (interactive ? publishTraffic(vehicles.map((v) => v.live)) : undefined), [vehicles, interactive]);
 
   const counts = useMemo(() => {
     const c: Record<Kind, number> = { bus: 0, cab: 0, car: 0 };
@@ -91,22 +93,40 @@ export default function Traffic() {
     [],
   );
 
-  useFrame(({ clock }) => {
+  useFrame((_, delta) => {
     const hour = hourOf(useSim.getState().t);
     const keep = presence(hour);
     const night = nightLevel(hour);
     glassMat.emissiveIntensity = 0.15 + night * 1.6;
     const idx: Record<Kind, number> = { bus: 0, cab: 0, car: 0 };
-    const time = clock.elapsedTime;
+    const dt = Math.min(delta, 0.1);
+    const now = performance.now();
     for (const v of vehicles) {
-      if (v.shy > keep) continue;
-      const [s, forward] = pingPong(v.phase + time * v.speed, v.path.length);
-      v.path.at(s, forward ? v.lane : -v.lane, p);
-      const [x, z] = toScene(p.x, p.z);
-      const dir = forward ? 1 : -1;
-      o.position.set(x, 0, z);
-      // scene z = -north, so heading in scene is atan2(dx, -dz)
-      o.rotation.set(0, Math.atan2(p.dx * dir, -p.dz * dir), 0);
+      const ov = v.live.override;
+      if (ov) {
+        // crashed: physics owns the pose until the tow truck's been
+        o.position.copy(ov.position);
+        o.quaternion.copy(ov.quaternion);
+        o.scale.setScalar(ov.scale);
+      } else {
+        v.live.shown = v.shy <= keep;
+        if (!v.live.shown) continue;
+        const k = speedFactor(v.live, dt); // queues behind a crash scene
+        v.d += dt * v.speed * k;
+        const [s, forward] = pingPong(v.d, v.path.length);
+        v.path.at(s, forward ? v.lane : -v.lane, p);
+        const [x, z] = toScene(p.x, p.z);
+        const dir = forward ? 1 : -1;
+        // scene z = -north, so heading in scene is atan2(dx, -dz)
+        const heading = Math.atan2(p.dx * dir, -p.dz * dir);
+        v.live.x = x;
+        v.live.z = z;
+        v.live.heading = heading;
+        v.live.speed = v.speed * k;
+        o.position.set(x, 0, z);
+        o.rotation.set(0, heading, 0);
+        o.scale.setScalar(respawnScale(v.live, now));
+      }
       o.updateMatrix();
       const i = idx[v.kind]++;
       meshes[v.kind].current?.setMatrixAt(i, o.matrix);
