@@ -271,6 +271,8 @@ function Traffic({ street, windows }: { street: Street; windows: [number, number
   );
 }
 
+const SHOW_TRAFFIC_TINT = false;
+
 export default function StreetEvents() {
   const { map, run } = useWorld();
   const events = useStreetEvents(run).data;
@@ -286,9 +288,9 @@ export default function StreetEvents() {
       {works.map((e, i) => (
         <Roadworks key={`${e.streetId}:${e.fromT}:${i}`} event={e} street={streets.get(e.streetId!)!} />
       ))}
-      {traffic.map(([id, windows]) => (
-        <Traffic key={id} street={streets.get(id)!} windows={windows} />
-      ))}
+      {/* heavy traffic is shown by the traffic itself and the city feed; the red road slab read as a glitch */}
+      {SHOW_TRAFFIC_TINT &&
+        traffic.map(([id, windows]) => <Traffic key={id} street={streets.get(id)!} windows={windows} />)}
     </group>
   );
 }

@@ -7,6 +7,8 @@ here in code, not in prompts (docs/BUILD_NOTES.md, "Agents"):
   - the resulting window sits inside the store's licensed hours (MapStore.licensedHours, else a
     default cap for the store type)
   - the store stays open at least 60 minutes and closes for at least 30 (so never 24 hours)
+  - the day is no longer than a small independent of its type realistically trades
+    (MAX_OPEN_HOURS), unless the owner already trades longer
   - at most settings.MAX_CHANGES_PER_STORE_PER_WEEK changes per store per iteration
   - lighting levels are off | low | high, hours are 0-23, and `from` matches the current config
   - clubs are fixed anchors and never change
@@ -40,6 +42,26 @@ DEFAULT_LICENSED_HOURS: dict[str, tuple[str, str]] = {
     "shop": ("06:00", "23:00"),
     "offlicence": ("06:00", "23:00"),
 }
+
+
+# The longest trading day we will advise, by store type (hours). Extra hours cost staff time the
+# sim does not price yet, so without a cap "stay open longer" always looks profitable and the
+# loops talk a small takeaway into a 20-hour day. An owner whose day is already longer keeps it:
+# the cap never forces a shorter day, it only stops advice from making it longer than this.
+MAX_OPEN_HOURS: dict[str, float] = {
+    "cafe": 13,
+    "restaurant": 14,
+    "takeaway": 17,
+    "bar": 15,
+    "shop": 12,
+    "offlicence": 16,
+}
+
+
+def max_open_minutes(store_type: str, current_minutes: int) -> int:
+    """The longest daily window advice may set: the type's cap, or today's length if longer."""
+    cap = int(MAX_OPEN_HOURS.get(store_type, 24) * 60)
+    return max(cap, current_minutes)
 
 
 @dataclass(frozen=True)
@@ -126,7 +148,17 @@ def _hours_change_violation(
         return f"no change: {suggestion.field} is already {to}"
     open_hhmm = to if suggestion.field == "open" else config.open
     close_hhmm = to if suggestion.field == "close" else config.close
-    return hours_violation(open_hhmm, close_hhmm, licensed_window(store))
+    violation = hours_violation(open_hhmm, close_hhmm, licensed_window(store))
+    if violation is not None:
+        return violation
+    length = window_length(open_hhmm, close_hhmm)
+    limit = max_open_minutes(store.type, window_length(config.open, config.close))
+    if length > limit:
+        return (
+            f"a {length / 60:g} h day is longer than a {store.type} usually trades "
+            f"(at most {limit / 60:g} h)"
+        )
+    return None
 
 
 def _violation(
