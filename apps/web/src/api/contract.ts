@@ -222,6 +222,30 @@ export interface DecisionResponse {
   ok: boolean;
 }
 
+// ---------- GET /api/calibration (additive, optional) ----------
+// Sim busyness vs Google Popular Times for a few anchor venues: the credibility chart.
+// Mirrors data/processed/calibration.json. A backend without it answers 404; the UI then hides the tab.
+
+export interface CalibrationVenue {
+  name: string;
+  storeId: string;
+  type: StoreType;
+  /** 24 values, 0–100 = share of the venue's busiest hour of the week (Popular Times scale). */
+  weekday: number[];
+  weekend: number[];
+  /** false = a placeholder shape for the venue type, not data for this venue. Never use it as proof. */
+  measured: boolean;
+  source: Source | null;
+}
+
+export interface Calibration {
+  venues: CalibrationVenue[];
+  /** true when every target fell back to placeholders. */
+  fallback?: boolean;
+  notes?: string[];
+  sources?: Source[];
+}
+
 // ---------- The client interface (mock and http both implement it) ----------
 
 export interface Api {
@@ -234,4 +258,6 @@ export interface Api {
   analyst(): Promise<AnalystStatus>;
   report(storeId: string, run: number): Promise<OwnerReport>;
   decision(req: DecisionRequest): Promise<DecisionResponse>;
+  /** null when the backend doesn't serve calibration yet. */
+  calibration(): Promise<Calibration | null>;
 }

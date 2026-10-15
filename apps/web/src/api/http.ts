@@ -30,6 +30,12 @@ export function httpApi(base: string): Api {
     analyst: () => get("/api/analyst"),
     report: (storeId, run) => get(`/api/stores/${encodeURIComponent(storeId)}/report?run=${run}`),
     decision: (req) => post("/api/decision", req),
+    calibration: async () => {
+      const res = await fetch(`${root}/api/calibration`);
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`GET /api/calibration → ${res.status}`);
+      return res.json();
+    },
   };
 }
 

@@ -2,7 +2,7 @@
 // Agent days are loaded one at a time; the next day is prefetched while playing (spec: performance).
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { AgentDay, AnalystStatus, CityMap, OwnerReport, RunStores, RunSummary, Suggestion } from "../api/contract";
+import type { AgentDay, AnalystStatus, Calibration, CityMap, OwnerReport, RunStores, RunSummary, Suggestion } from "../api/contract";
 import { DAYS_PER_RUN } from "../api/contract";
 import { prepareAgents, type PreparedAgent } from "../sim/interp";
 
@@ -51,6 +51,7 @@ export function useResource<T>(key: string | null, loader: () => Promise<T>): Re
 export const useMap = () => useResource<CityMap>("map", () => api.map());
 export const useRuns = () => useResource<RunSummary[]>("runs", () => api.runs());
 export const useAnalyst = () => useResource<AnalystStatus>("analyst", () => api.analyst());
+export const useCalibration = () => useResource<Calibration | null>("calibration", () => api.calibration());
 export const useRunStores = (run: number | null) => useResource<RunStores>(run == null ? null : `stores:${run}`, () => api.runStores(run!));
 export const useSuggestions = (run: number) => useResource<Suggestion[]>(`suggestions:${run}`, () => api.suggestions(run));
 export const useReport = (storeId: string | null, run: number) =>
