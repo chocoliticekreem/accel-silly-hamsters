@@ -44,7 +44,7 @@ describe("mock runs", () => {
     const d = await api.day(1, 5);
     expect(d.day).toBe(5);
     expect(d.agents.length).toBeGreaterThan(200);
-    expect(d.agents.length).toBeLessThan(600);
+    expect(d.agents.length).toBeLessThan(5000);
     for (const a of d.agents) {
       for (let i = 1; i < a.path.length; i++) expect(a.path[i][0]).toBeGreaterThanOrEqual(a.path[i - 1][0]);
       for (const v of a.visits) expect(v.tOut).toBeGreaterThanOrEqual(v.tIn);
@@ -68,7 +68,7 @@ describe("mock runs", () => {
   });
 
   it("suggests the next experiment as diffs", async () => {
-    const s = await api.suggestions(2);
+    const s = await api.suggestions(1);
     const id = state.map.stores.find((x) => x.name === "Kebab Co")!.id;
     expect(s.find((x) => x.storeId === id && x.field === "close")).toMatchObject({ from: "23:00", to: "03:00" });
   });

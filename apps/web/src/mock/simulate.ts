@@ -9,11 +9,11 @@ import type { RunConfig, StoreConfig } from "./configs";
 import { H_STREETS, V_STREETS } from "./map";
 import { between, intBetween, pick, rng, seedOf, weighted, type Rng } from "./rng";
 
-export const WALK_M_PER_MIN = 75;
+export const WALK_M_PER_MIN = 45; // an amble, not a commute sprint
 
 // ---------- personas ----------
 
-export type Persona = "commuter" | "resident" | "student" | "shopper" | "night-owl" | "tourist" | "foodie";
+export type Persona = "commuter" | "resident" | "student" | "shopper" | "night-owl" | "tourist" | "foodie" | "passer-by";
 
 type Prefs = Partial<Record<StoreType, number>>;
 
@@ -24,7 +24,7 @@ const isWeekend = (day: number) => dow(day) >= 5;
 // ---------- energy model (kWh per m² per hour) ----------
 
 const OPEN_KWH: Record<StoreType, number> = { cafe: 0.004, restaurant: 0.005, takeaway: 0.0045, bar: 0.004, shop: 0.0025, offlicence: 0.003, club: 0.006 };
-const LIGHT_KWH: Record<LightLevel, number> = { off: 0, low: 0.001, high: 0.003 };
+export const LIGHT_KWH: Record<LightLevel, number> = { off: 0, low: 0.001, high: 0.003 };
 
 // ---------- network: everyone walks the sidewalks of the street grid ----------
 
@@ -210,6 +210,14 @@ function walkTo(a: Agent, to: Loc) {
   a.at = to;
 }
 
+/** Window-shopping: wander to a random point on a random street. */
+function stroll(a: Agent, r: Rng) {
+  const vertical = r() < 0.5;
+  const line = vertical ? pick(r, VX) : pick(r, HZ);
+  const along = between(r, -200, 200);
+  walkTo(a, vertical ? { x: line, z: along, axis: "v", line } : { x: along, z: line, axis: "h", line });
+}
+
 function wait(a: Agent, minutes: number) {
   a.t += minutes;
   a.path.push([round(a.t), round(a.at.x), round(a.at.z)]);
@@ -372,7 +380,10 @@ function dayAgents(ctx: Ctx, regs: Regular[], day: number, seed: number): AgentD
       case "shopper": {
         if (r() > (weekend ? 0.85 : 0.4)) break;
         const s = go("", reg.home, at(day, between(r, 10.5, 16)));
-        for (let k = intBetween(r, 1, 3); k > 0; k--) visitOne(ctx, s, { prefs: { shop: 3, cafe: 1 }, outside: 0.3 }, r);
+        for (let k = intBetween(r, 1, 3); k > 0; k--) {
+          stroll(s, r);
+          visitOne(ctx, s, { prefs: { shop: 3, cafe: 1 }, outside: 0.3 }, r);
+        }
         walkTo(s, reg.home);
         out.push(finish(s));
         break;
@@ -392,7 +403,7 @@ function dayAgents(ctx: Ctx, regs: Regular[], day: number, seed: number): AgentD
   // one-off visitors: appear once, never come back
   const oneOff = (persona: Persona, n: number, fn: (a: Agent, r: Rng) => void, hours: [number, number]) => {
     for (let i = 0; i < n; i++) {
-      const id = `v${day}-${persona}-${i}`;
+      const id = `v${day}-${persona}-${hours[0]}-${i}`;
       const r = rng(seedOf(seed, day, id));
       const from = r() < 0.5 ? ctx.station : pick(r, ctx.entries);
       const a = startAgent(id, persona, false, from, at(day, between(r, hours[0], hours[1])), r);
@@ -401,7 +412,10 @@ function dayAgents(ctx: Ctx, regs: Regular[], day: number, seed: number): AgentD
     }
   };
   oneOff("tourist", weekend ? 70 : 40, (a, r) => {
-    for (let k = intBetween(r, 2, 4); k > 0; k--) visitOne(ctx, a, { prefs: { shop: 2, cafe: 1.5, restaurant: 1, bar: 0.5 }, outside: 0.4 }, r);
+    for (let k = intBetween(r, 2, 4); k > 0; k--) {
+      stroll(a, r);
+      visitOne(ctx, a, { prefs: { shop: 2, cafe: 1.5, restaurant: 1, bar: 0.5 }, outside: 0.4 }, r);
+    }
     walkTo(a, r() < 0.6 ? ctx.station : pick(r, ctx.entries));
   }, [10, 17]);
   oneOff("foodie", Math.round(25 + 20 * night), (a, r) => {
@@ -410,6 +424,20 @@ function dayAgents(ctx: Ctx, regs: Regular[], day: number, seed: number): AgentD
     walkTo(a, r() < 0.6 ? ctx.station : pick(r, ctx.entries));
   }, [18, 21]);
   oneOff("night-owl", Math.round(110 * night), (a, r) => nightOut(ctx, a, day, r), [21.5, 23.8]);
+
+  // passers-by: the through-traffic of a busy high street. Most never stop; a lit, open shop can catch a few.
+  const PASSER_SCALE = 4;
+  const through = (n: number, hours: [number, number]) =>
+    oneOff("passer-by", Math.round(n * PASSER_SCALE), (a, r) => {
+      if (r() < 0.6) stroll(a, r);
+      visitOne(ctx, a, { prefs: { cafe: 1, takeaway: 1, shop: 0.8, offlicence: 0.8, bar: 0.6 }, outside: 14, maxDist: 120 }, r);
+      walkTo(a, r() < 0.4 ? ctx.station : pick(r, ctx.entries));
+    }, hours);
+  through(weekend ? 60 : 160, [7, 9.5]); // morning commute
+  through(weekend ? 260 : 200, [9.5, 17]);
+  through(weekend ? 120 : 180, [17, 19.5]); // evening commute
+  through(Math.round(120 * night + 40), [19.5, 23.5]);
+  through(Math.round(70 * night), [23.5, 27]); // after midnight (into the next morning)
 
   return out;
 }
