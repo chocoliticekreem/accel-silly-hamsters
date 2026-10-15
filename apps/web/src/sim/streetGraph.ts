@@ -10,8 +10,12 @@ export interface StreetGraph {
   /** adjacency: node → [neighbour, metres][] */
   adj: [number, number][][];
   nearest(x: number, z: number): number;
+  /** Routable nodes within `radius` m of (x, z), nearest first; at least the `atLeast` nearest ones. */
+  near(x: number, z: number, radius: number, atLeast?: number): number[];
   /** Node path a → b as points (empty if unreachable). */
   route(a: number, b: number): [number, number][];
+  /** Carriageway width (m) of each segment of route(a, b): one entry per consecutive point pair. */
+  routeWidths(a: number, b: number): number[];
 }
 
 function segIntersect(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): [number, number] | null {
@@ -57,24 +61,55 @@ export function buildStreetGraph(streets: Street[]): StreetGraph {
     return nodes.length - 1;
   };
   const adj: [number, number][][] = [];
-  const link = (a: number, b: number) => {
+  // widest street using each edge (two streets can share a merged edge)
+  const widths = new Map<string, number>();
+  const edgeKey = (a: number, b: number) => (a < b ? `${a},${b}` : `${b},${a}`);
+  const link = (a: number, b: number, width: number) => {
     if (a === b) return;
+    const key = edgeKey(a, b);
+    const known = widths.get(key);
+    widths.set(key, Math.max(known ?? 0, width));
+    if (known !== undefined) return;
     const d = Math.hypot(nodes[a][0] - nodes[b][0], nodes[a][1] - nodes[b][1]);
     (adj[a] ??= []).push([b, d]);
     (adj[b] ??= []).push([a, d]);
   };
-  for (const c of chains) {
+  chains.forEach((c, i) => {
     let prev = nodeOf(c[0]);
     for (let k = 1; k < c.length; k++) {
       const n = nodeOf(c[k]);
-      link(prev, n);
+      link(prev, n, streets[i].width);
       prev = n;
     }
-  }
+  });
   for (let n = 0; n < nodes.length; n++) adj[n] ??= [];
 
-  const cache = new Map<number, [number, number][]>();
+  const cache = new Map<number, number[]>();
   const N = nodes.length;
+  const routeNodes = (a: number, b: number): number[] => {
+    const key = a * N + b;
+    const hit = cache.get(key);
+    if (hit) return hit;
+    const dist = new Float64Array(N).fill(Infinity);
+    const prev = new Int32Array(N).fill(-1);
+    const done = new Uint8Array(N);
+    dist[a] = 0;
+    for (;;) {
+      let u = -1;
+      for (let n = 0; n < N; n++) if (!done[n] && dist[n] < Infinity && (u < 0 || dist[n] < dist[u])) u = n;
+      if (u < 0 || u === b) break;
+      done[u] = 1;
+      for (const [v, w] of adj[u])
+        if (dist[u] + w < dist[v]) {
+          dist[v] = dist[u] + w;
+          prev[v] = u;
+        }
+    }
+    const path: number[] = [];
+    if (dist[b] !== Infinity) for (let n = b; n >= 0; n = prev[n]) path.unshift(n);
+    cache.set(key, path);
+    return path;
+  };
   return {
     nodes,
     adj,
@@ -90,32 +125,20 @@ export function buildStreetGraph(streets: Street[]): StreetGraph {
       }
       return best;
     },
+    near(x, z, radius, atLeast = 1) {
+      const all: [number, number][] = [];
+      for (let n = 0; n < N; n++) if (adj[n].length) all.push([n, Math.hypot(nodes[n][0] - x, nodes[n][1] - z)]);
+      all.sort((u, v) => u[1] - v[1]);
+      return all.filter(([, d], k) => d <= radius || k < atLeast).map(([n]) => n);
+    },
     route(a, b) {
-      const key = a * N + b;
-      const hit = cache.get(key);
-      if (hit) return hit;
-      const dist = new Float64Array(N).fill(Infinity);
-      const prev = new Int32Array(N).fill(-1);
-      const done = new Uint8Array(N);
-      dist[a] = 0;
-      for (;;) {
-        let u = -1;
-        for (let n = 0; n < N; n++) if (!done[n] && dist[n] < Infinity && (u < 0 || dist[n] < dist[u])) u = n;
-        if (u < 0 || u === b) break;
-        done[u] = 1;
-        for (const [v, w] of adj[u]) if (dist[u] + w < dist[v]) {
-          dist[v] = dist[u] + w;
-          prev[v] = u;
-        }
-      }
-      const path: [number, number][] = [];
-      if (dist[b] === Infinity) {
-        cache.set(key, path);
-        return path;
-      }
-      for (let n = b; n >= 0; n = prev[n]) path.unshift(nodes[n]);
-      cache.set(key, path);
-      return path;
+      return routeNodes(a, b).map((n) => nodes[n]);
+    },
+    routeWidths(a, b) {
+      const path = routeNodes(a, b);
+      const out: number[] = [];
+      for (let k = 1; k < path.length; k++) out.push(widths.get(edgeKey(path[k - 1], path[k])) ?? 8);
+      return out;
     },
   };
 }
