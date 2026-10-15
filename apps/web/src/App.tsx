@@ -11,13 +11,17 @@ import { Bot } from "lucide-react";
 import { AnalystChip } from "./ui/AnalystChip";
 import { CompareView } from "./ui/CompareView";
 import { DemoBar, DemoChip } from "./ui/DemoBar";
+import { GraphicsChip, MapAttribution } from "./ui/GraphicsChip";
+import { GoToBar } from "./ui/GoToBar";
 import { HistoryPanel } from "./ui/HistoryPanel";
 import { Clock, Hud } from "./ui/Hud";
 import { Icon } from "./ui/icons";
 import { Legend } from "./ui/Legend";
+import { PlaceJumps } from "./ui/PlaceJumps";
 import { PlaybackBar } from "./ui/PlaybackBar";
 import { StoreCard } from "./ui/StoreCard";
 import { Toast } from "./ui/Toast";
+import { SafetyToggle } from "./ui/SafetyToggle";
 import { Headline } from "./ui/Headline";
 import { HeatmapToggle } from "./ui/HeatmapToggle";
 import { InterveneMenu } from "./ui/InterveneMenu";
@@ -56,6 +60,7 @@ export default function App() {
       <div className="stage">{compare ? <CompareView /> : <World map={map} run={run} stores={stores} />}</div>
 
       <div className="overlay">
+        <GoToBar />
         <div className="top-left">
           {compare ? (
             <section className="hud panel" aria-label="Shared clock">
@@ -73,6 +78,7 @@ export default function App() {
           <div className="tool-row">
             <DemoChip />
             <InterveneMenu />
+            <GraphicsChip />
             <button className={`chip ${panel === "history" ? "on" : ""}`} aria-pressed={panel === "history"} onClick={() => openPanel(panel === "history" ? null : "history")}>
               <Icon name="chart" size={14} /> History
             </button>
@@ -85,9 +91,11 @@ export default function App() {
             <button className={`chip ${panel === "area" ? "on" : ""}`} aria-pressed={panel === "area"} onClick={() => openPanel(panel === "area" ? null : "area")}>
               <Icon name="bolt" size={14} /> Area
             </button>
+            <SafetyToggle />
             {dataTag && <span className="chip chip-mock" title={health ? `map: ${health.mapSource} · real runs: ${health.realRuns}` : undefined}>{dataTag}</span>}
           </div>
           {!compare && <HeatmapToggle />}
+          {!compare && <PlaceJumps />}
         </div>
         {panel === "history" && <HistoryPanel />}
         {panel === "area" && <AreaPanel />}
@@ -100,6 +108,7 @@ export default function App() {
         </div>
         <DemoBar />
         <Toast />
+        <MapAttribution />
       </div>
     </main>
   );

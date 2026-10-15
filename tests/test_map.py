@@ -18,11 +18,14 @@ from typing import Any
 import pytest
 
 from backend import cache, settings, timeutil
-from backend.contract import MapData, StoreType, Street, dump
-from backend.pipeline import common, map_fallback, osm_map
+from backend.contract import Bounds, MapData, StoreType, Street, dump
+from backend.pipeline import common, demand, map_fallback, osm_map
 from backend.pipeline.osm_map import OsmData, Projection, WalkGraph
 
-HALF = map_fallback.HALF_SIZE_M
+B = osm_map.BOUNDS
+WEST, EAST, SOUTH, NORTH = B.minX, B.maxX, B.minZ, B.maxZ
+# Synthetic roads run this far out in every direction, so the build clips them at the edge.
+FAR = max(-WEST, EAST, -SOUTH, NORTH) + 150.0
 ORIGIN = (51.5, -0.07)
 NON_CLUB_TYPES: tuple[StoreType, ...] = (
     "cafe",
@@ -81,17 +84,22 @@ class FakeOverpass:
 
 def synthetic_area() -> dict[str, Any]:
     """Two crossing roads with no shared node, a T-junction, a disconnected mews, paths that must
-    be ignored, two nightclubs, a takeaway next to one of them, a cafe, a bar, an off-licence."""
+    be ignored, two nightclubs (and a "nightclub" that shuts at midnight), a takeaway next to one
+    of them, a cafe, a bar, an off-licence, and a second station mapped as two nodes."""
     osm = FakeOverpass()
     osm.node(
         0,
         0,
         {"railway": "station", "public_transport": "station", "name": "Shoreditch High Street"},
     )
+    osm.node(-310, -390, {"railway": "station", "name": "Far Street", "station": "subway"})
+    osm.node(-300, -380, {"railway": "station", "name": "London Far Street"})
+    osm.node(WEST - 40, 0, {"railway": "station", "name": "Outside Station"})
     junction = osm.node(-100, 0)
-    osm.way([(-400, 0), junction, (400, 0)], {"highway": "primary", "name": "Main Road"})
-    osm.way([(0, -400), (0, 400)], {"highway": "residential", "name": "Cross Street"})
+    osm.way([(-FAR, 0), junction, (FAR, 0)], {"highway": "primary", "name": "Main Road"})
+    osm.way([(0, -FAR), (0, FAR)], {"highway": "residential", "name": "Cross Street"})
     osm.way([junction, (-100, 120)], {"highway": "residential", "name": "Side Lane"})
+    osm.way([(-300, -380), (-300, 0)], {"highway": "residential", "name": "Station Approach"})
     osm.way([(200, 200), (230, 210)], {"highway": "residential", "name": "Lonely Mews"})
     osm.way([(50, 50), (60, 120)], {"highway": "footway"})
     osm.way(
@@ -100,6 +108,11 @@ def synthetic_area() -> dict[str, Any]:
     )
     osm.node(50, 12, {"amenity": "nightclub", "name": "Club One"})
     osm.node(-150, -12, {"amenity": "nightclub", "name": "Club Two"})
+    osm.node(
+        250,
+        -12,
+        {"amenity": "nightclub", "name": "Day Cafe Club", "opening_hours": "Mo-Su 08:00-24:00"},
+    )
     osm.node(80, 12, {"amenity": "fast_food", "name": "Late Kebab"})
     osm.node(
         -50,
@@ -134,11 +147,11 @@ def dual_carriageway_area() -> dict[str, Any]:
     north_end = osm.node(0, 5)
     south_end = osm.node(30, -5)
     osm.way(
-        [(-400, -5), south_end, (400, -5)],
+        [(-FAR, -5), south_end, (FAR, -5)],
         {"highway": "primary", "name": "Twin Road", "oneway": "yes"},
     )
     osm.way(
-        [(400, 5), north_end, (-400, 5)],
+        [(FAR, 5), north_end, (-FAR, 5)],
         {"highway": "primary", "name": "Twin Road", "oneway": "yes"},
     )
     osm.way([north_end, (0, 200)], {"highway": "residential", "name": "North Street"})
@@ -224,6 +237,11 @@ def test_closes_before_midnight() -> None:
 def test_building_height() -> None:
     assert osm_map.building_height({"height": "12.5 m"}, "office") == 12.5
     assert osm_map.building_height({"building:levels": "4"}, "office") == 12.8
+    assert osm_map.building_height({"building:levels": "4", "roof:levels": "1"}, "office") == 16.0
+    # A tower mapped as a low outline plus a tall building:part keeps the part's height.
+    assert osm_map.building_height({"building:levels": "2"}, "office", part_height=86.4) == 86.4
+    assert osm_map.building_height({}, "office", part_height=172.8) == 172.8
+    assert osm_map.building_height({"height": "400"}, "office") == osm_map.MAX_HEIGHT_M
     assert (
         osm_map.building_height({}, "residential") == map_fallback.DEFAULT_HEIGHT_M["residential"]
     )
@@ -248,18 +266,31 @@ def test_build_map_on_synthetic_osm() -> None:
     assert main_road and cross_street and side_lane
     assert (0.0, 0.0) in points_of(main_road) & points_of(cross_street), "crossing not shared"
     assert (-100.0, 0.0) in points_of(main_road) & points_of(side_lane), "T-junction not shared"
-    assert {(-HALF, 0.0), (HALF, 0.0)} <= points_of(main_road), "Main Road not clipped at the edge"
+    assert {(WEST, 0.0), (EAST, 0.0)} <= points_of(main_road), "Main Road not clipped at the edge"
     assert not street(data, "Lonely Mews"), "disconnected street kept"
     assert report.dropped_streets == ["Lonely Mews"]
-    assert {s.name for s in data.streets} == {"Main Road", "Cross Street", "Side Lane"}
+    assert {s.name for s in data.streets} == {
+        "Main Road",
+        "Cross Street",
+        "Side Lane",
+        "Station Approach",
+    }
 
     entries = {(e.x, e.z) for e in data.entryPoints if e.kind == "street"}
-    assert entries == {(-HALF, 0.0), (HALF, 0.0), (0.0, -HALF), (0.0, HALF)}
-    station = [e for e in data.entryPoints if e.kind == "station"]
-    assert [(e.id, e.x, e.z) for e in station] == [("st1", 0.0, 0.0)]
+    assert entries == {(WEST, 0.0), (EAST, 0.0), (0.0, SOUTH), (0.0, NORTH)}
+    stations = [(e.id, e.name, e.x, e.z) for e in data.entryPoints if e.kind == "station"]
+    # "London Far Street" and "Far Street" are one station, entered on the side nearest the
+    # origin; the station outside the bounds is left out.
+    assert stations == [
+        ("st1", "Shoreditch High Street", 0.0, 0.0),
+        ("st2", "Far Street", -300.0, -380.0),
+    ]
+    assert report.stations[1].startswith("st2 Far Street")
 
     by_name = {s.name: s for s in data.stores}
+    # A nightclub whose OSM hours end at midnight is not a club night.
     assert {s.name for s in data.stores if s.type == "club"} == {"Club One", "Club Two"}
+    assert "Day Cafe Club" not in by_name
     assert by_name["Late Kebab"].type == "takeaway"
     assert by_name["Night Off Licence"].type == "offlicence"
     assert by_name["Morning Cafe"].defaultHours is not None
@@ -282,12 +313,66 @@ def test_build_map_on_synthetic_osm() -> None:
     assert len(WalkGraph.from_streets(data.streets).components()) == 1
 
 
+def test_a_door_inside_a_narrow_fork_goes_on_the_fork_vertex() -> None:
+    """Splitting one prong of a narrow fork near its tip would leave the new vertex touching
+    the other prong without a shared vertex (Broadgate Link / Sun Street Passage)."""
+    net = osm_map._Network()
+    path = osm_map._Way("Path", "footway", False)
+    fork, west, east = (net.add_node(p) for p in ((0.0, 0.0), (0.0, -50.0), (3.0, -50.0)))
+    net.add_seg(fork, west, path)
+    net.add_seg(fork, east, path)
+    assert osm_map._door(net, (10.0, -3.0)) == fork
+    door = osm_map._door(net, (10.0, -40.0))
+    assert door not in (fork, west, east), "a door clear of the fork splits its segment"
+
+
+def _club_venue(name: str, x: float, area: float, hours: str | None = None) -> osm_map.Venue:
+    side = math.sqrt(area)
+    return osm_map.Venue(
+        osm_key=f"node/{name}",
+        name=name,
+        type="club",
+        opening_hours=hours,
+        footprint=None,
+        shares_building=False,
+        box=(x, 20.0, side, side),
+    )
+
+
+def test_clubs_are_real_nightclubs_largest_first() -> None:
+    venues = [
+        _club_venue("Small", 0, 100),
+        _club_venue("Huge but shuts at midnight", 100, 900, "Mo-Su 08:00-24:00"),
+        _club_venue("Big", 200, 400, "Fr-Sa 22:00-04:00"),
+        _club_venue("Medium", 300, 200),
+        _club_venue("Large", 400, 300),
+        _club_venue("Tiny", 500, 50),
+    ]
+    clubs, promoted = osm_map._pick_clubs(venues)
+    assert [c.name for c in clubs] == ["Big", "Large", "Medium", "Small"]
+    assert len(clubs) == osm_map.MAX_CLUBS and not promoted
+
+
+def test_demo_prefers_the_biggest_club_with_a_late_takeaway_nearby() -> None:
+    walk = WalkGraph([((-200.0, 0.0), (400.0, 0.0))])
+
+    def takeaway(name: str, x: float) -> osm_map.Venue:
+        return osm_map.Venue(f"node/{name}", name, "takeaway", None, None, False, (x, 12, 10, 8))
+
+    small, big = _club_venue("Small Club", 0, 100), _club_venue("Big Club", 300, 400)
+    venues = [small, big, takeaway("Next To Small", 20), takeaway("Near Big", 360)]
+    demo = osm_map._pick_demo(venues, [small, big], walk)
+    assert demo is not None
+    assert (demo[0].name, demo[1].name) == ("Near Big", "Big Club")
+    assert demo[2] == pytest.approx(60.0)
+
+
 def test_dual_carriageway_folds_into_one_street() -> None:
     osm = OsmData.from_overpass(dual_carriageway_area())
     net, _ = osm_map.build_street_network(osm, Projection(*ORIGIN))
     twin = [k for k, way in net.segs.items() if way.name == "Twin Road"]
     twin_length = sum(math.dist(net.pos[a], net.pos[b]) for a, b in twin)
-    assert twin_length == pytest.approx(2 * HALF, abs=2.0), "both carriageways kept"
+    assert twin_length == pytest.approx(EAST - WEST, abs=2.0), "both carriageways kept"
     twin_nodes = {n for key in twin for n in key}
     for name in ("North Street", "South Street"):
         side = [k for k, way in net.segs.items() if way.name == name]
@@ -354,20 +439,30 @@ def map_data(request: pytest.FixtureRequest) -> MapData:
     return processed_map() if request.param == "processed" else map_fallback.fallback_map()
 
 
+def expected_bounds(map_data: MapData) -> Bounds:
+    """The OSM map is 1.5 km across; the hand-written fallback stays a 500 m schematic."""
+    return map_fallback.BOUNDS if is_fallback(map_data) else osm_map.BOUNDS
+
+
 def test_contract_round_trip(map_data: MapData) -> None:
     assert MapData.model_validate(dump(map_data)) == map_data
 
 
 def test_everything_inside_bounds(map_data: MapData) -> None:
     b = map_data.bounds
-    assert (b.minX, b.maxX, b.minZ, b.maxZ) == (-HALF, HALF, -HALF, HALF)
+    assert b == expected_bounds(map_data)
+
+    def inside(x: float, z: float, slack: float = 0.0) -> bool:
+        return b.minX - slack <= x <= b.maxX + slack and b.minZ - slack <= z <= b.maxZ + slack
+
     for s in map_data.streets:
-        assert all(abs(x) <= HALF and abs(z) <= HALF for x, z in s.points), s.id
+        assert all(inside(x, z) for x, z in s.points), s.id
     for bl in map_data.buildings:
-        assert abs(bl.x) + bl.w / 2 <= HALF + 1e-6 and abs(bl.z) + bl.d / 2 <= HALF + 1e-6, bl.id
+        corners = ((bl.x - bl.w / 2, bl.z - bl.d / 2), (bl.x + bl.w / 2, bl.z + bl.d / 2))
+        assert all(inside(x, z, 1e-6) for x, z in corners), bl.id
         assert bl.w > 0 and bl.d > 0 and bl.h > 0
     for e in map_data.entryPoints:
-        assert abs(e.x) <= HALF and abs(e.z) <= HALF, e.id
+        assert inside(e.x, e.z), e.id
 
 
 def test_ids_are_unique(map_data: MapData) -> None:
@@ -396,25 +491,47 @@ def test_building_kinds_match_store_types(map_data: MapData) -> None:
 
 
 def test_entry_points(map_data: MapData) -> None:
+    bounds = map_data.bounds
     street_entries = [e for e in map_data.entryPoints if e.kind == "street"]
     assert len(street_entries) >= 4
     assert [e.id for e in street_entries] == [f"e{i}" for i in range(1, len(street_entries) + 1)]
     for e in street_entries:
-        assert osm_map.on_edge((e.x, e.z)), f"{e.id} is not on the map edge"
+        assert osm_map.on_edge((e.x, e.z), bounds), f"{e.id} is not on the map edge"
     stations = [e for e in map_data.entryPoints if e.kind == "station"]
-    assert [(e.id, e.name) for e in stations] == [("st1", map_fallback.STATION_NAME)]
+    assert [e.id for e in stations] == [f"st{i}" for i in range(1, len(stations) + 1)]
+    assert stations[0].name == map_fallback.STATION_NAME
+    # One entry per station, except one per street entrance for ENTRANCE_STATIONS (Old Street),
+    # whose entries are consecutive.
+    names = [e.name for e in stations]
+    for name in set(names):
+        positions = [i for i, n in enumerate(names) if n == name]
+        assert positions == list(range(positions[0], positions[0] + len(positions))), name
+        assert len(positions) == 1 or name in osm_map.ENTRANCE_STATIONS, name
     vertices = points_of(map_data.streets)
     for e in map_data.entryPoints:
         assert (e.x, e.z) in vertices, f"{e.id} is not a street vertex"
+    # Every street that leaves the map is a way in: each edge vertex is (next to) an entry.
+    for p in (v for v in vertices if osm_map.on_edge(v, bounds)):
+        assert any(math.dist(p, (e.x, e.z)) <= osm_map.ENTRY_MERGE_M for e in street_entries), (
+            f"street end {p} on the edge has no entry"
+        )
+
+
+# (non-club stores, stores per non-club type): the OSM map spreads ~68 venues over 1.5 km, the
+# fallback schematic keeps its 24.
+STORE_MIX = {"processed": ((60, 80), (5, 16)), "fallback": ((20, 30), (2, 8))}
 
 
 def test_clubs_and_balanced_store_mix(map_data: MapData) -> None:
+    (low, high), (type_low, type_high) = STORE_MIX[
+        "fallback" if is_fallback(map_data) else "processed"
+    ]
     types = Counter(s.type for s in map_data.stores)
-    assert 2 <= types["club"] <= 3
+    assert 2 <= types["club"] <= 4
     non_club = sum(n for t, n in types.items() if t != "club")
-    assert 20 <= non_club <= 30
+    assert low <= non_club <= high
     for store_type in NON_CLUB_TYPES:
-        assert 2 <= types[store_type] <= 8, (store_type, types)
+        assert type_low <= types[store_type] <= type_high, (store_type, types)
 
 
 def test_street_graph_is_connected(map_data: MapData) -> None:
@@ -438,14 +555,41 @@ def _segment_gap(a: Point, b: Point, c: Point, d: Point) -> float:
     return min(point_gap(a, c, d), point_gap(b, c, d), point_gap(c, a, b), point_gap(d, a, b))
 
 
+Rect = tuple[float, float, float, float]  # x0, z0, x1, z1
+GRID_CELL_M = 50.0
+
+
+def _segment_rect(a: Point, b: Point, pad: float) -> Rect:
+    (x0, x1), (z0, z1) = sorted((a[0], b[0])), sorted((a[1], b[1]))
+    return x0 - pad, z0 - pad, x1 + pad, z1 + pad
+
+
+def _cells(rect: Rect) -> list[tuple[int, int]]:
+    x0, z0, x1, z1 = (math.floor(v / GRID_CELL_M) for v in rect)
+    return [(gx, gz) for gx in range(x0, x1 + 1) for gz in range(z0, z1 + 1)]
+
+
+def _grid(rects: list[Rect]) -> dict[tuple[int, int], list[int]]:
+    """Grid cells -> indices of the rectangles that overlap them (a broad phase: only items in
+    a shared cell can be close, so the exact checks below skip the all-pairs loop)."""
+    grid: dict[tuple[int, int], list[int]] = {}
+    for i, rect in enumerate(rects):
+        for cell in _cells(rect):
+            grid.setdefault(cell, []).append(i)
+    return grid
+
+
 def test_streets_meet_only_at_shared_vertices(map_data: MapData) -> None:
     """The sim joins streets only at identical points, so no two segments may cross or touch
     anywhere except at a vertex they share."""
     segments = [
         ((a[0], a[1]), (b[0], b[1]), s.id) for s in map_data.streets for a, b in pairwise(s.points)
     ]
+    grid = _grid([_segment_rect(a, b, 0.25) for a, b, _ in segments])
+    pairs = {pair for members in grid.values() for pair in combinations(sorted(members), 2)}
     problems = []
-    for (a, b, sa), (c, d, sb) in combinations(segments, 2):
+    for i, j in sorted(pairs):
+        (a, b, sa), (c, d, sb) = segments[i], segments[j]
         if {a, b} & {c, d}:
             continue
         if _segment_gap(a, b, c, d) < 0.25:
@@ -456,12 +600,16 @@ def test_streets_meet_only_at_shared_vertices(map_data: MapData) -> None:
 def test_buildings_stay_off_the_carriageways(map_data: MapData) -> None:
     """Boxes never sit on a road (the station is exempt: Braithwaite Street runs under it)."""
     segments = [(a, b, s.width / 2) for s in map_data.streets for a, b in pairwise(s.points)]
+    grid = _grid([_segment_rect(a, b, half) for a, b, half in segments])
     on_road = []
     for bl in map_data.buildings:
         if bl.kind == "station":
             continue
         box = (bl.x, bl.z, bl.w, bl.d)
-        gap = min(osm_map.segment_box_distance(a, b, box) - half for a, b, half in segments)
+        rect = (bl.x - bl.w / 2, bl.z - bl.d / 2, bl.x + bl.w / 2, bl.z + bl.d / 2)
+        near = sorted({i for cell in _cells(rect) for i in grid.get(cell, [])})
+        gaps = [osm_map.segment_box_distance(*segments[i][:2], box) - segments[i][2] for i in near]
+        gap = min(gaps, default=math.inf)
         if gap < -0.05:
             on_road.append((bl.id, round(gap, 2)))
     assert not on_road
@@ -528,6 +676,21 @@ def test_processed_map_is_the_osm_build() -> None:
     assert mean_point("Shoreditch High Street")[0] < -150
     assert mean_point("Redchurch Street")[1] > 80
     assert mean_point("Quaker Street")[1] < -80
+    stations = {e.name: e for e in data.entryPoints if e.kind == "station"}
+    assert list(stations) == [
+        map_fallback.STATION_NAME,
+        "Liverpool Street",
+        "Moorgate",  # just inside the south-west corner since the map reaches Old Street
+        "Old Street",
+    ]
+    assert all(name in demand.RAIL_STATIONS for name in stations), "demand knows every station"
+    liverpool_street = stations["Liverpool Street"]
+    assert liverpool_street.x < -300 and liverpool_street.z < -300, "near the south-west corner"
+    clubs = {s.name for s in data.stores if s.type == "club"}
+    assert "Village Underground" in clubs, "the real nightclub on Holywell Lane"
+    assert "XOYO" in clubs, "the Cowper Street nightclub, just inside the west edge"
+    assert not {s.name.lower() for s in data.stores} & set(osm_map.CLOSED_VENUES), "closed venue"
+    assert 2000 <= len(data.buildings) <= osm_map.MAX_BUILDINGS
 
 
 def test_fallback_is_labelled_as_hand_written() -> None:
@@ -535,3 +698,58 @@ def test_fallback_is_labelled_as_hand_written() -> None:
     assert is_fallback(data)
     assert all("not openstreetmap" in s.label.lower() for s in data.sources)
     assert all(s.osmId is None for s in data.stores)
+
+
+# --- landmarks and Old Street ---------------------------------------------------------------
+
+
+def osm_processed_map() -> MapData:
+    data = processed_map()
+    if is_fallback(data):
+        pytest.skip("data/processed/map.json is the hand-written fallback")
+    return data
+
+
+def test_landmarks_are_real_places_inside_the_bounds() -> None:
+    """Encode Hub, art'otel, Boxpark and the stations, where they really are (metres from
+    Shoreditch High Street station, which is still the origin), inside the bounds."""
+    data = osm_processed_map()
+    landmarks = {lm.id: lm for lm in data.landmarks or []}
+    expected = {
+        "shoreditch-high-street": ("station", 0, 0),
+        "old-street": ("station", -910, 265),
+        "encode-hub": ("venue", -645, 480),
+        "artotel-london-hoxton": ("hotel", -600, 340),
+        "boxpark-shoreditch": ("market", -125, 25),
+    }
+    assert set(expected) <= set(landmarks)
+    buildings = {b.id: b for b in data.buildings}
+    b = data.bounds
+    for landmark_id, (kind, x, z) in expected.items():
+        lm = landmarks[landmark_id]
+        assert lm.kind == kind, landmark_id
+        assert math.dist((lm.x, lm.z), (x, z)) < 60, (landmark_id, lm.x, lm.z)
+        assert b.minX < lm.x < b.maxX and b.minZ < lm.z < b.maxZ, landmark_id
+        if lm.buildingId is not None:
+            building = buildings[lm.buildingId]
+            assert (building.x, building.z, building.h) == (lm.x, lm.z, lm.h), landmark_id
+            assert building.storeId is None, f"{landmark_id} must not be a store"
+    assert landmarks["encode-hub"].name == "Encode Hub"
+    assert landmarks["old-street"].buildingId is None  # underground
+    assert landmarks["artotel-london-hoxton"].h > 80  # the 92 m tower
+    origin = buildings[landmarks["shoreditch-high-street"].buildingId or ""]
+    assert origin.kind == "station" and abs(origin.x) < 60 and abs(origin.z) < 30
+
+
+def test_old_street_roundabout_is_inside_with_its_streets_and_entrances() -> None:
+    data = osm_processed_map()
+    roundabout = (-880.0, 255.0)
+    assert data.bounds.minX <= roundabout[0] - 150, "room west of Old Street roundabout"
+    near = {s.name for s in data.streets if any(math.dist(p, roundabout) < 120 for p in s.points)}
+    assert {"Old Street", "City Road"} <= near
+    names = {s.name for s in data.streets}
+    assert {"East Road", "Great Eastern Street", "Old Street Roundabout"} <= names
+    entrances = [e for e in data.entryPoints if e.kind == "station" and e.name == "Old Street"]
+    assert len(entrances) >= 2, "Old Street's street entrances"
+    assert all(math.dist((e.x, e.z), roundabout) < 150 for e in entrances)
+    assert sum(math.dist((b.x, b.z), roundabout) < 200 for b in data.buildings) >= 40
