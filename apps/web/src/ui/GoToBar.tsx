@@ -20,6 +20,7 @@ const ICONS: Record<string, typeof MapPin> = {
   oldstreet: MapPin,
   boxpark: ShoppingBag,
   station: TrainFront,
+  hoxton: TrainFront,
   goodsyard: Construction,
 };
 const iconFor = (p: Place) => ICONS[p.key] ?? (p.group === "clubs" ? Music : p.group === "stations" ? TrainFront : MapPin);

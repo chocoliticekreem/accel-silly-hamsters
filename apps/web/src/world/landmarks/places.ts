@@ -70,6 +70,7 @@ const SPECS: Spec[] = [
   { key: "oldstreet", name: "Old Street", sub: "Roundabout · Northern line", landmark: "oldstreet", at: [-880, 255], dist: 240, drawnOutside: true },
   { key: "boxpark", name: "Boxpark", sub: "Container mall · Bethnal Green Rd", landmark: "boxpark", at: [-124, 26], dist: 120, interior: "boxpark", host: "free", size: [40, 16, 6] },
   { key: "station", name: "Shoreditch High St", sub: "Overground station", store: undefined, at: [0, 0], dist: 200 },
+  { key: "hoxton", name: "Hoxton", sub: "Overground station", at: [-82, 927], dist: 220, drawnOutside: true },
 ];
 
 /** Interior keys in menu order (for tests and the stepper). */
@@ -211,6 +212,7 @@ export function resolvePlaces(map: CityMap): Place[] {
   for (const e of map.entryPoints) {
     if (e.kind !== "station") continue;
     if (main && Math.hypot(e.x - main.x, e.z - main.z) < 60) continue;
+    if (out.some((p) => p.group === "places" && e.name && p.name.toLowerCase() === e.name.toLowerCase())) continue;
     const c = clampTo(map, e.x, e.z);
     out.push({ key: `station-${e.id}`, name: e.name ?? "Station", sub: "Station", group: "stations", x: c.x, z: c.z, y: 0, dist: 170, outside: c.outside });
   }

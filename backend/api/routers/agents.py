@@ -101,8 +101,9 @@ def get_session():
     state = store.load_analyst_state()
     if state is None:
         raise HTTPException(404, "no training session yet")
-    # scopeStore stays out of the area view (data firewall: no shop ids in area-level views).
-    session = AgentSession.model_validate(state.model_dump(exclude={"scopeStore"}))
+    # Only the contract's fields: scopeStore and the session's config (its storeIds) stay out of
+    # the area view (data firewall: no shop ids in area-level views).
+    session = AgentSession.model_validate(state.model_dump(include=set(AgentSession.model_fields)))
     return common.contract_json(session)
 
 

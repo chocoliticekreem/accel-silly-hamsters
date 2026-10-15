@@ -24,6 +24,8 @@ let rigSeq = 0;
 // Overground viaduct curving through and the City of London skyline behind.
 const HOME_POS = new Vector3(150, 330, -700);
 const HOME_TARGET = new Vector3(-380, 0, -260);
+const SMALL_HOME_POS = new Vector3(190, 105, -230);
+const SMALL_HOME_TARGET = new Vector3(-10, 0, 20);
 const FOCUS_DIST = 150;
 /** Angle from straight down when focusing a store (radians); ~32°. */
 const FOCUS_POLAR = 0.55;
@@ -36,10 +38,14 @@ export default function CameraRig() {
   const shared = useMemo(() => {
     if (!groups.has(cameraGroup)) {
       const url = camFromUrl();
-      groups.set(cameraGroup, { leader: null, position: url ? new Vector3(...url.position) : HOME_POS.clone(), target: url ? new Vector3(...url.target) : HOME_TARGET.clone() });
+      // the focus shot needs the 1.5 km real map; the small mock map keeps the close-up of its centre
+      const b = map.bounds;
+      const focus = b.minX <= -380 && b.maxZ >= 260;
+      const home = focus ? { p: HOME_POS, t: HOME_TARGET } : { p: SMALL_HOME_POS, t: SMALL_HOME_TARGET };
+      groups.set(cameraGroup, { leader: null, position: url ? new Vector3(...url.position) : home.p.clone(), target: url ? new Vector3(...url.target) : home.t.clone() });
     }
     return groups.get(cameraGroup)!;
-  }, [cameraGroup]);
+  }, [cameraGroup, map]);
   const fly = useRef<{ target: Vector3; position: Vector3; k: number; from?: { target: Vector3; position: Vector3 } } | null>(null);
   const selected = useSim((s) => s.selectedStoreId);
 

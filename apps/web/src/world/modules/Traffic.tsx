@@ -21,6 +21,7 @@ import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { groundY } from "../ground";
+import { newTrafficVehicle, publishTraffic, respawnScale, speedFactor, vehicleSize, type TrafficVehicle } from "../physics/traffic";
 import { buildVehicle, GLASS, LENGTH, PALETTES, PARTS, VEHICLE_KINDS, type Part, type VehicleKind } from "../vehicleModels";
 
 /** Traffic share still out by hour (0–24): busy daytime, thin after midnight. */
@@ -101,13 +102,15 @@ interface Vehicle {
   x: number;
   z: number;
   visible: boolean;
+  /** Shared with the physics layer: pose out, crash takeover / hold-back in (world/physics/traffic.ts). */
+  live: TrafficVehicle;
 }
 
 const p = newPoint();
 const pos = new Vector3();
 const quat = new Quaternion();
 const up = new Vector3(0, 1, 0);
-const one = new Vector3(1, 1, 1);
+const scl = new Vector3(1, 1, 1);
 const m4 = new Matrix4();
 const tailCol = new Color();
 const pose = { x: 0, z: 0, h: 0 };
@@ -218,7 +221,9 @@ function build(map: CityMap) {
         x: 0,
         z: 0,
         visible: true,
+        live: undefined as unknown as TrafficVehicle,
       };
+      v.live = newTrafficVehicle(kind, vehicleSize(kind, LENGTH[kind]), v.color, s.id);
       loop.vehicles.push(v);
       all.push(v);
     });
@@ -276,8 +281,10 @@ function stepLoop(l: Loop, dt: number, all: Vehicle[]) {
 }
 
 export default function Traffic() {
-  const { map } = useWorld();
+  const { map, interactive } = useWorld();
   const sim = useMemo(() => build(map), [map]);
+  // the main view's traffic is the one physics drives (the compare view stays plain ambience)
+  useEffect(() => (interactive ? publishTraffic(sim.all.map((v) => v.live)) : undefined), [sim, interactive]);
 
   const built = useMemo(() => {
     const kinds = VEHICLE_KINDS.filter((k) => sim.all.some((v) => v.kind === k));
@@ -348,6 +355,13 @@ export default function Traffic() {
     // integrate in small steps so a slow frame can't make anyone jump
     const total = Math.min(delta, 0.2);
     const steps = Math.ceil(total / 0.05);
+    // a crash scene ahead holds traffic back (physics/traffic.ts); the IDM queues the rest behind
+    for (const v of sim.all) {
+      if (v.live.override) continue;
+      const k = speedFactor(v.live, total);
+      if (k < 0.999) v.v = Math.min(v.v, v.v0 * k);
+    }
+    const now = performance.now();
     for (let k = 0; k < steps; k++) for (const l of sim.loops) stepLoop(l, total / steps, sim.all);
     const tailIdx = PARTS.indexOf("tail");
     for (const v of sim.all) {
@@ -355,9 +369,22 @@ export default function Traffic() {
       poseOnLoop(v.loop, v.u, pose);
       v.x = pose.x;
       v.z = pose.z;
-      pos.set(pose.x, groundY(pose.x, pose.z), pose.z);
-      quat.setFromAxisAngle(up, pose.h);
-      m4.compose(pos, quat, one);
+      const live = v.live;
+      const ov = live.override;
+      live.shown = v.visible && !ov;
+      live.x = pose.x;
+      live.z = pose.z;
+      live.heading = pose.h;
+      live.speed = v.v;
+      if (ov) {
+        // crashed: physics owns the pose until the tow truck's been (the loop slot drives on unseen)
+        v.visible = true;
+        m4.compose(ov.position, ov.quaternion, scl.setScalar(ov.scale));
+      } else {
+        pos.set(pose.x, groundY(pose.x, pose.z), pose.z);
+        quat.setFromAxisAngle(up, pose.h);
+        m4.compose(pos, quat, scl.setScalar(respawnScale(live, now)));
+      }
       for (let pi = 0; pi < PARTS.length; pi++) {
         const id = v.ids[pi];
         if (id < 0) continue;
