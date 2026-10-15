@@ -127,6 +127,20 @@ export interface StoreRunResult {
   kpis: StoreKpis;
   /** 24 values, averaged over the 14 days. */
   visitsByHour: number[];
+  // Additive (docs/OWNER_ACTIONS.md): the owner adapts day by day inside the run.
+  /** The weekly opening as it changed over the run, oldest first. Absent = open/close every day. Day 1 = Monday. */
+  schedule?: ScheduleEntry[] | null;
+  /** The day the shop closed for good, else null. */
+  closedFromDay?: number | null;
+}
+
+/** One week of opening hours, Mon..Sun (7 entries); null = closed that day. */
+export type WeekHours = (HoursWindow | null)[];
+
+export interface ScheduleEntry {
+  /** First day (1-based) this week applies from. */
+  fromDay: number;
+  week: WeekHours;
 }
 
 export type RunStores = Record<string, StoreRunResult>;
@@ -407,6 +421,58 @@ export interface AgentEvent {
   data: Record<string, string | number | boolean | null>;
 }
 
+// ---------- GET /api/runs/{run}/owner-events, /street-events (docs/OWNER_ACTIONS.md, additive) ----------
+// Owners adapt day by day inside a run; street events are what they (and the citizens) react to.
+
+export type OwnerAction =
+  | "hours_changed"
+  | "day_closed"
+  | "day_reopened"
+  | "shut_early"
+  | "open_late"
+  | "temporary_closure"
+  | "lighting_changed"
+  | "closed_permanently";
+
+export type OwnerTriggerKind =
+  | "missed_demand"
+  | "empty_hours"
+  | "dead_day"
+  | "roadworks"
+  | "heavy_traffic"
+  | "club_night"
+  | "event"
+  | "weather"
+  | "losses"
+  | "lights_waste";
+
+export interface OwnerEvent {
+  day: number;
+  /** Sim minute the owner acted. */
+  t: number;
+  storeId: string;
+  action: OwnerAction;
+  /** Hours, weekday names or lighting levels, as fits the action. */
+  from?: string | null;
+  to?: string | null;
+  /** One line, owner voice. */
+  reason: string;
+  trigger?: { kind: OwnerTriggerKind; value: number; label: string } | null;
+}
+
+export type StreetEventKind = "roadworks" | "heavy_traffic" | "club_night" | "event" | "weather";
+
+export interface StreetEvent {
+  day: number;
+  fromT: number;
+  toT: number;
+  kind: StreetEventKind;
+  streetId?: string | null;
+  label: string;
+  /** 0..1 */
+  severity: number;
+}
+
 // ---------- The client interface (mock and http both implement it) ----------
 
 export interface Api {
@@ -435,6 +501,10 @@ export interface Api {
   agentSession(): Promise<AgentSession | null>;
   /** The session's story, oldest first ([] when not served). */
   agentLog(run?: number): Promise<AgentEvent[]>;
+  /** Owners' day-by-day decisions this run, oldest first ([] when not served). */
+  ownerEvents(run: number): Promise<OwnerEvent[]>;
+  /** Street events (roadworks, traffic, club nights...) this run ([] when not served). */
+  streetEvents(run: number): Promise<StreetEvent[]>;
 }
 
 /** An HTTP error with its status, so the UI can say "already running" (409) or "read-only demo" (403). */

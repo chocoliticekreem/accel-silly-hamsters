@@ -257,6 +257,8 @@ export function mockApi(state: MockState = createMockState()): Api {
         bestRun: state.bestRun(),
         stoppedReason: "threshold",
       })),
+    ownerEvents: () => later(() => []),
+    streetEvents: () => later(() => []),
     health: () => later(() => ({ ok: true, simVersion: "mock", mapSource: "sample" as const, realRuns: MOCK_RUN_COUNT })),
     decision: (req) =>
       later(() => {
