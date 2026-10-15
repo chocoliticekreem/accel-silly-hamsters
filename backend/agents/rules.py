@@ -12,6 +12,11 @@ here in code, not in prompts (docs/BUILD_NOTES.md, "Agents"):
   - clubs are fixed anchors and never change
   - never a store config that was already simulated (cache.store_config_tried)
 
+A training session passes its TrainingConfig, which narrows the rules to the session's scope:
+only enabled levers, only participating stores (storeIds), at most maxStoresPerIteration stores
+and maxChangesPerStore changes per store. Without one (e.g. the owner's manual apply) only the
+hard rules hold.
+
 Rejected changes come back with a reason; callers log them with log_rejections.
 """
 
@@ -23,7 +28,7 @@ from dataclasses import dataclass
 from backend import cache, llm, settings
 from backend.agents.changes import normalize_time, window_length
 from backend.contract import MINUTES_PER_DAY, MapData, MapStore, Suggestion, dump
-from backend.schemas import StoreConfig
+from backend.schemas import StoreConfig, TrainingConfig
 from backend.timeutil import to_minutes, window_within
 
 LEVELS = ("off", "low", "high")
@@ -129,12 +134,37 @@ def _hours_change_violation(
     return hours_violation(open_hhmm, close_hhmm, licensed_window(store))
 
 
+def scope_violation(suggestion: Suggestion, training: TrainingConfig) -> str | None:
+    """Why a change falls outside a training session's levers or participating stores."""
+    if not training.levers.allows(suggestion.field):
+        lever = "lighting" if suggestion.field == "lighting" else "hours"
+        return f"the {lever} lever is off for this training session"
+    if not training.takes_part(suggestion.storeId):
+        return f"store {suggestion.storeId} is frozen: not in this session's storeIds"
+    return None
+
+
+def _session_violation(
+    suggestion: Suggestion, training: TrainingConfig | None, counts: Counter[str]
+) -> str | None:
+    if training is None:
+        return None
+    reason = scope_violation(suggestion, training)
+    if reason:
+        return reason
+    if suggestion.storeId not in counts and len(counts) >= training.maxStoresPerIteration:
+        return f"at most {training.maxStoresPerIteration} stores per experiment"
+    return None
+
+
 def _violation(
     suggestion: Suggestion,
     stores: dict[str, MapStore],
     configs: dict[str, StoreConfig],
     counts: Counter[str],
+    *,
     check_tried: bool,
+    training: TrainingConfig | None,
 ) -> str | None:
     store = stores.get(suggestion.storeId)
     if store is None:
@@ -144,8 +174,14 @@ def _violation(
     config = configs.get(suggestion.storeId)
     if config is None:
         return f"store {suggestion.storeId!r} has no config in this run"
-    if counts[suggestion.storeId] >= settings.MAX_CHANGES_PER_STORE_PER_WEEK:
-        return f"at most {settings.MAX_CHANGES_PER_STORE_PER_WEEK} changes per store per week"
+    session_reason = _session_violation(suggestion, training, counts)
+    if session_reason:
+        return session_reason
+    max_changes = (
+        training.maxChangesPerStore if training else settings.MAX_CHANGES_PER_STORE_PER_WEEK
+    )
+    if counts[suggestion.storeId] >= max_changes:
+        return f"at most {max_changes} changes per store per week"
     if suggestion.field == "lighting":
         reason = _lighting_violation(suggestion, config)
     else:
@@ -165,11 +201,13 @@ def check_changes(
     map_data: MapData,
     *,
     check_tried: bool = True,
+    training: TrainingConfig | None = None,
 ) -> RuleResult:
     """Apply `suggestions` in order on top of `base`, keeping only those that pass every rule.
 
     Each accepted change is checked against the config as changed so far, so the final config of
-    every store is one that was never simulated (when check_tried is True).
+    every store is one that was never simulated (when check_tried is True). `training` adds the
+    session's scope (see the module docstring).
     """
     stores = {s.id: s for s in map_data.stores}
     configs = {sid: config.model_copy(deep=True) for sid, config in base.items()}
@@ -177,7 +215,9 @@ def check_changes(
     accepted: list[Suggestion] = []
     rejections: list[Rejection] = []
     for suggestion in suggestions:
-        reason = _violation(suggestion, stores, configs, counts, check_tried)
+        reason = _violation(
+            suggestion, stores, configs, counts, check_tried=check_tried, training=training
+        )
         if reason:
             rejections.append(Rejection(suggestion, reason))
             continue

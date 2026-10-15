@@ -199,7 +199,9 @@ class AnalystStatus(Model):
     startedAt: str | None
     iterations: int
     bestRun: int | None
-    stoppedReason: Literal["threshold", "max_runs", "budget", "error"] | None
+    stoppedReason: Literal["threshold", "max_runs", "budget", "error", "stopped"] | None
+    # Additive: the session's baseline run, compare mode's left side (see CONTRACT_CHANGES.md).
+    baselineRun: int | None = Optional()
 
 
 # --- GET /api/stores/{storeId}/report?run={run} ---------------------------------------------

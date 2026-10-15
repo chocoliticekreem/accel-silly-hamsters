@@ -11,13 +11,13 @@ import statistics
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-from backend import settings
+from backend import economics
 from backend.agents.changes import affected_hours
-from backend.agents.objective import expected_gain
-from backend.agents.rundata import RunFiles, advised_stores, store_names
+from backend.agents.objective import NET_VALUE, expected_gain, net_value_gbp
+from backend.agents.rundata import RunFiles, advised_stores, energy_price, store_names, store_types
 from backend.agents.wording import change_label
 from backend.contract import MapData, Suggestion, dump
-from backend.schemas import NotebookEntry, StoreConfig
+from backend.schemas import NotebookEntry, StoreConfig, TrainingConfig
 from backend.timeutil import open_hours_fraction
 
 # A store's extra (or lost) visits partly come from (or go to) other stores that are open at the
@@ -70,6 +70,9 @@ class AnalystContext:
     map_data: MapData
     notebook: list[NotebookEntry] = field(default_factory=list)
     last_outcome: IterationOutcome | None = None
+    # The session's limits (stores per experiment, levers, stores, threshold); training sets
+    # objective and max_runs from it too.
+    config: TrainingConfig = field(default_factory=TrainingConfig)
 
 
 @dataclass
@@ -114,19 +117,38 @@ def expected_city_gain(
 
     Each change's expectedDelta (fractions of its store's totals) becomes absolute visits/kWh on
     that store. Energy adds to the area in full; visits only by net_visit_share, because part of
-    a store's gain is another store's loss when the others are open too.
+    a store's gain is another store's loss when the others are open too. netValueGbp values each
+    visit at its store type's margin and each kWh at the mean tariff.
     """
     advised = [s.id for s in advised_stores(map_data)]
-    d_visits = d_kwh = 0.0
+    deltas: list[tuple[str, float, float]] = []  # (store, visits, kWh) over the 14 days
     for change in changes:
         result = files.stores.get(change.storeId)
         if result is None:
             continue
         share = net_visit_share(change, files, advised)
-        d_visits += change.expectedDelta.visits * result.kpis.visits * share
-        d_kwh += change.expectedDelta.kwh * result.kpis.kwh
+        deltas.append(
+            (
+                change.storeId,
+                change.expectedDelta.visits * result.kpis.visits * share,
+                change.expectedDelta.kwh * result.kpis.kwh,
+            )
+        )
+    if objective == NET_VALUE:
+        return _expected_net_value_gain(deltas, files, map_data)
     kpis = files.summary.kpis
+    d_visits = sum(d[1] for d in deltas)
+    d_kwh = sum(d[2] for d in deltas)
     return expected_gain(kpis.visits, kpis.kwh, d_visits, d_kwh, objective)
+
+
+def _expected_net_value_gain(
+    deltas: list[tuple[str, float, float]], files: RunFiles, map_data: MapData
+) -> float:
+    types, price = store_types(map_data), energy_price()
+    value = net_value_gbp({sid: r.kpis for sid, r in files.stores.items()}, types, price)
+    delta = sum(economics.gbp_per_week(types[sid], dv, dk, price) for sid, dv, dk in deltas)
+    return delta / abs(value) if value else 0.0
 
 
 def iteration_brief(ctx: AnalystContext, files: RunFiles) -> dict:
@@ -139,7 +161,7 @@ def iteration_brief(ctx: AnalystContext, files: RunFiles) -> dict:
     return {
         "session": ctx.session,
         "objective": ctx.objective,
-        "threshold": settings.THRESHOLD,
+        "threshold": ctx.config.threshold,
         "runNumber": ctx.run_number,
         "maxRuns": ctx.max_runs,
         "bestRun": ctx.best_run,

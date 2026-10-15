@@ -36,9 +36,18 @@ from fpdf.enums import XPos, YPos
 from backend import cache, llm, settings, store
 from backend.agents import prompts, rundata
 from backend.agents.changes import config_diff, make_suggestion
-from backend.agents.objective import fraction, gain, store_value
+from backend.agents.objective import NET_VALUE, fraction, gain, store_value
 from backend.agents.wording import change_label, signed_pct
-from backend.contract import DAYS, Confidence, Impact, MapStore, Source, StoreReport, Suggestion
+from backend.contract import (
+    DAYS,
+    Confidence,
+    Impact,
+    MapStore,
+    Source,
+    StoreKpis,
+    StoreReport,
+    Suggestion,
+)
 from backend.schemas import CalibrationFile, DemandFile, EnergyFile, PersonasFile
 from backend.sim import runner
 
@@ -101,23 +110,30 @@ def _capped(confidence: Confidence, cap: Confidence) -> Confidence:
 
 
 def seed_deltas(
-    base: rundata.RunFiles, best: rundata.RunFiles, store_ids: list[str]
+    base: rundata.RunFiles,
+    best: rundata.RunFiles,
+    store_ids: list[str],
+    *,
+    objective: str | None = None,
 ) -> dict[str, list[float]] | None:
     """Per store: objective delta best vs baseline on the run's seed plus EXTRA_SEED_OFFSETS.
 
-    None when the extra simulations cannot run (logged); confidence then falls to low.
+    `objective` is the training session's (default settings.OBJECTIVE). None when the extra
+    simulations cannot run (logged); confidence then falls to low.
     """
-    objective = settings.OBJECTIVE
-    deltas = {
-        sid: [
-            gain(
-                store_value(best.stores[sid].kpis, objective),
-                store_value(base.stores[sid].kpis, objective),
-                objective,
-            )
-        ]
-        for sid in store_ids
-    }
+    objective = objective or settings.OBJECTIVE
+    types = rundata.store_types(store.load_map()) if objective == NET_VALUE else {}
+    price = rundata.energy_price() if objective == NET_VALUE else 0.0
+
+    def delta(sid: str, after: StoreKpis, before: StoreKpis) -> float:
+        kind = types.get(sid)
+        return gain(
+            store_value(after, objective, store_type=kind, price=price),
+            store_value(before, objective, store_type=kind, price=price),
+            objective,
+        )
+
+    deltas = {sid: [delta(sid, best.stores[sid].kpis, base.stores[sid].kpis)] for sid in store_ids}
     seed = best.config.seed
     try:
         for offset in EXTRA_SEED_OFFSETS:
@@ -126,11 +142,7 @@ def seed_deltas(
             for sid in store_ids:
                 if sid in on_base.stores and sid in on_best.stores:
                     deltas[sid].append(
-                        gain(
-                            store_value(on_best.stores[sid].kpis, objective),
-                            store_value(on_base.stores[sid].kpis, objective),
-                            objective,
-                        )
+                        delta(sid, on_best.stores[sid].kpis, on_base.stores[sid].kpis)
                     )
     except Exception as e:  # NotImplementedError before the sim lands, or a failing sim
         llm.log_event(
@@ -563,9 +575,12 @@ def _upload_pdf(sid: str, pdf: bytes, run: int, previous: dict | None) -> str | 
 
 
 def write_reports(
-    best_run: int, baseline_run: int, *, session: str | None = None
+    best_run: int, baseline_run: int, *, session: str | None = None, objective: str | None = None
 ) -> list[StoreReport]:
-    """Write runs/{best_run}/reports/{storeId}.json/.pdf/.meta.json for every non-club store."""
+    """Write runs/{best_run}/reports/{storeId}.json/.pdf/.meta.json for every non-club store.
+
+    Confidence is measured on `objective`, the training session's (default settings.OBJECTIVE).
+    """
     map_data = store.load_map()
     base, best = rundata.RunFiles.load(baseline_run), rundata.RunFiles.load(best_run)
     advised = [
@@ -575,7 +590,7 @@ def write_reports(
         and ms.id in base.config.stores
         and ms.id in best.config.stores
     ]
-    deltas = seed_deltas(base, best, [ms.id for ms in advised])
+    deltas = seed_deltas(base, best, [ms.id for ms in advised], objective=objective)
     cap, cap_reason = calibration_cap()
     chain = _applied_chain(best_run, baseline_run)
     online = llm.available()

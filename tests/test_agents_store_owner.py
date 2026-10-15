@@ -14,7 +14,7 @@ from backend.agents import prompts, rundata, store_owner
 from backend.agents.changes import change_signature
 from backend.agents.rules import apply_suggestion
 from backend.agents.wording import change_label
-from backend.schemas import Decision
+from backend.schemas import Decision, Levers, TrainingConfig
 
 
 @pytest.fixture
@@ -126,6 +126,48 @@ def test_an_owner_rejection_is_never_proposed_again(world):
     )
     again = propose(world.run, "s2")
     assert change_signature(first[0]) not in {change_signature(s) for s in again}
+
+
+# --- a training session's scope (TrainingConfig) ---------------------------------------------
+
+
+def test_heuristic_keeps_to_the_enabled_levers_and_the_change_cap(world):
+    brief, map_data = brief_for(world.run, "s2"), store.load_map()
+    hours_only = TrainingConfig(levers=Levers(hours=True, lighting=False))
+    assert labels(store_owner.heuristic_proposals(brief, map_data, hours_only)) == [
+        "Close 23:00 → 03:00"
+    ]
+    lighting_only = TrainingConfig(levers=Levers(hours=False, lighting=True))
+    lit = store_owner.heuristic_proposals(brief, map_data, lighting_only)
+    assert lit and all(p.field == "lighting" for p in lit)
+    one = store_owner.heuristic_proposals(brief, map_data, TrainingConfig(maxChangesPerStore=1))
+    assert labels(one) == ["Close 23:00 → 03:00"]
+
+
+def test_heuristic_ranks_by_the_session_objective(world):
+    # s4's trim saves energy and loses almost no visits: good per kWh, a loss in visits
+    for_kwh = propose(world.run, "s4")
+    brief = brief_for(world.run, "s4")
+    by_visits = dataclasses.replace(brief, objective="visits")
+    assert "Close 22:00 → 20:00" in labels(for_kwh)
+    assert "Close 22:00 → 20:00" not in labels(
+        store_owner.heuristic_proposals(by_visits, store.load_map())
+    )
+
+
+def test_propose_all_ranks_on_the_configs_objective(world):
+    by_kwh = labels(p for p in store_owner.propose_all(world.run) if p.storeId == "s4")
+    visits = TrainingConfig(objective="visits")
+    by_visits = labels(
+        p for p in store_owner.propose_all(world.run, config=visits) if p.storeId == "s4"
+    )
+    assert "Close 22:00 → 20:00" in by_kwh and "Close 22:00 → 20:00" not in by_visits
+
+
+def test_propose_all_only_advises_the_participating_stores(world):
+    proposals = store_owner.propose_all(world.run, config=TrainingConfig(storeIds=["s2", "s4"]))
+    assert proposals and {p.storeId for p in proposals} == {"s2", "s4"}
+    assert rundata.load_suggestions(world.run) == proposals
 
 
 # --- data firewall --------------------------------------------------------------------------
@@ -260,8 +302,9 @@ def test_batch_sends_one_request_per_store_with_cached_city_context(world, onlin
     assert len(set(custom_ids)) == 4 and not any(cid.endswith("c1") for cid in custom_ids)
     params = batches.created[0]["params"]
     assert params["model"] == settings.STORE_AGENT_MODEL
+    city_context = prompts.city_context(TrainingConfig())
     assert params["system"] == [
-        {"type": "text", "text": prompts.CITY_CONTEXT, "cache_control": {"type": "ephemeral"}}
+        {"type": "text", "text": city_context, "cache_control": {"type": "ephemeral"}}
     ]
     assert params["output_config"]["format"] == {
         "type": "json_schema",
@@ -295,6 +338,47 @@ def test_batch_sends_one_request_per_store_with_cached_city_context(world, onlin
         r["batch"] and r["agent"] == "store_owner" and r["session"] == "sess-1" for r in ledger
     )
     assert all(r["cache_read_tokens"] == 2000 for r in ledger)
+
+
+def test_batch_prompts_carry_the_session_limits_and_off_lever_proposals_are_dropped(world, online):
+    lit_s2 = {
+        "suggestions": [
+            S2_OUTPUT["suggestions"][0],
+            {
+                "field": "lighting",
+                "hours": [0, 1, 2],
+                "from": "off",
+                "to": "low",
+                "expectedDelta": {"visits": 0.05, "kwh": 0.01},
+                "confidence": "low",
+                "reason": "A lit frontage shows you are open.",
+            },
+        ]
+    }
+    batches = online({"s2": lit_s2})
+    config = TrainingConfig(
+        objective="netValueGbp",
+        levers=Levers(hours=True, lighting=False),
+        maxChangesPerStore=1,
+        storeIds=["s2"],
+    )
+    proposals = store_owner.propose_all(world.run, session="sess-1", config=config)
+
+    [request] = batches.created  # frozen stores get no agent
+    params = request["params"]
+    system = params["system"][0]["text"]
+    assert system == prompts.city_context(config)
+    assert "The area objective is netValueGbp" in system
+    assert "changes opening hours only: a lighting change is rejected" in system
+    assert "At most 1 changes per store per week" in system
+    assert "Propose 0-1 changes" in params["messages"][0]["content"]
+    assert labels(proposals) == ["Close 23:00 → 02:00"]
+    log = [
+        json.loads(line) for line in (settings.RUNS_DIR / str(world.run) / "llm_log.jsonl").open()
+    ]
+    [dropped] = [e for e in log if e["type"] == "rule_rejection"]
+    assert dropped["suggestion"]["field"] == "lighting"
+    assert "lighting lever is off" in dropped["reason"]
 
 
 def test_batch_is_not_submitted_once_the_session_budget_is_spent(world, online, monkeypatch):

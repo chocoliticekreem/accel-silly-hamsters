@@ -8,11 +8,13 @@ defaults were used because a source was unreachable or needed a key we don't hav
 
 from __future__ import annotations
 
-from typing import Literal
+from collections.abc import Callable
+from typing import Any, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from backend.contract import Kpis, LightingLevel, Source, StoreType
+from backend import settings
+from backend.contract import Kpis, LightingLevel, MapData, Source, StoreType
 
 Hourly = list[float]  # always 24 values, index = clock hour
 
@@ -163,6 +165,114 @@ class NotebookEntry(Model):
     line: str  # <= 12 words
     objectiveValue: float | None = None
     at: str
+    objective: str | None = None  # what objectiveValue measures; None in entries from before
+
+
+# --- runs/training_config.json --------------------------------------------------------------
+
+TrainingObjective = Literal["visitsPerKwh", "netValueGbp", "visits"]
+AnalystBackendName = Literal["auto", "heuristic", "messages", "managed"]
+StoreAgentsMode = Literal["auto", "heuristic", "batch"]
+StopReason = Literal["threshold", "max_runs", "budget", "error", "stopped"]
+
+# Bounds of TrainingConfig's numeric fields as (min, max), both inclusive, None = unbounded.
+# GET /api/training serves this table as `options`, so the UI offers what validation accepts.
+TRAINING_RANGES: dict[str, tuple[float, float | None]] = {
+    "threshold": (0.0, 1.0),
+    "patience": (1, None),
+    "maxRuns": (2, 50),  # the baseline counts as a run
+    "maxStoresPerIteration": (1, 24),
+    "maxChangesPerStore": (1, 2),  # the hard rule caps a store at 2 changes a week
+    "seed": (0, None),
+    "sessionBudgetUsd": (0.01, None),  # the max is settings.SPEND_CAP_USD, checked below
+}
+
+
+def _ranged(name: str, default: Callable[[], float]) -> Any:
+    low, high = TRAINING_RANGES[name]
+    return Field(default_factory=default, ge=low, le=high)
+
+
+class Levers(Model):
+    """The owner's two levers. A training session only ever changes the enabled ones."""
+
+    hours: bool = True
+    lighting: bool = True
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> Levers:
+        if not (self.hours or self.lighting):
+            raise ValueError("enable at least one lever: hours or lighting")
+        return self
+
+    def allows(self, field: str) -> bool:
+        """True when a change to `field` ("open", "close" or "lighting") uses an enabled lever."""
+        return self.lighting if field == "lighting" else self.hours
+
+
+class TrainingConfig(Model):
+    """How a training session runs: runs/training_config.json, or what a CLI/API caller passes.
+
+    Every default comes from settings, so a missing file (or field) means "as in settings".
+    storeIds None = every non-club store takes part; the others stay frozen at their config.
+    """
+
+    model_config = ConfigDict(extra="forbid", validate_default=True)
+
+    # cast: validate_default checks the settings value against the Literal.
+    objective: TrainingObjective = Field(
+        default_factory=lambda: cast(TrainingObjective, settings.OBJECTIVE)
+    )
+    threshold: float = _ranged("threshold", lambda: settings.THRESHOLD)
+    patience: int = _ranged("patience", lambda: settings.PATIENCE)
+    maxRuns: int = _ranged("maxRuns", lambda: settings.MAX_RUNS)
+    maxStoresPerIteration: int = _ranged(
+        "maxStoresPerIteration", lambda: settings.MAX_STORES_PER_ITERATION
+    )
+    maxChangesPerStore: int = _ranged(
+        "maxChangesPerStore", lambda: settings.MAX_CHANGES_PER_STORE_PER_WEEK
+    )
+    seed: int = _ranged("seed", lambda: settings.DEFAULT_SEED)
+    levers: Levers = Field(default_factory=Levers)
+    storeIds: list[str] | None = Field(default=None, min_length=1)
+    sessionBudgetUsd: float = _ranged("sessionBudgetUsd", lambda: settings.SESSION_BUDGET_USD)
+    analystBackend: AnalystBackendName = Field(
+        default_factory=lambda: cast(AnalystBackendName, settings.ANALYST_BACKEND)
+    )
+    storeAgents: StoreAgentsMode = "auto"
+
+    @field_validator("storeIds")
+    @classmethod
+    def _unique_store_ids(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and len(set(value)) != len(value):
+            raise ValueError("store ids must be unique")
+        return value
+
+    @field_validator("sessionBudgetUsd")
+    @classmethod
+    def _within_spend_cap(cls, value: float) -> float:
+        if value > settings.SPEND_CAP_USD:
+            raise ValueError(f"must not exceed the global spend cap of ${settings.SPEND_CAP_USD:g}")
+        return value
+
+    def takes_part(self, store_id: str) -> bool:
+        """True when `store_id` may change in this session (it is not frozen)."""
+        return self.storeIds is None or store_id in self.storeIds
+
+    def check_store_ids(self, map_data: MapData) -> None:
+        """Raise ValueError when storeIds names a store that is not on the map, or a club."""
+        if self.storeIds is None:
+            return
+        types = {s.id: s.type for s in map_data.stores}
+        problems = []
+        unknown = [sid for sid in self.storeIds if sid not in types]
+        if unknown:
+            problems.append(f"unknown store ids: {', '.join(unknown)}")
+        clubs = [sid for sid in self.storeIds if types.get(sid) == "club"]
+        if clubs:
+            problems.append(f"clubs never change: {', '.join(clubs)}")
+        if problems:
+            raise ValueError("storeIds: " + "; ".join(problems))
 
 
 class AnalystState(Model):
@@ -183,9 +293,12 @@ class AnalystState(Model):
     runsThisSession: list[int] = Field(default_factory=list)
     lowGainStreak: int = 0
     step: str = "start"  # last completed step, for resume
-    stoppedReason: Literal["threshold", "max_runs", "budget", "error"] | None = None
+    stoppedReason: StopReason | None = None
     spentGbp: float = 0.0
     error: str | None = None
+    config: TrainingConfig | None = None  # the config the session ran with (None before configs)
+    owner: str | None = None  # "host:pid" of the process that started or resumed it last
+    wrappedUp: bool = False  # the last stop's proposals and reports are written; nothing ran since
 
 
 class Decision(Model):

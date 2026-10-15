@@ -1,33 +1,60 @@
-"""POST /api/apply (manual apply from the UI), GET /api/analyst and GET /api/notebook."""
+"""POST /api/apply (manual apply from the UI), GET /api/analyst, GET /api/notebook and the
+training controls: GET /api/training, PUT /api/training/config, POST /api/training/start|stop.
+
+POST /api/training/start runs the session in a background thread of this API process, one at a
+time; POST /api/training/stop asks it to stop at its next step boundary. With settings.READ_ONLY
+(the hosted demo replays pre-computed runs) the training writes answer 403.
+"""
 
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from types import ModuleType
+from typing import Any, get_args
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
-from backend import cache, contract, store
+from backend import cache, contract, settings, store
+from backend.agents import rundata
+from backend.agents.objective import city_value, direction
 from backend.api import apply, common
 from backend.contract import (
     AnalystStatus,
     ApplyRequest,
     ApplyResponse,
+    Kpis,
     MapData,
+    Model,
     RunListItem,
     Suggestion,
 )
-from backend.schemas import NotebookEntry, RunConfig
+from backend.schemas import (
+    TRAINING_RANGES,
+    AnalystBackendName,
+    NotebookEntry,
+    RunConfig,
+    StoreAgentsMode,
+    TrainingConfig,
+    TrainingObjective,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["training"])
 
 ExecuteRun = Callable[..., int]
 MANUAL_APPLY_AGENT = "manual_apply"  # the `agent` on rule rejections logged by POST /api/apply
+
+READ_ONLY_DETAIL = (
+    "read-only deployment: this hosted demo replays pre-computed runs, so training cannot be "
+    "started, stopped or reconfigured here; run the API locally to train"
+)
+_lock = threading.Lock()  # one start or config write at a time
+_thread: threading.Thread | None = None  # the session started by POST /api/training/start
 
 
 def _load_execute_run() -> ExecuteRun:
@@ -182,26 +209,210 @@ def post_apply(request: ApplyRequest, background: BackgroundTasks) -> JSONRespon
     return common.contract_json(ApplyResponse(queuedRun=_queue_run(base, checked, background)))
 
 
+def _run_value(item: RunListItem, objective: str) -> float:
+    if objective in Kpis.model_fields:
+        assert item.kpis is not None
+        return city_value(item.kpis, objective)
+    return rundata.objective_value(item.run, objective)
+
+
+def _best_real_run(real: list[RunListItem]) -> int | None:
+    """The finished real run with the best settings.OBJECTIVE (earliest on a tie)."""
+    objective = settings.OBJECTIVE
+    scored: list[tuple[float, int]] = []
+    for item in real:
+        if item.status != "done" or item.kpis is None:
+            continue
+        try:
+            scored.append((direction(objective) * _run_value(item, objective), -item.run))
+        except FileNotFoundError:
+            continue
+    return -max(scored)[1] if scored else None
+
+
+def analyst_status() -> AnalystStatus:
+    """The analyst checkpoint (runs/analyst_state.json).
+
+    Without a checkpoint, the real runs on disk stand in: startedAt = the first real run's
+    createdAt, bestRun = the best real run by settings.OBJECTIVE, baselineRun = the first real
+    run. baselineRun is never missing while real runs exist; "stopped" with nulls before any.
+    """
+    state = store.load_analyst_state()
+    real = sorted(
+        (r for r in store.load_index() if r.run != common.SAMPLE_RUN), key=lambda r: r.run
+    )
+    first = real[0] if real else None
+    first_run = first.run if first else None
+    if state is None:
+        return AnalystStatus(
+            state="stopped",
+            startedAt=first.createdAt if first else None,
+            iterations=0,
+            bestRun=_best_real_run(real),
+            stoppedReason=None,
+            baselineRun=first_run,
+        )
+    baseline = state.baselineRun if state.baselineRun is not None else first_run
+    return AnalystStatus(
+        state=state.state,
+        startedAt=state.startedAt,
+        iterations=state.iterations,
+        bestRun=state.bestRun,
+        stoppedReason=state.stoppedReason,
+        baselineRun=baseline,
+    )
+
+
 @router.get("/api/analyst", response_model=AnalystStatus)
 def get_analyst() -> JSONResponse:
-    """The analyst checkpoint (runs/analyst_state.json); "stopped" before it has ever run."""
-    state = store.load_analyst_state()
-    if state is None:
-        status = AnalystStatus(
-            state="stopped", startedAt=None, iterations=0, bestRun=None, stoppedReason=None
-        )
-    else:
-        status = AnalystStatus(
-            state=state.state,
-            startedAt=state.startedAt,
-            iterations=state.iterations,
-            bestRun=state.bestRun,
-            stoppedReason=state.stoppedReason,
-        )
-    return common.contract_json(status)
+    """The analyst status: the checkpoint, or the real runs while no session exists."""
+    return common.contract_json(analyst_status())
 
 
 @router.get("/api/notebook", response_model=list[NotebookEntry])
 def get_notebook() -> JSONResponse:
     """The analyst's lab notebook, one line per run."""
     return common.contract_json(store.load_notebook())
+
+
+# --- training controls ----------------------------------------------------------------------
+
+
+class TrainingOverview(Model):
+    config: TrainingConfig  # the saved config: what the next session runs with
+    options: dict[str, Any]  # allowed values / ranges per config field
+    status: AnalystStatus
+    running: bool  # a session started by this API process is running now
+
+
+class StartRequest(Model):
+    config: TrainingConfig | None = None  # saved as the current config before the session starts
+    fresh: bool = False  # new session: no cached LLM responses or runs from earlier sessions
+
+
+def training_options(map_data: MapData | None) -> dict[str, Any]:
+    """What each TrainingConfig field accepts (schemas.TRAINING_RANGES, the Literal choices)."""
+    ranges: dict[str, Any] = {
+        name: {"min": low} | ({"max": high} if high is not None else {})
+        for name, (low, high) in TRAINING_RANGES.items()
+    }
+    ranges["sessionBudgetUsd"]["max"] = settings.SPEND_CAP_USD
+    stores = (
+        [{"id": s.id, "name": s.name, "type": s.type} for s in rundata.advised_stores(map_data)]
+        if map_data is not None
+        else []
+    )
+    return {
+        "objective": {"values": list(get_args(TrainingObjective))},
+        **ranges,
+        "levers": {"values": ["hours", "lighting"], "minEnabled": 1},
+        "storeIds": {"stores": stores, "null": "every non-club store takes part"},
+        "analystBackend": {"values": list(get_args(AnalystBackendName))},
+        "storeAgents": {"values": list(get_args(StoreAgentsMode))},
+    }
+
+
+def _running() -> bool:
+    return _thread is not None and _thread.is_alive()
+
+
+def _check_writable() -> None:
+    if settings.READ_ONLY:
+        raise HTTPException(403, READ_ONLY_DETAIL)
+
+
+def _check_store_ids(config: TrainingConfig, map_data: MapData) -> None:
+    """422 when storeIds names an unknown store or a club."""
+    try:
+        config.check_store_ids(map_data)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+
+def _training_module() -> ModuleType:
+    """backend.agents.training, imported per request like the sim (see _load_execute_run)."""
+    try:
+        from backend.agents import training
+    except ImportError as e:
+        raise HTTPException(503, f"training unavailable: {e}") from e
+    return training
+
+
+def _train_in_background(training: ModuleType, session: Any) -> None:
+    try:
+        training.run(session)
+    except Exception:  # the session checkpointed itself as stopped/error; keep the API up
+        logger.exception("training session %s failed", session.state.sessionId)
+
+
+@router.get("/api/training", response_model=TrainingOverview)
+def get_training() -> JSONResponse:
+    """The saved training config, the options per field, the analyst status, and whether a
+    session started by this API process is running."""
+    map_data = common.load_map() if common.map_source() != "missing" else None
+    overview = TrainingOverview(
+        config=store.load_training_config(),
+        options=training_options(map_data),
+        status=analyst_status(),
+        running=_running(),
+    )
+    return common.contract_json(overview)
+
+
+@router.put(
+    "/api/training/config",
+    response_model=TrainingConfig,
+    dependencies=[Depends(_check_writable)],  # before body validation: read-only is 403, not 422
+)
+def put_training_config(config: TrainingConfig) -> JSONResponse:
+    """Save the config the next session runs with (runs/training_config.json). 409 while a
+    session runs: it keeps the config it started with."""
+    with _lock:
+        if _running():
+            raise HTTPException(409, "training is running; stop it first (POST /api/training/stop)")
+        if config.storeIds is not None:
+            _check_store_ids(config, _processed_map())
+        store.save_training_config(config)
+    return common.contract_json(config)
+
+
+@router.post(
+    "/api/training/start",
+    response_model=AnalystStatus,
+    dependencies=[Depends(_check_writable)],
+)
+def post_training_start(request: StartRequest | None = None) -> JSONResponse:
+    """Start a session (or resume the last one: same seed and objective, not fresh) in the
+    background. One at a time: 409 while one runs here or in another process (e.g. the CLI).
+    Answers with the status, already "running"."""
+    global _thread
+    request = request or StartRequest()
+    training = _training_module()
+    with _lock:
+        if _running():
+            raise HTTPException(409, "training is already running")
+        config = request.config or store.load_training_config()
+        _check_store_ids(config, _processed_map())  # training needs the pipeline's map: 503
+        try:
+            session = training.begin(config, fresh=request.fresh)
+        except training.SessionBusy as e:
+            raise HTTPException(409, str(e)) from e
+        if request.config is not None:
+            store.save_training_config(request.config)
+        _thread = threading.Thread(
+            target=_train_in_background, args=(training, session), name="training", daemon=True
+        )
+        _thread.start()
+    return common.contract_json(analyst_status())
+
+
+@router.post(
+    "/api/training/stop",
+    response_model=AnalystStatus,
+    dependencies=[Depends(_check_writable)],
+)
+def post_training_stop() -> JSONResponse:
+    """Ask the running session to stop at its next step boundary; it then checkpoints with
+    stoppedReason "stopped". Answers at once, while the step in progress finishes."""
+    _training_module().request_stop()
+    return common.contract_json(analyst_status())

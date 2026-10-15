@@ -10,7 +10,10 @@ Two ways to propose, 0-2 changes per store:
            outputs, the shared city context as the first (cached) system block, the store's data
            last. A store whose request fails falls back to the heuristic (logged).
   offline  a deterministic heuristic, used when llm.available() is False.
+TrainingConfig.storeAgents picks one ("auto" = online when Claude credentials exist).
 
+A training session's TrainingConfig scopes the proposals: only participating stores (storeIds)
+propose, only with enabled levers, at most maxChangesPerStore each, ranked by its objective.
 Every proposal passes agents.rules before it reaches runs/{run}/suggestions.json.
 """
 
@@ -35,11 +38,11 @@ from backend.agents.changes import (
     shift_time,
     window_length,
 )
-from backend.agents.objective import expected_gain, fraction
+from backend.agents.objective import expected_gain, fraction, value_per_visit
 from backend.agents.rules import check_changes, hours_violation, licensed_window, log_rejections
 from backend.agents.wording import LEVEL_RANK, NIGHT_HOURS, clamp_words, hours_range
-from backend.contract import MapData, MapStore, StoreKpis, Suggestion
-from backend.schemas import Decision, EnergyFile, StoreConfig, StoreStats
+from backend.contract import MapData, MapStore, StoreKpis, StoreType, Suggestion
+from backend.schemas import Decision, EnergyFile, StoreConfig, StoreStats, TrainingConfig
 from backend.timeutil import open_hours_fraction
 
 AGENT = "store_owner"
@@ -73,7 +76,7 @@ class StoreBrief:
     run: int
     store_id: str
     name: str
-    type: str
+    type: StoreType
     floor_area: float
     licence: tuple[str, str]
     config: StoreConfig
@@ -87,6 +90,7 @@ class StoreBrief:
     standby_kwh_per_m2: float
     lighting_kw: dict[str, float]
     price_gbp_per_kwh: list[float]
+    objective: str  # what the heuristic ranks its ideas by (TrainingConfig.objective)
 
     @property
     def daily_visits(self) -> float:
@@ -156,8 +160,13 @@ def build_brief(
     energy: EnergyFile,
     decisions: list[Decision],
     history: list[dict],
+    *,
+    objective: str | None = None,
 ) -> StoreBrief:
-    """The brief for store `ms`, taking only that store's slice of the run files."""
+    """The brief for store `ms`, taking only that store's slice of the run files.
+
+    `objective` defaults to settings.OBJECTIVE.
+    """
     result = files.stores[ms.id]
     return StoreBrief(
         run=files.run,
@@ -177,6 +186,7 @@ def build_brief(
         standby_kwh_per_m2=energy.standbyKwhPerM2PerHour[ms.type],
         lighting_kw={str(level): kw for level, kw in energy.lightingKw.items()},
         price_gbp_per_kwh=list(energy.priceGbpPerKwh),
+        objective=objective or settings.OBJECTIVE,
     )
 
 
@@ -225,7 +235,15 @@ def _reason(text: str) -> str:
 def _candidate(
     brief: StoreBrief, kind: str, changes: list[Suggestion], d_visits: float, d_kwh: float
 ) -> Candidate:
-    gain = expected_gain(brief.daily_visits, brief.daily_kwh, d_visits, d_kwh, settings.OBJECTIVE)
+    gain = expected_gain(
+        brief.daily_visits,
+        brief.daily_kwh,
+        d_visits,
+        d_kwh,
+        brief.objective,
+        gbp_per_visit=value_per_visit(brief.type),
+        price=statistics.fmean(brief.price_gbp_per_kwh),
+    )
     return Candidate(kind, changes, d_visits, d_kwh, gain)
 
 
@@ -447,26 +465,34 @@ def _owner_rejected(brief: StoreBrief) -> set[tuple]:
     return rejected
 
 
-def heuristic_proposals(brief: StoreBrief, map_data: MapData) -> list[Suggestion]:
+def heuristic_proposals(
+    brief: StoreBrief, map_data: MapData, config: TrainingConfig | None = None
+) -> list[Suggestion]:
     """Deterministic 0-2 changes for one store, best estimated objective gain first.
 
     Candidates: lights off while shut; extend hours into found-closed demand (with a lit frontage
     for newly opened dark night hours); trim dead edge hours; dim quiet / brighten busy night hours.
-    Each pick must pass the hard rules (including "never a tried config"), so a store whose best
-    idea was already simulated moves on to its next one.
+    Only candidates on `config`'s enabled levers count, at most config.maxChangesPerStore. Each
+    pick must pass the hard rules (including "never a tried config"), so a store whose best idea
+    was already simulated moves on to its next one.
     """
+    config = config or TrainingConfig()
     candidates = [
-        *_lights_off_when_closed(brief),
-        *_extensions(brief, "close"),
-        *_extensions(brief, "open"),
-        *_trims(brief, "close"),
-        *_trims(brief, "open"),
-        *_night_lighting(brief),
+        candidate
+        for candidate in (
+            *_lights_off_when_closed(brief),
+            *_extensions(brief, "close"),
+            *_extensions(brief, "open"),
+            *_trims(brief, "close"),
+            *_trims(brief, "open"),
+            *_night_lighting(brief),
+        )
+        if all(config.levers.allows(s.field) for s in candidate.changes)
     ]
     candidates.sort(key=lambda c: (-c.gain, c.kind, [change_signature(s) for s in c.changes]))
     rejected = _owner_rejected(brief)
     base = {brief.store_id: brief.config}
-    limit = settings.MAX_CHANGES_PER_STORE_PER_WEEK
+    limit = config.maxChangesPerStore
     picked: list[Suggestion] = []
     touched: set[int] = set()
     for candidate in candidates:
@@ -479,7 +505,7 @@ def heuristic_proposals(brief: StoreBrief, map_data: MapData) -> list[Suggestion
         hours = {h for s in candidate.changes for h in affected_hours(s, brief.config)}
         if hours & touched:
             continue
-        trial = check_changes(base, picked + candidate.changes, map_data)
+        trial = check_changes(base, picked + candidate.changes, map_data, training=config)
         if len(trial.accepted) == len(picked) + len(candidate.changes):
             picked.extend(candidate.changes)
             touched |= hours
@@ -493,12 +519,13 @@ def _custom_id(index: int, store_id: str) -> str:
     return f"{index:03d}-{re.sub(r'[^A-Za-z0-9_-]', '_', store_id)}"[:64]
 
 
-def _batch_params(brief: StoreBrief, system: list[dict]) -> dict:
+def _batch_params(brief: StoreBrief, system: list[dict], max_changes: int) -> dict:
+    user = prompts.store_prompt(brief.prompt_data(), max_changes)
     return {
         "model": settings.STORE_AGENT_MODEL,
         "max_tokens": BATCH_MAX_TOKENS,
         "system": system,
-        "messages": [{"role": "user", "content": prompts.store_prompt(brief.prompt_data())}],
+        "messages": [{"role": "user", "content": user}],
         "output_config": {
             "format": llm.json_schema_format(prompts.STORE_SCHEMA),
             "effort": "medium",
@@ -550,17 +577,17 @@ def _wait_for_batch(client, batch_id: str, run: int):
 
 
 def _propose_with_batch(
-    run: int, briefs: dict[str, StoreBrief], session: str | None
+    run: int, briefs: dict[str, StoreBrief], session: str | None, config: TrainingConfig
 ) -> tuple[dict[str, list[Suggestion]], dict[str, str]]:
     """All store agents in one Message Batch. Returns proposals and per-store fallback reasons."""
     client = llm.client()
-    system = llm.system_blocks(prompts.CITY_CONTEXT)
+    system = llm.system_blocks(prompts.city_context(config))
     ids: dict[str, str] = {}
     requests = []
     for index, (sid, brief) in enumerate(briefs.items()):
         custom_id = _custom_id(index, sid)
         ids[custom_id] = sid
-        params = _batch_params(brief, system)
+        params = _batch_params(brief, system, config.maxChangesPerStore)
         requests.append({"custom_id": custom_id, "params": params})
         llm.log_event(
             run,
@@ -639,11 +666,29 @@ def _json(text: str) -> dict:
 # --- entry point ----------------------------------------------------------------------------
 
 
-def propose_all(run: int, *, session: str | None = None) -> list[Suggestion]:
-    """Every non-club store's agent proposes 0-2 changes on `run`.
+def _mode(requested: str, run: int) -> str:
+    """The mode for TrainingConfig.storeAgents: "batch" (needs credentials) or "heuristic"."""
+    if requested == "heuristic":
+        return "heuristic"
+    if llm.available():
+        return "batch"
+    if requested == "batch":
+        llm.log_event(
+            run, {"agent": AGENT, "type": "fallback", "requested": "batch", "reason": "offline"}
+        )
+    return "heuristic"
 
-    Writes runs/{run}/suggestions.json (rule-checked) and returns the same list, in map order.
+
+def propose_all(
+    run: int, *, session: str | None = None, config: TrainingConfig | None = None
+) -> list[Suggestion]:
+    """Every participating non-club store's agent proposes 0-2 changes on `run`.
+
+    `config` (default: TrainingConfig() from settings) sets the participating stores, levers,
+    change cap, objective and store-agent mode. Writes runs/{run}/suggestions.json (rule-checked)
+    and returns the same list, in map order.
     """
+    config = config or TrainingConfig()
     map_data = store.load_map()
     files = rundata.RunFiles.load(run)
     energy = store.load_energy()
@@ -651,34 +696,41 @@ def propose_all(run: int, *, session: str | None = None) -> list[Suggestion]:
     advised = [
         ms
         for ms in rundata.advised_stores(map_data)
-        if ms.id in files.config.stores and ms.id in files.stores and ms.id in files.stats
+        if ms.id in files.config.stores
+        and ms.id in files.stores
+        and ms.id in files.stats
+        and config.takes_part(ms.id)
     ]
     histories = store_histories(run, [ms.id for ms in advised])
     briefs = {
-        ms.id: build_brief(files, ms, map_data, energy, decisions, histories[ms.id])
+        ms.id: build_brief(
+            files, ms, map_data, energy, decisions, histories[ms.id], objective=config.objective
+        )
         for ms in advised
     }
-    if llm.available():
-        mode = "batch"
+    mode = _mode(config.storeAgents, run)
+    if mode == "batch":
         try:
-            proposals, fallbacks = _propose_with_batch(run, briefs, session)
+            proposals, fallbacks = _propose_with_batch(run, briefs, session, config)
         except anthropic.APIError as e:
             llm.log_event(run, {"agent": AGENT, "type": "batch_error", "error": str(e)})
             proposals, fallbacks = {}, {sid: f"batch API error: {e}" for sid in briefs}
     else:
-        mode = "heuristic"
         proposals, fallbacks = {}, {sid: "offline" for sid in briefs}
     for sid, reason in fallbacks.items():
         if mode == "batch":
             llm.log_event(
                 run, {"agent": AGENT, "type": "fallback", "storeId": sid, "reason": reason}
             )
-        proposals[sid] = heuristic_proposals(briefs[sid], map_data)
+        proposals[sid] = heuristic_proposals(briefs[sid], map_data, config)
 
     final: list[Suggestion] = []
     for ms in advised:
         result = check_changes(
-            {ms.id: files.config.stores[ms.id]}, proposals.get(ms.id, []), map_data
+            {ms.id: files.config.stores[ms.id]},
+            proposals.get(ms.id, []),
+            map_data,
+            training=config,
         )
         log_rejections(run, result.rejections, agent=AGENT)
         final.extend(result.accepted)

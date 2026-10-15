@@ -209,6 +209,22 @@ def spent_usd(*, session: str | None = None) -> float:
     )
 
 
+# Per-session caps (TrainingConfig.sessionBudgetUsd), set by training when a session starts, so
+# every budget check for that session uses its cap without each caller passing it along.
+_session_budgets_usd: dict[str, float] = {}
+
+
+def set_session_budget(session: str, usd: float) -> None:
+    _session_budgets_usd[session] = usd
+
+
+def session_budget_usd(session: str | None) -> float:
+    """The session's cap: its own when training set one, else settings.SESSION_BUDGET_USD."""
+    if session is None:
+        return settings.SESSION_BUDGET_USD
+    return _session_budgets_usd.get(session, settings.SESSION_BUDGET_USD)
+
+
 def check_budget(session: str | None = None) -> None:
     """Raise BudgetExceeded before a call once the global or the session cap is reached.
 
@@ -221,10 +237,9 @@ def check_budget(session: str | None = None) -> None:
         raise BudgetExceeded(f"spend cap reached: ${total:.2f} of ${settings.SPEND_CAP_USD:.2f}")
     if session is not None:
         in_session = spent_usd(session=session)
-        if in_session >= settings.SESSION_BUDGET_USD:
-            raise BudgetExceeded(
-                f"session budget reached: ${in_session:.2f} of ${settings.SESSION_BUDGET_USD:.2f}"
-            )
+        cap = session_budget_usd(session)
+        if in_session >= cap:
+            raise BudgetExceeded(f"session budget reached: ${in_session:.2f} of ${cap:.2f}")
 
 
 def system_blocks(*stable_parts: str) -> list[dict]:
