@@ -335,7 +335,7 @@ function Scene({ data }: { data: OldStreetData }) {
         {traffic.meshes.map((m) => (
           <primitive key={m.name} object={m} />
         ))}
-        <Html position={built.label} center distanceFactor={320} zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}>
+        <Html position={built.label} center zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}>
           <div className="map-label">Old Street · Northern line</div>
         </Html>
       </group>

@@ -1063,6 +1063,6 @@ export function buildOldStreet(data: OldStreetData): Built {
   const cap = mergeGeometries(capParts, false) ?? new BufferGeometry();
   capParts.forEach((g) => g.dispose());
   const signs = atlas.mesh("old-street-signs");
-  return { parts, signs, glass, cap, screens, pools, heads, lanes, crossings, routes, strolls, label: [pc[0], 34, pc[1]] };
+  return { parts, signs, glass, cap, screens, pools, heads, lanes, crossings, routes, strolls, label: [pc[0], 16, pc[1]] };
 }
 
