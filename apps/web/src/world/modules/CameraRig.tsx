@@ -8,6 +8,7 @@ import { Vector3 } from "three";
 import { toScene } from "../../sim/geometry";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
+import { camFromUrl, flyRequest } from "../flyTo";
 
 type Controls = ComponentRef<typeof OrbitControls>;
 
@@ -32,7 +33,10 @@ export default function CameraRig() {
   const [controls, setControls] = useState<Controls | null>(null);
   const id = useMemo(() => ++rigSeq, []);
   const shared = useMemo(() => {
-    if (!groups.has(cameraGroup)) groups.set(cameraGroup, { leader: null, position: HOME_POS.clone(), target: HOME_TARGET.clone() });
+    if (!groups.has(cameraGroup)) {
+      const url = camFromUrl();
+      groups.set(cameraGroup, { leader: null, position: url ? new Vector3(...url.position) : HOME_POS.clone(), target: url ? new Vector3(...url.target) : HOME_TARGET.clone() });
+    }
     return groups.get(cameraGroup)!;
   }, [cameraGroup]);
   const fly = useRef<{ target: Vector3; position: Vector3; k: number } | null>(null);
@@ -62,8 +66,22 @@ export default function CameraRig() {
     shared.leader = id;
   }, [selected, controls, map, camera, id, shared]);
 
+  const flySeq = useRef(0);
   useFrame((_, delta) => {
     if (!controls) return;
+    // fly to a landmark (world/flyTo): keep the compass direction, come in at a readable angle
+    const req = flyRequest.current;
+    if (req && req.seq !== flySeq.current && (shared.leader === null || shared.leader === id)) {
+      flySeq.current = req.seq;
+      const [x, z] = toScene(req.x, req.z);
+      const target = new Vector3(x, req.y ?? 0, z);
+      const off = camera.position.clone().sub(controls.target);
+      const azimuth = Math.atan2(off.x, off.z);
+      const polar = 0.95;
+      const dir = new Vector3(Math.sin(polar) * Math.sin(azimuth), Math.cos(polar), Math.sin(polar) * Math.cos(azimuth));
+      fly.current = { target, position: target.clone().add(dir.multiplyScalar(req.dist)), k: 0 };
+      shared.leader = id;
+    }
     const f = fly.current;
     if (f) {
       f.k = Math.min(1, f.k + delta * 1.6);
@@ -90,7 +108,7 @@ export default function CameraRig() {
       enableDamping
       dampingFactor={0.08}
       minDistance={30}
-      maxDistance={1100}
+      maxDistance={1500}
       maxPolarAngle={Math.PI * 0.44}
       onStart={() => {
         shared.leader = id;

@@ -23,6 +23,7 @@ import StreetDressing from "./modules/StreetDressing";
 import StreetEvents from "./modules/StreetEvents";
 import Streets from "./modules/Streets";
 import Surroundings from "./modules/Surroundings";
+import Overground from "./modules/Overground";
 import Traffic from "./modules/Traffic";
 
 export const MODULES: Record<string, ComponentType> = {
@@ -33,6 +34,7 @@ export const MODULES: Record<string, ComponentType> = {
   Skyline,
   Streets,
   Buildings,
+  Overground,
   Infill,
   Stores,
   StreetLights,

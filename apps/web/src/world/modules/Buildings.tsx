@@ -10,6 +10,7 @@ import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
+import { Station } from "../Station";
 import { BUILDING_COLORS } from "../palette";
 import { FLOOR_H, TILE_COLS, TILE_ROWS, WINDOW_W, windowTextures } from "../textures";
 
@@ -120,40 +121,7 @@ export default function Buildings() {
           </group>
         );
       })}
-      {station && <Station b={station} />}
-    </group>
-  );
-}
-
-/** The station: pale hall, glass band, and a cartoon roundel on a post. */
-function Station({ b }: { b: Building }) {
-  const [x, z] = toScene(b.x, b.z);
-  return (
-    <group name="station" position={[x, 0, z]}>
-      <mesh position-y={b.h / 2} castShadow receiveShadow>
-        <boxGeometry args={[b.w, b.h, b.d]} />
-        <meshStandardMaterial color={BUILDING_COLORS.station} roughness={0.7} />
-      </mesh>
-      <mesh position-y={b.h * 0.55}>
-        <boxGeometry args={[b.w + 0.3, b.h * 0.35, b.d + 0.3]} />
-        <meshStandardMaterial color="#7fa6c9" emissive="#bcd9ff" emissiveIntensity={0.25} roughness={0.2} metalness={0.3} />
-      </mesh>
-      <group position={[-b.w / 2 - 2, 0, -b.d / 2 - 2]}>
-        <mesh position-y={4}>
-          <cylinderGeometry args={[0.25, 0.25, 8, 8]} />
-          <meshStandardMaterial color="#4a5260" />
-        </mesh>
-        <group position-y={9.5} rotation-y={Math.PI / 4}>
-          <mesh>
-            <torusGeometry args={[2.2, 0.55, 10, 28]} />
-            <meshStandardMaterial color="#dc241f" emissive="#dc241f" emissiveIntensity={0.35} />
-          </mesh>
-          <mesh>
-            <boxGeometry args={[6, 1.1, 0.4]} />
-            <meshStandardMaterial color="#0019a8" emissive="#3048ff" emissiveIntensity={0.35} />
-          </mesh>
-        </group>
-      </group>
+      {station && <Station b={station} streets={map.streets} />}
     </group>
   );
 }

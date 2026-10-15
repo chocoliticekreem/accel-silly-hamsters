@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Color } from "three";
 import type { CityMap } from "../../api/contract";
 import { rng, weighted, type Rng } from "../../mock/rng";
+import { extendStreets, outerPoint } from "../../sim/edges";
 import { createSeparator, obstacles, PAVEMENT_INSET_MAX, PAVEMENT_INSET_MIN, pavementPath, type PavementPath } from "../../sim/crowd";
 import { toScene } from "../../sim/geometry";
 import { newPoint } from "../../sim/polyline";
@@ -21,6 +22,7 @@ import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { createPeople, SKIN_TONES, TROUSERS } from "../people";
+import { stationPulse } from "../stationPulse";
 
 /** Real people per sim agent (demand.json notes: "1 sim agent ~ 48 real arrivals"). */
 export const PEOPLE_PER_AGENT = 48;
@@ -60,6 +62,8 @@ type Place = number[];
 interface Places {
   entries: Place[];
   station: Place[];
+  /** Every node of every station place: trips starting here wait for a train. */
+  stationNodes: Set<number>;
   offices: Place[];
   homes: Place[];
   food: Place[];
@@ -77,12 +81,17 @@ function places(map: CityMap, g: StreetGraph): Places {
         const b = map.buildings.find((x) => x.id === s.buildingId);
         return b ? [node(b.x, b.z)] : [];
       });
-  const entries = map.entryPoints.map((e) => node(e.x, e.z));
+  // street entries lie out in the city beyond the edge (sim/edges.ts): people walk in from and out to there
+  const entries = map.entryPoints.map((e) => {
+    const far = e.kind === "street" ? outerPoint(map, e.x, e.z) : null;
+    return far ? node(far[0], far[1]) : node(e.x, e.z);
+  });
   const station = map.entryPoints.filter((e) => e.kind === "station").map((e) => node(e.x, e.z, STATION_RADIUS));
   const nonEmpty = (xs: Place[], fallback: Place[]) => (xs.length ? xs : fallback);
   return {
     entries,
     station: nonEmpty(station, entries),
+    stationNodes: new Set(station.flat()),
     offices: nonEmpty(bNodes(["office"]), entries),
     homes: nonEmpty(bNodes(["residential"]), entries),
     food: nonEmpty(storeNodes(["cafe", "restaurant", "takeaway"]), entries),
@@ -133,6 +142,10 @@ interface Walker {
   /** Current side-step away from others (scene metres), eased frame to frame so nobody jumps. */
   ox: number;
   oz: number;
+  /** Arrived by train: hidden in the station until train number `waitFor` + 1 opens its doors (-1 = not waiting). */
+  waitFor: number;
+  /** Real seconds spent waiting (a safety valve if no train comes). */
+  waited: number;
 }
 
 const pt = newPoint();
@@ -144,7 +157,7 @@ export default function Footfall() {
   const shown = useRef(MIN_WALKERS);
 
   const world = useMemo(() => {
-    const g = buildStreetGraph(map.streets);
+    const g = buildStreetGraph(extendStreets(map));
     const p = places(map, g);
     const r = rng(11);
     const colors = Object.fromEntries(KINDS.map((k) => [k, TONES[k].map((c) => new Color(c))])) as Record<TripKind, Color[]>;
@@ -163,6 +176,10 @@ export default function Footfall() {
         w.side = r() < 0.5 ? -1 : 1;
         w.inset = PAVEMENT_INSET_MIN + r() * (PAVEMENT_INSET_MAX - PAVEMENT_INSET_MIN);
         w.color = colors[kind][Math.floor(r() * colors[kind].length)];
+        // fresh arrivals by Overground come out of the station when a train stops, then stream out over a few s
+        w.waitFor = !midway && stationPulse.active && p.stationNodes.has(a) ? stationPulse.arrivals : -1;
+        w.waited = 0;
+        if (w.waitFor >= 0) w.s = -r() * 14;
         return;
       }
       w.path = null;
@@ -180,6 +197,8 @@ export default function Footfall() {
       stride: r() * Math.PI * 2,
       ox: 0,
       oz: 0,
+      waitFor: -1,
+      waited: 0,
     }));
     return { walkers, assign };
   }, [map]);
@@ -221,7 +240,13 @@ export default function Footfall() {
       const w = world.walkers[i];
       if (!w.path) world.assign(w, hour, true);
       if (!w.path) continue;
+      if (w.waitFor >= 0) {
+        w.waited += dt;
+        if (stationPulse.arrivals <= w.waitFor && w.waited < 90 && stationPulse.active) continue;
+        w.waitFor = -1;
+      }
       w.s += w.speed * dt;
+      if (w.s < 0) continue; // still on the stairs
       if (w.s >= w.path.length) {
         world.assign(w, hour, false);
         if (!w.path) continue;
