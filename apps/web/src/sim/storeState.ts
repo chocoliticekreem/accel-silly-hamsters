@@ -116,7 +116,7 @@ export function daySpan(r: HoursSource, events: readonly OwnerEvent[], day: numb
     }
     if (e.day !== day || !e.to || (e.action !== "shut_early" && e.action !== "open_late")) continue;
     let to = parseHHMM(e.to);
-    if (to < span.o) to += MINUTES_PER_DAY;
+    if (to <= span.o) to += MINUTES_PER_DAY;
     if (e.action === "shut_early") {
       const c = Math.min(span.c, to);
       span = c > span.o ? { o: span.o, c } : null;

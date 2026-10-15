@@ -2,7 +2,7 @@
 // Agent days are loaded one at a time; the next day is prefetched while playing (spec: performance).
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api } from "../api/client";
-import type { AgentDay, AgentEvent, AgentSession, AnalystStatus, Calibration, Health, RunAreaSummary, StoreInsights, CityMap, OwnerReport, RunStores, RunSummary, Suggestion } from "../api/contract";
+import type { AgentDay, AgentEvent, AgentSession, AnalystStatus, Calibration, Health, RunAreaSummary, StoreInsights, CityMap, OwnerEvent, OwnerReport, RunStores, RunSummary, StreetEvent, Suggestion } from "../api/contract";
 import { DAYS_PER_RUN } from "../api/contract";
 import { mergeDays, prepareAgents, type PreparedAgent } from "../sim/interp";
 
@@ -91,6 +91,10 @@ export const useAgentSession = () => useResource<AgentSession | null>("agents:se
 export const useAgentLog = () => useResource<AgentEvent[]>("agents:log", () => api.agentLog());
 export const useCalibration = () => useResource<Calibration | null>("calibration", () => api.calibration());
 export const useRunStores = (run: number | null) => useResource<RunStores>(run == null ? null : `stores:${run}`, () => api.runStores(run!));
+/** Owners' day-by-day decisions this run ([] when the backend doesn't serve them). */
+export const useOwnerEvents = (run: number | null) => useResource<OwnerEvent[]>(run == null ? null : `owner-events:${run}`, () => api.ownerEvents(run!));
+/** Roadworks, traffic, club nights... this run ([] when not served). */
+export const useStreetEvents = (run: number | null) => useResource<StreetEvent[]>(run == null ? null : `street-events:${run}`, () => api.streetEvents(run!));
 export const useSuggestions = (run: number) => useResource<Suggestion[]>(`suggestions:${run}`, () => api.suggestions(run));
 export const useReport = (storeId: string | null, run: number) =>
   useResource<OwnerReport>(storeId ? `report:${storeId}:${run}` : null, () => api.report(storeId!, run));
