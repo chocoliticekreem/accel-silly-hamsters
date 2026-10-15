@@ -4,7 +4,7 @@
 import { ExternalLink, MapPin, Navigation } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { estimate } from "../sim/businessEnergy";
-import { nextChange, openAt, weekRows } from "../sim/openingHours";
+import { nextChange, openAt, parseOpeningHours, weekRows } from "../sim/openingHours";
 import { weekdayIndex } from "../sim/storeState";
 import { dayOf, hourOf, minuteOfDay } from "../sim/time";
 import { landmarkMap, useBusinesses, useBusinessList } from "../state/businesses";
@@ -43,10 +43,12 @@ export function BusinessCard() {
   const est = useMemo(() => (b ? estimate(b.units, wd) : null), [b, wd]);
   if (!b || !est) return null;
 
-  const main = b.units[0];
-  const open = b.units.some((u) => openAt(u.week, wd, minute));
-  const change = nextChange(main.week, wd, minute);
-  const rows = weekRows(main.week);
+  const week = b.units[0]?.week ?? parseOpeningHours(b.hours) ?? parseOpeningHours("Mo-Su 00:00-24:00")!;
+  const typical = b.units[0]?.typicalHours ?? true;
+  const open = b.units.length ? b.units.some((u) => openAt(u.week, wd, minute)) : openAt(week, wd, minute);
+  const change = nextChange(week, wd, minute);
+  const rows = weekRows(week);
+  const estimated = b.units.length > 0;
   const hour = Math.floor(hourOf(minute));
   const peak = Math.max(...est.hourly, 0.001);
   const street = footfall?.onStreetByDayHour[day - 1]?.[hour];
@@ -75,18 +77,38 @@ export function BusinessCard() {
       <div className="status-row">
         <span className={`status ${open ? "status-open" : "status-closed"}`}>{open ? "Open" : "Closed"}</span>
         {change && <span className="status">{change}</span>}
-        <span className="status" title="Unit floor area used for the estimate">
-          {fmtInt(est.areaM2)} m²
-        </span>
+        {estimated && (
+          <span className="status" title="Unit floor area used for the estimate">
+            {fmtInt(est.areaM2)} m²
+          </span>
+        )}
       </div>
 
+      {b.simStores && (
+        <>
+          <h3 className="section-title">
+            Simulated here <span className="muted">{b.simStores.length} shops</span>
+          </h3>
+          <ul className="biz-units biz-sim">
+            {b.simStores.map((s) => (
+              <li key={s.id}>
+                <button onClick={() => useSim.getState().selectStore(s.id)}>
+                  <TypeIcon type={s.type} size={13} /> {s.name}
+                </button>
+                <span className="muted">live data</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       <div className="biz-note">
-        <b>Not in this simulation run:</b> live footfall and energy only for the {map?.stores.length ?? 72} simulated shops. The numbers below are an
-        estimate from its size, type and hours.
+        <b>Not in this simulation run:</b> live footfall and energy only for the {map?.stores.length ?? 72} simulated shops.{" "}
+        {b.simStores && !estimated ? "Open a shop above for its numbers." : b.simStores ? "The rest of the building is estimated below from its size, type and hours." : "The numbers below are an estimate from its size, type and hours."}
       </div>
 
       <h3 className="section-title">
-        Hours <span className="muted">{main.typicalHours ? (isLandmark ? "assumed" : "typical, none on OSM") : "OpenStreetMap"}</span>
+        Hours <span className="muted">{typical ? (isLandmark ? "assumed" : "typical, none on OSM") : "OpenStreetMap"}</span>
       </h3>
       <dl className="biz-hours">
         {rows.map(([d, h]) => (
@@ -97,6 +119,8 @@ export function BusinessCard() {
         ))}
       </dl>
 
+      {estimated && (
+      <>
       <h3 className="section-title">
         Electricity <span className="biz-est">Estimate (not simulated)</span>
       </h3>
@@ -160,6 +184,8 @@ export function BusinessCard() {
         </>
       )}
       <div className="foot-note">kWh/m² by type, standby and facade lighting from the sim's energy model · London grid carbon by hour · £0.32/kWh</div>
+      </>
+      )}
 
       {(b.address || b.website) && (
         <div className="biz-contact">
