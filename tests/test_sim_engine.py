@@ -112,8 +112,9 @@ def test_targets_agents_visits_concurrency_and_file_size() -> None:
 
 
 def test_processed_world_fits_the_run_budget() -> None:
-    """data/processed (the 1.5 km map): BUILD_NOTES budget for arrivals, visits per store, the
-    crowd on screen and the day files the frontend downloads."""
+    """data/processed (the 1.5 km map, ~200 stores): budget for arrivals, visits per store (kept
+    at the ~37 a day the first ~68 stores had), the crowd on screen and the day files the
+    frontend downloads (~5.4 MB at most, up from ~1.9 MB)."""
     try:
         w = engine.load_world()
     except FileNotFoundError:
@@ -121,13 +122,15 @@ def test_processed_world_fits_the_run_budget() -> None:
     out = engine.simulate(w, runner.baseline_from(w.map, w.demand.clubNights), SEED)
     per_day = np.bincount([t.day for t in out.trips], minlength=DAYS + 1)[1:]
     weekdays = [per_day[d - 1] for d in range(1, DAYS + 1) if (d - 1) % 7 < 5]
-    assert 2000 <= np.mean(weekdays) <= 4500  # general arrivals 2,000-4,000 plus club-goers
+    # general arrivals ~7,400 a weekday for ~200 stores (citizens.GENERAL_ARRIVALS_PER_DAY) plus
+    # club-goers
+    assert 6000 <= np.mean(weekdays) <= 8500
     shops = int((~w.is_club).sum())
     store_visits = sum(1 for t in out.trips for s, _, _ in t.visits if not w.is_club[s])
     assert 30 <= store_visits / DAYS / shops <= 60
-    assert out.peak_present <= 600
+    assert out.peak_present <= 1000
     payloads = engine.day_payloads(out.trips, w.stores)
-    assert max(len(json.dumps(p, separators=(",", ":"))) for p in payloads) < 3e6
+    assert max(len(json.dumps(p, separators=(",", ":"))) for p in payloads) < 6e6
 
 
 def test_keyframes_follow_the_contract() -> None:
