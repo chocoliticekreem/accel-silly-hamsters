@@ -1,12 +1,13 @@
 // 24h strip for one store: visits per hour (bars), open hours (lamp band), lighting level per hour (cells),
 // and a cursor at the current sim hour. Optional ghost row shows a comparison config (e.g. last run).
-import type { StoreRunResult } from "../api/contract";
+import type { HoursWindow, StoreRunResult } from "../api/contract";
 import { openByHour } from "../sim/time";
 
 const LEVEL = { off: 0, low: 0.5, high: 1 } as const;
 
-export function HourStrip({ cfg, hour, prev }: { cfg: StoreRunResult; hour: number; prev?: StoreRunResult }) {
+export function HourStrip({ cfg, hour, prev, licence }: { cfg: StoreRunResult; hour: number; prev?: StoreRunResult; licence?: HoursWindow }) {
   const open = openByHour(cfg.open, cfg.close);
+  const licensed = licence && openByHour(licence.open, licence.close);
   const prevOpen = prev && openByHour(prev.open, prev.close);
   const peak = Math.max(1, ...cfg.visitsByHour, ...(prev?.visitsByHour ?? []));
   return (
@@ -19,6 +20,13 @@ export function HourStrip({ cfg, hour, prev }: { cfg: StoreRunResult; hour: numb
           </span>
         ))}
       </div>
+      {licensed && (
+        <div className="strip-row strip-licence" title={`licence ${licence.open}–${licence.close}`}>
+          {licensed.map((ok, h) => (
+            <span key={h} className={`cell ${ok ? "on" : ""}`} />
+          ))}
+        </div>
+      )}
       <div className="strip-row strip-open">
         {open.map((o, h) => (
           <span key={h} className={`cell ${o ? "on" : ""} ${prevOpen && prevOpen[h] !== o ? "changed" : ""}`} />
@@ -47,6 +55,11 @@ export function HourStrip({ cfg, hour, prev }: { cfg: StoreRunResult; hour: numb
         <span>
           <i className="sw sw-light" /> light
         </span>
+        {licensed && (
+          <span>
+            <i className="sw sw-licence" /> licence
+          </span>
+        )}
         {prev && (
           <span>
             <i className="sw sw-changed" /> changed

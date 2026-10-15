@@ -2,7 +2,7 @@
 // Runs are simulated lazily and cached; everything is deterministic (seed 42).
 import type { AnalystStatus, Api, CityMap, DecisionRequest, RunSummary } from "../api/contract";
 import { formatHHMM } from "../sim/time";
-import { configForRun, MOCK_RUN_COUNT, notebookLabel, type RunConfig } from "./configs";
+import { configForRun, LICENCE, MOCK_RUN_COUNT, notebookLabel, type RunConfig } from "./configs";
 import { generateMap } from "./map";
 import { buildReport, makePdf, suggestionsBetween } from "./report";
 import { simulateRun, type RunResult } from "./simulate";
@@ -32,6 +32,18 @@ export function createMockState(): MockState {
     if (!results.has(run)) results.set(run, simulateRun(map, config(run), MOCK_SEED));
     return results.get(run)!;
   };
+  // additive map fields the real backend serves: licence, current hours, floor area, sources
+  for (const s of map.stores) {
+    const b = map.buildings.find((x) => x.id === s.buildingId)!;
+    s.licensedHours = LICENCE[s.type];
+    s.defaultHours = { open: config(1)[s.id].open, close: config(1)[s.id].close };
+    s.floorArea = Math.round(b.w * b.d);
+  }
+  map.sources = [
+    { label: "OpenStreetMap", url: "https://www.openstreetmap.org/copyright" },
+    { label: "EPC register", url: "https://epc.opendatacommunities.org/" },
+    { label: "Carbon Intensity API", url: "https://carbonintensity.org.uk/" },
+  ];
   let summaries: RunSummary[] | null = null;
   const runs = () => {
     if (summaries) return summaries;

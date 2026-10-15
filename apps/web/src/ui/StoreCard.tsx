@@ -72,9 +72,15 @@ export function StoreCard() {
           <Icon name="bolt" size={12} /> {light}
         </span>
         {isClub && <span className="status">anchor · not optimised</span>}
+        {store.licensedHours && (
+          <span className="status" title="Premises licence: suggestions never go outside it">
+            licence {store.licensedHours.open}–{store.licensedHours.close}
+          </span>
+        )}
+        {store.floorArea ? <span className="status">{Math.round(store.floorArea)} m²</span> : null}
       </div>
 
-      {cfg && <HourStrip cfg={cfg} hour={hour} prev={prev} />}
+      {cfg && <HourStrip cfg={cfg} hour={hour} prev={prev} licence={store.licensedHours ?? undefined} />}
 
       <div className="mini-kpis">
         {kpis.map((k) => (

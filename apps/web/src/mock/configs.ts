@@ -22,6 +22,17 @@ const DEFAULTS: Record<StoreType, { open: string; close: string; lightOn: number
   club: { open: "22:00", close: "03:00", lightOn: 21, lightOff: 28 },
 };
 
+/** Premises licence by type (hard rule): no run may open outside these hours. */
+export const LICENCE: Record<StoreType, { open: string; close: string }> = {
+  cafe: { open: "06:00", close: "23:00" },
+  restaurant: { open: "10:00", close: "01:00" },
+  takeaway: { open: "07:00", close: "04:00" },
+  bar: { open: "11:00", close: "02:00" },
+  shop: { open: "07:00", close: "23:00" },
+  offlicence: { open: "06:00", close: "05:00" },
+  club: { open: "21:00", close: "05:00" },
+};
+
 const lit = (from: number, to: number, level: LightLevel = "high"): LightLevel[] =>
   Array.from({ length: 24 }, (_, h) => (h >= from && h < to) || (to > 24 && h < to - 24) ? level : "off");
 

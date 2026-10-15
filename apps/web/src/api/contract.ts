@@ -42,11 +42,31 @@ export interface Building {
   h: number;
 }
 
+export interface HoursWindow {
+  open: string;
+  close: string;
+}
+
+/** A cited source (map data, report evidence). */
+export interface Source {
+  label: string;
+  url: string;
+  fetchedAt?: string | null;
+}
+
 export interface Store {
   id: string;
   name: string;
   type: StoreType;
   buildingId: string;
+  // Additive (backend/contract.py): optional, the UI works without them.
+  /** Hours the premises licence allows; suggestions never go outside these. */
+  licensedHours?: HoursWindow | null;
+  /** The owner's current hours (what run 1 uses). */
+  defaultHours?: HoursWindow | null;
+  /** m², from the EPC register / OSM footprint. */
+  floorArea?: number | null;
+  osmId?: string | null;
 }
 
 export interface EntryPoint {
@@ -63,6 +83,8 @@ export interface CityMap {
   buildings: Building[];
   stores: Store[];
   entryPoints: EntryPoint[];
+  /** Additive: citations for where the map came from. */
+  sources?: Source[];
 }
 
 // ---------- GET /api/runs ----------
@@ -141,9 +163,17 @@ export interface ExpectedDelta {
   kwh: number;
 }
 
+export type Confidence = "low" | "medium" | "high";
+
+/** Additive fields every suggestion may carry: honest confidence and a one-line reason. */
+interface SuggestionExtras {
+  confidence?: Confidence | null;
+  reason?: string | null;
+}
+
 export type Suggestion =
-  | { storeId: string; field: "open" | "close"; from: string; to: string; expectedDelta: ExpectedDelta }
-  | { storeId: string; field: "lighting"; hours: number[]; from: LightLevel; to: LightLevel; expectedDelta: ExpectedDelta };
+  | ({ storeId: string; field: "open" | "close"; from: string; to: string; expectedDelta: ExpectedDelta } & SuggestionExtras)
+  | ({ storeId: string; field: "lighting"; hours: number[]; from: LightLevel; to: LightLevel; expectedDelta: ExpectedDelta } & SuggestionExtras);
 
 // ---------- POST /api/apply ----------
 
@@ -172,9 +202,12 @@ export interface OwnerReport {
   storeId: string;
   changes: Suggestion[];
   impact: { visits: number; kwh: number; gbpPerWeek: number };
-  confidence: "low" | "medium" | "high";
-  evidence: { label: string; url: string }[];
-  pdfUrl: string;
+  confidence: Confidence;
+  evidence: Source[];
+  /** null when the PDF isn't rendered yet. */
+  pdfUrl: string | null;
+  /** Additive: the honesty note shown with every report. */
+  note?: string;
 }
 
 // ---------- POST /api/decision ----------

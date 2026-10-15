@@ -131,6 +131,7 @@ export function OwnerReport() {
               {report.evidence.map((e) => (
                 <a
                   key={e.label}
+                  title={e.fetchedAt ? `fetched ${e.fetchedAt.slice(0, 10)}` : undefined}
                   className="evidence-chip"
                   href={e.url}
                   target={e.url.startsWith("?") ? undefined : "_blank"}
@@ -143,10 +144,14 @@ export function OwnerReport() {
             </div>
 
             <footer className="report-foot">
-              <span className="disclaimer">Simulated, not guaranteed · you approve every change</span>
-              <a className="btn" href={absoluteUrl(API_URL, report.pdfUrl)} download={`${store.name} weekly report.pdf`} target="_blank" rel="noreferrer">
-                <Icon name="download" size={14} /> PDF
-              </a>
+              <span className="disclaimer">{report.note ?? "Simulated, not guaranteed."} · you approve every change</span>
+              {report.pdfUrl ? (
+                <a className="btn" href={absoluteUrl(API_URL, report.pdfUrl)} download={`${store.name} weekly report.pdf`} target="_blank" rel="noreferrer">
+                  <Icon name="download" size={14} /> PDF
+                </a>
+              ) : (
+                <span className="btn" aria-disabled>PDF pending</span>
+              )}
             </footer>
           </>
         )}
