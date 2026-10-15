@@ -65,7 +65,8 @@ function Levers({ onDone }: { onDone: () => void }) {
   const clubs = map?.stores.filter((s) => s.type === "club") ?? [];
   const [kind, setKind] = useState<InterventionKind>("roadworks");
   const [stationDay, setStationDay] = useState<string>(String(today));
-  const [streetId, setStreetId] = useState<string>(streets.find((s) => s.name.includes("Brick"))?.id ?? streets[0]?.id ?? "");
+  const defaultStreet = streets.find((s) => s.name.includes("Brick"))?.id ?? streets[0]?.id ?? "";
+  const [streetId, setStreetId] = useState<string>(defaultStreet);
   const [fromDay, setFromDay] = useState(today);
   const [works, setWorks] = useState(3);
   const [factor, setFactor] = useState(2);
@@ -80,11 +81,12 @@ function Levers({ onDone }: { onDone: () => void }) {
       case "station_closed":
         return { day: stationDay === "all" ? "all" : Number(stationDay) };
       case "roadworks":
-        return { streetId, fromDay, days: works };
+        // the map may have loaded after the menu opened: fall back to the first shopping street
+        return { streetId: streetId || defaultStreet, fromDay, days: works };
       case "energy_price":
         return { factor };
       case "club_event":
-        return { clubId, day: clubDay };
+        return { clubId: clubId || clubs[0]?.id || null, day: clubDay };
       case "rain":
         return { fromDay: rainFrom, days: 7 };
     }
@@ -155,7 +157,7 @@ function Levers({ onDone }: { onDone: () => void }) {
         <Construction size={15} />,
         "Roadworks",
         <>
-          <select aria-label="Street" value={streetId} onChange={(e) => setStreetId(e.target.value)}>
+          <select aria-label="Street" value={streetId || defaultStreet} onChange={(e) => setStreetId(e.target.value)}>
             {streets.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -189,7 +191,7 @@ function Levers({ onDone }: { onDone: () => void }) {
         <Music size={15} />,
         "Big night at the club",
         <>
-          <select aria-label="Club" value={clubId} onChange={(e) => setClubId(e.target.value)}>
+          <select aria-label="Club" value={clubId || clubs[0]?.id || ""} onChange={(e) => setClubId(e.target.value)}>
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}

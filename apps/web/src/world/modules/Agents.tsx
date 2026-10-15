@@ -4,10 +4,10 @@
 // Agents waiting at the same keyframe (a station exit, a door) are stepped a little apart so they don't render
 // inside each other; the shift is capped at a few metres, so positions keep their meaning.
 // Shop owners (persona "owner", docs/PEOPLE_ECONOMY.md) wear a dark top with an apron band in their shop's colour.
-// Click anyone: the mesh instance → this frame's slot → the agent → their life card (ui/PersonCard).
-import { useFrame, type ThreeEvent } from "@react-three/fiber";
+// Click anyone: the nearest drawn person on screen → this frame's slot → the agent → their life card (ui/PersonCard).
+import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import { Color, type Mesh, type MeshStandardMaterial } from "three";
+import { Color, Vector3, type Mesh, type MeshStandardMaterial } from "three";
 import { createSeparator, obstacles } from "../../sim/crowd";
 import { toScene } from "../../sim/geometry";
 import { sampleAgent, type PreparedAgent } from "../../sim/interp";
@@ -28,6 +28,8 @@ const MIN_GAP = 2.2;
 /** Cap on how far spacing may move an agent from its keyframe position (m). */
 const MAX_PUSH = 3;
 const OWNER_TOP = new Color("#262a33");
+/** How close (px) a click must land to a person to pick them. */
+const PICK_PX = 16;
 
 interface Placed {
   heading: Float32Array;
@@ -56,7 +58,7 @@ export default function Agents() {
   const sep = useMemo(() => createSeparator(CAPACITY), []);
   const ring = useRef<Mesh>(null);
   // slot → agent, as of the last frame (what a click hits)
-  const shown = useRef<{ agents: PreparedAgent[]; n: number }>({ agents: [], n: 0 });
+  const shown = useRef<{ agents: PreparedAgent[]; n: number; xs: Float32Array; zs: Float32Array }>({ agents: [], n: 0, xs: new Float32Array(CAPACITY), zs: new Float32Array(CAPACITY) });
   useEffect(
     () => () => {
       obstacles.n = 0;
@@ -125,7 +127,10 @@ export default function Agents() {
       people.set(q, obstacles.xs[q], moving ? Math.abs(Math.sin(phase)) * 0.08 : 0, obstacles.zs[q], placed.heading[q], phase, moving, SCALE, look.shirt, look.trousers, look.skin, look.apron);
     }
     people.commit(n);
-    shown.current = { agents, n };
+    shown.current.agents = agents;
+    shown.current.n = n;
+    shown.current.xs.set(obstacles.xs.subarray(0, n));
+    shown.current.zs.set(obstacles.zs.subarray(0, n));
     live.onStreet = n;
     if (ring.current) {
       ring.current.visible = sel >= 0;
@@ -136,15 +141,44 @@ export default function Agents() {
     }
   });
 
-  const click = (e: ThreeEvent<MouseEvent>) => {
-    if (!interactive || e.instanceId === undefined) return;
-    const { agents: list, n } = shown.current;
-    if (e.instanceId >= n) return;
-    const a = list[placed.who[e.instanceId]];
-    if (!a) return;
-    e.stopPropagation();
-    useEconomy.getState().selectPerson(personOf(a.id));
-  };
+  // Click anyone: the nearest person drawn within a few pixels of the click (screen space, so small, moving
+  // figures are easy to hit). A pick swallows the click, so the store behind them isn't selected too.
+  const { camera, gl } = useThree();
+  useEffect(() => {
+    if (!interactive) return;
+    const el = gl.domElement;
+    let down: [number, number] | null = null;
+    const v = new Vector3();
+    const onDown = (e: PointerEvent) => {
+      down = [e.clientX, e.clientY];
+    };
+    const onClick = (e: MouseEvent) => {
+      if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+      const { agents: list, n, xs, zs } = shown.current;
+      const rect = el.getBoundingClientRect();
+      let best = -1;
+      let bestD = PICK_PX;
+      for (let q = 0; q < n; q++) {
+        v.set(xs[q], 1.1 * SCALE, zs[q]).project(camera);
+        if (v.z > 1) continue;
+        const d = Math.hypot(rect.left + ((v.x + 1) / 2) * rect.width - e.clientX, rect.top + ((1 - v.y) / 2) * rect.height - e.clientY);
+        if (d < bestD) {
+          bestD = d;
+          best = q;
+        }
+      }
+      const a = best >= 0 ? list[placed.who[best]] : undefined;
+      if (!a) return;
+      e.stopPropagation();
+      useEconomy.getState().selectPerson(personOf(a.id));
+    };
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("click", onClick);
+    return () => {
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("click", onClick);
+    };
+  }, [interactive, gl, camera, placed]);
   const over = (e: ThreeEvent<PointerEvent>) => {
     if (!interactive) return;
     e.stopPropagation();
@@ -156,7 +190,7 @@ export default function Agents() {
 
   return (
     <>
-      <primitive object={people.group} name="agents" onClick={click} onPointerOver={over} onPointerOut={out} />
+      <primitive object={people.group} name="agents" onPointerOver={over} onPointerOut={out} />
       <mesh ref={ring} rotation-x={-Math.PI / 2} visible={false} name="agent-selected">
         <ringGeometry args={[1.6, 2.2, 32]} />
         <meshBasicMaterial color={LAMP} transparent opacity={0.9} depthWrite={false} />

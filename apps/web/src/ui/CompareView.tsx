@@ -1,6 +1,5 @@
 // Compare mode: run 1 vs the best run, side by side on one clock and one shared camera.
 // After an intervention (ui/InterveneMenu) it shows the baseline vs the forked run instead, with a delta strip.
-import { useEffect } from "react";
 import { useAnalyst, useMap, useRuns, useRunStores } from "../state/data";
 import { useEconomy } from "../state/economy";
 import World from "../world/World";
@@ -12,8 +11,6 @@ export function CompareView() {
   const map = useMap().data;
   const analyst = useAnalyst().data;
   const pair = useEconomy((s) => s.comparePair);
-  // leaving compare mode drops the what-if pair, so "Before vs after" means baseline vs best again
-  useEffect(() => () => useEconomy.getState().setComparePair(null), []);
   const base = pair?.base ?? analyst?.baselineRun ?? 1;
   const best = pair?.other ?? analyst?.bestRun ?? base;
   const runs = useRuns().data;

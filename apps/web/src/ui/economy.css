@@ -7,6 +7,7 @@
   align-items: flex-start;
   gap: 8px;
   max-height: calc(100vh - 110px);
+  z-index: 2; /* the featured list opens over the city feed */
 }
 
 /* ---------- daily headline ---------- */

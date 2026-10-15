@@ -78,11 +78,12 @@ function build(map: CityMap, run: number, id: string, trips: Trip[], doors: Door
   const budget = pick(r, arch.budgets);
   const loyalty = Math.round(between(r, 0.2, 0.9) * 100) / 100;
   const lightingSensitivity = Math.round(between(r, 0.2, 0.8) * 100) / 100;
-  const starts = trips.map((t) => placeOf(map, t.a.path[0][1], t.a.path[0][2]));
-  const homeStart = starts.find((p) => p.kind === "home");
-  const via = starts.find((p) => p.kind !== "home");
   const work = persona === "commuter" ? trips.find((t) => !t.a.id.includes("~")) : undefined;
   const workEnd = work?.a.path[work.a.path.length - 1];
+  // trips that start at work (lunch, home time) say nothing about where they live
+  const starts = trips.filter((t) => !workEnd || Math.hypot(workEnd[1] - t.a.path[0][1], workEnd[2] - t.a.path[0][2]) >= 1).map((t) => placeOf(map, t.a.path[0][1], t.a.path[0][2]));
+  const homeStart = starts.find((p) => p.kind === "home");
+  const via = starts.find((p) => p.kind !== "home");
 
   // the diary, day by day
   const seen = new Map<string, number>();

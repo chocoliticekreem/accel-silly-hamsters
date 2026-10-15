@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { economyApi, type CitizenDiary, type CitizenIndex, type Headline, type OwnerPerson, type PersonStory, type RunIntervention } from "../api/economy";
 import { useResource } from "./data";
+import { useSim } from "./store";
 
 export type HeatmapLayer = null | "wealth" | "footfall" | "missed";
 
@@ -42,4 +43,9 @@ export const useHeadlines = (run: number | null) => useResource<Headline[]>(run 
 export const useCitizens = (run: number | null) => useResource<CitizenIndex | null>(run == null ? null : `econ:citizens:${run}`, () => economyApi.citizens(run!));
 export const useDiary = (run: number, id: string | null) =>
   useResource<CitizenDiary | null>(id ? `econ:diary:${run}:${id}` : null, () => economyApi.diary(run, id!));
-export const useInterventions =() => useResource<Record<number, RunIntervention>>("runs:econ:interventions", () => economyApi.interventions());
+export const useInterventions = () => useResource<Record<number, RunIntervention>>("runs:econ:interventions", () => economyApi.interventions());
+
+// leaving compare mode drops the what-if pair, so "Before vs after" means baseline vs best again
+useSim.subscribe((s, prev) => {
+  if (prev.compare && !s.compare && useEconomy.getState().comparePair) useEconomy.getState().setComparePair(null);
+});
