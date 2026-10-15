@@ -29,6 +29,7 @@ import Surroundings from "./modules/Surroundings";
 import Overground from "./modules/Overground";
 import OldStreet from "./modules/OldStreet";
 import Traffic from "./modules/Traffic";
+import Cyclists from "./modules/Cyclists";
 import ClubLife from "./modules/ClubLife";
 import Incidents from "./modules/Incidents";
 import Interiors from "./modules/Interiors";
@@ -57,6 +58,7 @@ export const MODULES: Record<string, ComponentType> = {
   StreetDressing,
   StreetEvents,
   Traffic,
+  Cyclists,
   ClubLife,
   Interiors,
   Incidents,
