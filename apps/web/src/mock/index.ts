@@ -1,6 +1,6 @@
 // mockApi(): the full backend contract served from memory. Same interface as http.ts.
 // Runs are simulated lazily and cached; everything is deterministic (seed 42).
-import type { AnalystStatus, Api, Calibration, RunAreaSummary, CalibrationVenue, CityMap, DecisionRequest, RunSummary } from "../api/contract";
+import type { AgentEvent, AgentSession, AnalystStatus, Api, Calibration, RunAreaSummary, CalibrationVenue, CityMap, DecisionRequest, RunSummary } from "../api/contract";
 // The backend pipeline's calibration targets (placeholder shapes until Popular Times is measured).
 import calibrationData from "../../../../data/processed/calibration.json";
 // The pipeline's live London carbon and price profile, so mock area totals use real numbers.
@@ -198,6 +198,57 @@ export function mockApi(state: MockState = createMockState()): Api {
         return buildInsights(map, run, state.config(run), state.result(run), sugg, storeId);
       }),
     overview: (storeId, run) => overviewFromParts(self, storeId, run),
+    agentSession: () =>
+      later<AgentSession>(() => {
+        const runs = state.runs();
+        return {
+          sessionId: "mock-session",
+          state: "stopped",
+          startedAt: new Date(STARTED_AT).toISOString(),
+          updatedAt: runs[runs.length - 1].createdAt,
+          backend: "heuristic",
+          fresh: true,
+          seed: MOCK_SEED,
+          baselineRun: 1,
+          currentRun: runs.length,
+          bestRun: state.bestRun(),
+          bestObjective: runs.find((r) => r.run === state.bestRun())!.kpis!.visitsPerKwh,
+          iterations: runs.length,
+          runsThisSession: runs.map((r) => r.run),
+          lowGainStreak: 2,
+          step: "scored",
+          stoppedReason: "threshold",
+          spentGbp: 0,
+        };
+      }),
+    // the same story the backend logs, synthesised from the mock's experiment plan and results
+    agentLog: () =>
+      later<AgentEvent[]>(() => {
+        const runs = state.runs();
+        const at = (run: number, s: number) => new Date(STARTED_AT + ((run - 1) * MINUTES_PER_RUN + s) * 60_000).toISOString();
+        const ev: AgentEvent[] = [{ at: at(1, 0), agent: "training", type: "start", run: null, data: { seed: MOCK_SEED, fresh: true } }];
+        // mock runs are always done, so kpis is set
+        const vpk = (r: (typeof runs)[number]) => r.kpis!.visitsPerKwh;
+        let best = vpk(runs[0]);
+        runs.forEach((r, i) => {
+          const next = runs[i + 1];
+          if (!next) return;
+          const stores = map.stores.filter((s) => s.type !== "club").length;
+          const props = suggestionsBetween(state.config(r.run), state.config(next.run), state.result(r.run).stores, state.result(next.run).stores, areas).length;
+          const gain = (vpk(next) - best) / best;
+          ev.push(
+            { at: at(r.run, 20), agent: "analyst", type: "handoff", run: r.run, data: { to: "store_agents" } },
+            { at: at(r.run, 24), agent: "store_owner", type: "proposals", run: r.run, data: { mode: "heuristic", stores, suggestions: props + 12 } },
+            { at: at(r.run, 25), agent: "store_agents", type: "handoff", run: r.run, data: { to: "analyst", proposals: props + 12, stores } },
+            { at: at(r.run, 30), agent: "analyst", type: "hypothesis", run: r.run, data: { backend: "heuristic", text: `${notebookLabel(next.run)} should lift visits/kWh by about +${Math.max(0.1, gain * 80).toFixed(1)}%`, expectedGain: Math.max(0.001, gain * 0.8), changesCount: props } },
+            { at: at(next.run, 2), agent: "analyst", type: "experiment", run: next.run, data: { parentRun: r.run, changesCount: props } },
+            { at: at(next.run, 60), agent: "analyst", type: "result", run: next.run, data: { objectiveValue: vpk(next), gain, newBest: vpk(next) > best, notebook: next.notebook, lowGainStreak: gain < 0.02 ? 1 : 0 } },
+          );
+          best = Math.max(best, vpk(next));
+        });
+        ev.push({ at: at(runs.length, 65), agent: "training", type: "stopped", run: null, data: { reason: "threshold", bestRun: state.bestRun() } });
+        return ev;
+      }),
     optimize: () =>
       later<AnalystStatus>(() => ({
         state: "stopped",

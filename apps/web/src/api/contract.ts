@@ -370,6 +370,43 @@ export interface StoreOverview {
   note?: string;
 }
 
+// ---------- GET /api/agents/session, GET /api/agents/log (additive) ----------
+// The Agents view: the analyst checkpoint and the session's story (hand-offs, proposals, hypotheses,
+// experiments, results). Area-level; no prompts, responses or per-store lists.
+
+export interface AgentSession {
+  sessionId: string;
+  state: "running" | "stopped";
+  startedAt: string;
+  updatedAt: string;
+  /** heuristic | messages | managed */
+  backend: string;
+  fresh: boolean;
+  seed: number;
+  baselineRun?: number | null;
+  currentRun?: number | null;
+  bestRun?: number | null;
+  bestObjective?: number | null;
+  iterations: number;
+  runsThisSession: number[];
+  /** Runs in a row below the gain threshold (patience). */
+  lowGainStreak: number;
+  /** Last completed step, for resume: start | baseline | proposed | chosen | ran | scored | ... */
+  step: string;
+  stoppedReason?: "threshold" | "max_runs" | "budget" | "error" | null;
+  spentGbp: number;
+  error?: string | null;
+}
+
+export interface AgentEvent {
+  at: string;
+  /** analyst | store_owner | store_agents | training | ... */
+  agent: string;
+  type: string;
+  run?: number | null;
+  data: Record<string, string | number | boolean | null>;
+}
+
 // ---------- The client interface (mock and http both implement it) ----------
 
 export interface Api {
@@ -394,6 +431,10 @@ export interface Api {
   overview(storeId: string, run?: number): Promise<StoreOverview | null>;
   /** POST /api/stores/{id}/optimize: a training session scoped to this shop. Throws ApiError (409 busy, 403 read-only). */
   optimize(storeId: string, maxRuns?: number): Promise<AnalystStatus>;
+  /** null before any training session (404). */
+  agentSession(): Promise<AgentSession | null>;
+  /** The session's story, oldest first ([] when not served). */
+  agentLog(run?: number): Promise<AgentEvent[]>;
 }
 
 /** An HTTP error with its status, so the UI can say "already running" (409) or "read-only demo" (403). */
