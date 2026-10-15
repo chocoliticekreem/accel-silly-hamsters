@@ -1,0 +1,40 @@
+[project]
+name = "smart-city-sim-backend"
+version = "0.1.0"
+description = "Smart City Sim (Shoreditch): simulation, Claude agents and API for the store-owner weekly report"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.8",
+    "numpy>=2.0",
+    "anthropic>=0.70",
+    "httpx>=0.27",
+    "praw>=7.7",
+    "python-dotenv>=1.0",
+    "matplotlib>=3.9",
+    "fpdf2>=2.8",
+    "openpyxl>=3.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
