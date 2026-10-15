@@ -2547,3 +2547,86 @@ button.chip:disabled {
 .sp-card .week-schedule {
   margin-top: 12px;
 }
+
+/* ---------- learning curve (Days tab) + optimise progress ---------- */
+
+.sw-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 3px;
+  vertical-align: -1px;
+  border-radius: 50%;
+  border: 1.5px solid var(--lamp);
+  background: rgba(255, 200, 87, 0.55);
+}
+.sp-owner-changes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.sp-owner-changes b {
+  font-family: var(--mono);
+  color: var(--text);
+}
+.sp-optimise {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  overflow: hidden;
+  border-radius: 10px;
+  font-size: 13px;
+  border: 1px solid rgba(255, 200, 87, 0.35);
+  background: var(--lamp-soft);
+}
+.sp-optimise.running {
+  color: var(--lamp);
+}
+.sp-optimise.done {
+  color: var(--good);
+  border-color: rgba(111, 211, 160, 0.35);
+  background: rgba(111, 211, 160, 0.08);
+}
+.sp-optimise span:first-of-type {
+  flex: 1;
+}
+.sp-optimise .icon-btn {
+  margin-left: auto;
+}
+.sp-optimise-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 30%;
+  background: var(--lamp);
+  animation: sp-sweep 1.6s ease-in-out infinite;
+}
+@keyframes sp-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+.spin {
+  animation: sp-spin 1s linear infinite;
+}
+@keyframes sp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .sp-optimise-bar {
+    animation: none;
+  }
+}

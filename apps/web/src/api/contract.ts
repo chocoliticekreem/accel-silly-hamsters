@@ -281,7 +281,12 @@ export interface RunAreaSummary {
   footfallByHour: number[];
   agents: { returning: number; oneOff: number; total: number };
   durationSec: number;
+  /** Additive (docs/OWNER_ACTIONS.md learning curve): one entry per sim day (14), owners adapting inside the run. */
+  daily?: { day: number; visits: number; kwh: number; visitsPerKwh: number; profitGbp: number; ownerActions: number }[];
 }
+
+/** One day of the inner learning loop (RunAreaSummary.daily). */
+export type RunDay = NonNullable<RunAreaSummary["daily"]>[number];
 
 // ---------- GET /api/health (additive) ----------
 
@@ -382,6 +387,8 @@ export interface StoreOverview {
   /** Baseline plus every run that changed this shop's settings, oldest first. */
   history: { run: number; label: string; customersPerWeek: number; kwhPerWeek: number; profitChangePerWeekGbp: number; changes: string[]; best: boolean }[];
   note?: string;
+  /** Additive: how many times this shop's owner adapted during this run (owner events). */
+  ownerChanges?: number;
 }
 
 // ---------- GET /api/agents/session, GET /api/agents/log (additive) ----------
