@@ -39,6 +39,9 @@ not sent as `null`.
 | New `GET /api/training` | `{config, options, status, running}`. `config`: the saved `TrainingConfig` (table below; `runs/training_config.json`, settings defaults until one is saved), what the next session runs with. `options`: what each field accepts: `{values: [...]}` for choices, `{min, max?}` for numbers (`max` absent = unbounded), `levers: {values: ["hours", "lighting"], minEnabled: 1}`, `storeIds: {stores: [{id, name, type}], null}` (`null` = every non-club store). `status`: `AnalystStatus`, as `GET /api/analyst`. `running`: a session started by this API process is running. |
 | New `PUT /api/training/config` | Body: a `TrainingConfig` (missing fields take the settings defaults). Validated, saved, answered back. 409 while a session runs, 422 on a bad value or a `storeIds` entry that is unknown or a club, 403 when read-only. |
 | New `POST /api/training/start` | Body (optional): `{config?: TrainingConfig, fresh?: false}`. Starts a session in a background thread of the API, or resumes the last one (same seed, objective and shop, not `fresh`; a finished one-shop session is never resumed); a body `config` is saved as the current config first, else the saved one runs. Answers `AnalystStatus`, already `running`. One at a time: 409 while one runs in this API, or while another process (e.g. a CLI `train`) runs a session on the same `runs/` (it holds `runs/training.lock`; its stop request is left alone). 422 on a bad config, 403 when read-only. |
+| `GET /api/agents/session` | Additive (`docs/AGENT_DESIGN.md`, "Failure modes"): `quarantinedRuns` (run ids rejected by the sanity guards or that crashed on every attempt; files kept, `status: "failed"` in `GET /api/runs`) and `recoveries`, how often each recovery fired this session, every key present: `retries`, `fallbacks`, `repairs`, `skipped`, `resumed`, `quarantined`, `restored`, `errors`, `breakerOpens`, `batchTimeouts`, `lockTakeovers`, `reconciled`. A checkpoint left `running` by a trainer that died is reconciled to `state: "stopped"`, `stoppedReason: "error"` on API startup and on this read (never on a read-only deployment). |
+| `GET /api/agents/log` | Also serves the error and recovery events: `retry`, `fallback`, `repair`, `skip`, `quarantine`, `restore`, `llm_error`, `breaker_open`, `batch_timeout`, `batch_reattached`, `lock_takeover`, `reconcile`, with `data` fields `kind` (what failed, e.g. `http_429`, `timeout`, `sim_crash`, `invalid_output`, `circuit_open`), `step`, `attempt`, `wait` (seconds), `outcome` and `error`. `storeId` is never sent (area view). |
+| `GET /api/notebook` | A quarantined run's entry reads `Run N quarantined: <reason>` with `objectiveValue: null`. |
 | New `POST /api/training/stop` | Asks the running session to stop at its next step boundary (the step in progress finishes); it then checkpoints with `stoppedReason: "stopped"`. Also stops a CLI session on the same `runs/` (flag file). Answers `AnalystStatus` at once (still `running` until the step and the wrap-up end, see below). 403 when read-only. |
 
 ### `TrainingConfig` (`backend/schemas.py`)
@@ -59,6 +62,14 @@ not sent as `null`.
 | `storeAgents` | `auto` \| `heuristic` \| `batch` | `auto` |
 
 ## Behaviour notes (not shape changes)
+
+- **Error handling** (`docs/AGENT_DESIGN.md`). A Claude outage no longer stops a session: the
+  agents retry, then fall back to their heuristics, and the session goes on. A sim run that
+  crashes twice, or produces zero visits, a NaN/inf objective or an implausible jump, is marked
+  `failed` and the session moves on, so `stoppedReason: "error"` is now rarer (an unusable
+  baseline, a bug). `POST /api/stores/{storeId}/optimize`'s 409 trusts the session lock first: a
+  live trainer blocks however old its checkpoint, and a checkpoint stamped in the future (clock
+  skew) with no live trainer does not.
 
 - **Store overview semantics** (`backend/overview.py`). Baseline = the analyst checkpoint's
   `baselineRun`, else the first finished run without a parent. `history` = the baseline plus every

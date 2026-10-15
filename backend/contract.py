@@ -455,6 +455,12 @@ class AgentSession(Model):
     stoppedReason: Literal["threshold", "max_runs", "budget", "error", "stopped"] | None = None
     spentGbp: float = 0.0
     error: str | None = None
+    # Additive (docs/AGENT_DESIGN.md, "Failure modes"): runs quarantined by the sanity guards or
+    # repeated sim crashes, and how often each recovery fired this session (retries, fallbacks,
+    # repairs, skipped, resumed, quarantined, restored, errors, breakerOpens, batchTimeouts,
+    # lockTakeovers, reconciled; every key present, 0 when it never fired).
+    quarantinedRuns: list[int] = Field(default_factory=list)
+    recoveries: dict[str, int] = Field(default_factory=dict)
 
 
 class AgentEvent(Model):

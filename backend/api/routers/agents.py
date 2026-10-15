@@ -16,7 +16,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend import settings, store
+from backend import llm, settings, store
+from backend.agents import training
 from backend.api import common
 from backend.contract import AgentEvent, AgentSession
 
@@ -41,6 +42,19 @@ STORY_EVENTS = {
     "budget_stop",
     "stopped",
     "error",
+    # errors and recoveries (llm.RECOVERY_COUNTS): kind, step, attempt, wait, outcome
+    "retry",
+    "fallback",
+    "repair",
+    "skip",
+    "quarantine",
+    "restore",
+    "llm_error",
+    "breaker_open",
+    "batch_timeout",
+    "batch_reattached",
+    "lock_takeover",
+    "reconcile",
 }
 # Fields never sent: model inputs/outputs and anything that lists individual stores.
 DROP = {
@@ -52,6 +66,7 @@ DROP = {
     "output",
     "heuristicStores",
     "stores_list",
+    "storeId",
     "trace",
 }
 MAX_STR = 240
@@ -98,12 +113,14 @@ def _read(path: Path, run: int | None) -> list[AgentEvent]:
 @router.get("/api/agents/session", response_model=AgentSession)
 def get_session():
     """The analyst checkpoint in full. 404 before the analyst has ever run."""
+    training.reconcile_stale()  # a trainer that died mid-session no longer reads "running"
     state = store.load_analyst_state()
     if state is None:
         raise HTTPException(404, "no training session yet")
     # Only the contract's fields: scopeStore and the session's config (its storeIds) stay out of
     # the area view (data firewall: no shop ids in area-level views).
     session = AgentSession.model_validate(state.model_dump(include=set(AgentSession.model_fields)))
+    session.recoveries = {**{k: 0 for k in llm.RECOVERY_COUNTS.values()}, **state.recoveries}
     return common.contract_json(session)
 
 

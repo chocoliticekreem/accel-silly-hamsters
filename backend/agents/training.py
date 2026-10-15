@@ -58,6 +58,7 @@ import threading
 import traceback
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from itertools import combinations
 from typing import IO, Any
 
@@ -145,6 +146,121 @@ def _lock_runs_dir() -> IO[str]:
     return handle
 
 
+def lock_held() -> bool:
+    """True while some live process (this one included) holds runs/training.lock."""
+    handle = _try_lock()
+    if handle is None:
+        return True
+    handle.close()
+    return False
+
+
+def _try_lock() -> IO[str] | None:
+    path = store.training_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
+
+
+def heartbeat_path():
+    """runs/training_heartbeat.json: who holds the session and when it last checkpointed. The
+    flock is the authority on liveness (the kernel drops it with the process); the heartbeat
+    names the holder for takeover events and the API."""
+    return settings.RUNS_DIR / "training_heartbeat.json"
+
+
+def _heartbeat(state: AnalystState) -> None:
+    store.write_json(
+        heartbeat_path(),
+        {
+            "pid": os.getpid(),
+            "host": socket.gethostname(),
+            "sessionId": state.sessionId,
+            "step": state.step,
+            "at": store.now_iso(),
+        },
+    )
+
+
+# A checkpoint stamped this far in the future came from a clock that runs fast (or was skewed):
+# its age says nothing about liveness.
+CLOCK_SKEW_SECONDS = 300
+
+
+def checkpoint_age_seconds(state: AnalystState) -> float | None:
+    try:
+        updated = datetime.strptime(state.updatedAt, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+    return (datetime.now(UTC) - updated).total_seconds()
+
+
+def reconcile_stale(grace_seconds: float = 60.0) -> AnalystState | None:
+    """A checkpoint reads "running" but no live process holds the lock (the trainer crashed or
+    was killed, or the API restarted under it): mark it stopped with stoppedReason "error" so the
+    UI stops showing a ghost session; the next start resumes it. A checkpoint younger than
+    grace_seconds is left alone (a session between its first checkpoint and taking the lock),
+    unless its timestamp is in the future beyond CLOCK_SKEW_SECONDS. Holds the lock while it
+    writes, so it can never overwrite a trainer. Returns the reconciled state, or None."""
+    if settings.READ_ONLY:  # the hosted demo replays files it must not rewrite
+        return None
+    state = store.load_analyst_state()
+    if state is None or state.state != "running":
+        return None
+    age = checkpoint_age_seconds(state)
+    if age is not None and -CLOCK_SKEW_SECONDS <= age < grace_seconds:
+        return None
+    handle = _try_lock()
+    if handle is None:
+        return None  # its trainer is alive
+    try:
+        state = store.load_analyst_state()  # re-read under the lock
+        if state is None or state.state != "running":
+            return None
+        state.state, state.stoppedReason = "stopped", "error"
+        state.error = (
+            f"the process running this session ({state.owner}) ended without stopping (crash, "
+            f"kill or restart); start training to resume after step {state.step}"
+        )
+        llm.load_recoveries(state.sessionId, state.recoveries)
+        llm.record_recovery(
+            "reconcile",
+            agent=AGENT,
+            session=state.sessionId,
+            kind="stale_running",
+            owner=state.owner,
+            lastCheckpoint=state.updatedAt,
+            outcome="marked stopped; resumable",
+        )
+        state.recoveries = llm.recovery_counts(state.sessionId)
+        store.save_analyst_state(state)
+        return state
+    finally:
+        handle.close()
+
+
+def _note_takeover(previous: AnalystState | None, beat: dict, state: AnalystState) -> None:
+    """This process took the lock over a checkpoint another process left "running": that
+    process is dead (the kernel released its lock). Logged with what its heartbeat said."""
+    if previous is None or previous.state != "running" or beat.get("pid") in (None, os.getpid()):
+        return
+    llm.record_recovery(
+        "lock_takeover",
+        agent=AGENT,
+        session=state.sessionId,
+        kind="dead_holder",
+        previousPid=beat.get("pid"),
+        previousHost=beat.get("host"),
+        lastHeartbeat=beat.get("at"),
+        outcome="taken over",
+    )
+
+
 # --- config ---------------------------------------------------------------------------------
 
 
@@ -205,7 +321,9 @@ def begin(
         backend = analyst.select_backend(
             "heuristic" if config.scope_store else config.analystBackend
         )
+        previous, beat = store.load_analyst_state(), store.read_json(heartbeat_path()) or {}
         state = _start_or_resume(fresh, config, backend.name)
+        _note_takeover(previous, beat, state)
         llm.set_session_budget(state.sessionId, config.sessionBudgetUsd)
     except BaseException:
         lock.close()
@@ -407,6 +525,7 @@ def _checkpoint(state: AnalystState) -> None:
     state.spentGbp = round(llm.ledger_total_gbp(session=state.sessionId), 4)
     state.recoveries = llm.recovery_counts(state.sessionId)
     store.save_analyst_state(state)
+    _heartbeat(state)
     chaos.after_checkpoint()  # CHAOS kill_after_step:N
 
 

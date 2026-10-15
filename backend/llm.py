@@ -232,6 +232,7 @@ RECOVERY_COUNTS = {
     "breaker_open": "breakerOpens",
     "batch_timeout": "batchTimeouts",
     "lock_takeover": "lockTakeovers",
+    "reconcile": "reconciled",
 }
 _recoveries: dict[str | None, dict[str, int]] = {}
 _step: str | None = None  # the training step in progress, for event context
