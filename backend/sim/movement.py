@@ -24,6 +24,8 @@ COLLINEAR_SIN = math.sin(math.radians(3))  # direction changes below this are no
 
 Point = tuple[float, float]
 Keyframe = tuple[int, float, float]
+# A corner polyline ready to walk: the rounded start, then (minutes, x, z) per leg.
+Legs = tuple[Point, list[tuple[float, float, float]]]
 
 
 @dataclass
@@ -77,10 +79,20 @@ def _segment_cuts(segs: np.ndarray) -> list[list[tuple[float, float, float]]]:
     cuts: list[list[tuple[float, float, float]]] = [
         [(0.0, s[0], s[1]), (1.0, s[2], s[3])] for s in segs
     ]
-    # debt: pairwise segment test is O(M^2). ceiling: ~1000 segments takes seconds per world
-    # build. upgrade: if map.json grows past a few hundred segments, bucket them on a grid first.
+    # Broad phase: segments can only meet (within SNAP_M) where their bounding boxes, padded by
+    # SNAP_M, overlap; the padding is doubled so float rounding never drops a meeting.
+    pad = 2 * SNAP_M
+    lo = np.minimum(segs[:, :2], segs[:, 2:]) - pad
+    hi = np.maximum(segs[:, :2], segs[:, 2:]) + pad
     for i in range(len(segs)):
-        for j in range(i + 1, len(segs)):
+        later = slice(i + 1, None)
+        overlap = (
+            (lo[later, 0] <= hi[i, 0])
+            & (hi[later, 0] >= lo[i, 0])
+            & (lo[later, 1] <= hi[i, 1])
+            & (hi[later, 1] >= lo[i, 1])
+        )
+        for j in np.flatnonzero(overlap) + i + 1:
             for ti, tj, x, z in _meetings(segs[i], segs[j]):
                 cuts[i].append((ti, x, z))
                 cuts[j].append((tj, x, z))
@@ -250,6 +262,7 @@ class Routes:
             self.dist[i] = dist[place_nodes]
             self._prev.append(prev)
         self._corners: dict[tuple[int, int], list[Point]] = {}
+        self._legs: dict[tuple[int, int], Legs] = {}
 
     def corners(self, a: int, b: int) -> list[Point]:
         """Corner points of the shortest walk from place a to place b, both ends included."""
@@ -266,25 +279,47 @@ class Routes:
             self._corners[key] = simplify(pts)
         return self._corners[key]
 
+    def legs(self, a: int, b: int) -> Legs:
+        """corners(a, b) prepared for walk_legs (cached: trips repeat the same routes)."""
+        key = (a, b)
+        if key not in self._legs:
+            self._legs[key] = legs_of(self.corners(a, b))
+        return self._legs[key]
+
+
+def legs_of(corners: list[Point]) -> Legs:
+    x0, z0 = corners[0]
+    return (round(x0, 1), round(z0, 1)), [
+        (math.hypot(bx - ax, bz - az) / WALK_SPEED_M_PER_MIN, round(bx, 1), round(bz, 1))
+        for (ax, az), (bx, bz) in pairwise(corners)
+    ]
+
 
 def walk(corners: list[Point], t_start: int) -> list[Keyframe]:
-    """Keyframes for walking a corner polyline from t_start at WALK_SPEED_M_PER_MIN.
+    """Keyframes for walking a corner polyline from t_start at WALK_SPEED_M_PER_MIN."""
+    return walk_legs(legs_of(corners), t_start)
+
+
+def walk_legs(legs: Legs, t_start: int) -> list[Keyframe]:
+    """Keyframes for walking prepared legs from t_start.
 
     Times are integer minutes and strictly increasing, so a corner closer than one minute's walk
     to the previous one is reached a minute later instead (no zero-duration jumps). The walking
     clock then restarts from that later minute: catching up on a following long segment would
     make the agent sprint.
     """
-    x0, z0 = corners[0]
-    frames: list[Keyframe] = [(t_start, round(x0, 1), round(z0, 1))]
+    (x0, z0), steps = legs
+    frames: list[Keyframe] = [(t_start, x0, z0)]
     clock = float(t_start)
-    for (ax, az), (bx, bz) in pairwise(corners):
-        clock += math.hypot(bx - ax, bz - az) / WALK_SPEED_M_PER_MIN
+    last = t_start
+    for minutes, x, z in steps:
+        clock += minutes
         t = math.floor(clock + 0.5)
-        if t <= frames[-1][0]:
-            t = frames[-1][0] + 1
+        if t <= last:
+            t = last + 1
             clock = float(t)
-        frames.append((t, round(bx, 1), round(bz, 1)))
+        frames.append((t, x, z))
+        last = t
     return frames
 
 
@@ -294,18 +329,32 @@ def passes_near(
     """Which walking segments pass within `radius` of which doors, and when.
 
     segments: (K, 6) rows of [t0, x0, z0, t1, x1, z1]; doors: (S, 2).
-    Returns (segment index, door index, minute of closest approach) for every hit.
+    Returns (segment index, door index, minute of closest approach) for every hit, ordered by
+    segment, then door.
     """
     if len(segments) == 0:
         empty = np.zeros(0, dtype=np.int64)
         return empty, empty, empty
-    a, b = segments[:, None, 1:3], segments[:, None, 4:6]
+    # Broad phase: a door can only be within `radius` of a segment inside the segment's
+    # bounding box padded by `radius` (plus a metre, so float rounding never drops a hit).
+    pad = radius + 1.0
+    lo = np.minimum(segments[:, 1:3], segments[:, 4:6]) - pad
+    hi = np.maximum(segments[:, 1:3], segments[:, 4:6]) + pad
+    near = (
+        (doors[None, :, 0] >= lo[:, None, 0])
+        & (doors[None, :, 0] <= hi[:, None, 0])
+        & (doors[None, :, 1] >= lo[:, None, 1])
+        & (doors[None, :, 1] <= hi[:, None, 1])
+    )
+    seg_idx, door_idx = np.nonzero(near)
+    a, b = segments[seg_idx, 1:3], segments[seg_idx, 4:6]
+    door = doors[door_idx]
     ab = b - a
     length2 = np.maximum((ab**2).sum(-1), 1e-12)
-    u = np.clip(((doors[None, :, :] - a) * ab).sum(-1) / length2, 0.0, 1.0)
-    closest = a + ab * u[..., None]
-    hit = np.hypot(*(closest - doors[None, :, :]).transpose(2, 0, 1)) <= radius
-    seg_idx, door_idx = np.nonzero(hit)
+    u = np.clip(((door - a) * ab).sum(-1) / length2, 0.0, 1.0)
+    closest = a + ab * u[:, None]
+    hit = np.hypot(*(closest - door).T) <= radius
+    seg_idx, door_idx, u = seg_idx[hit], door_idx[hit], u[hit]
     t0, t1 = segments[seg_idx, 0], segments[seg_idx, 3]
-    minute = np.floor(t0 + (t1 - t0) * u[seg_idx, door_idx]).astype(np.int64)
+    minute = np.floor(t0 + (t1 - t0) * u).astype(np.int64)
     return seg_idx, door_idx, minute

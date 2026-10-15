@@ -22,6 +22,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import type { CityMap, Street } from "../../api/contract";
 import { rng, type Rng } from "../../mock/rng";
 import { toScene } from "../../sim/geometry";
+import { gatePieces } from "../../sim/construction";
 import { planInfill, rectStreetDistance, type Plot, type Rect } from "../../sim/infill";
 import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
@@ -98,7 +99,6 @@ interface Built {
   merged: { geo: BufferGeometry; mat: Material; shadow: boolean }[];
   inst: { name: string; geo: BufferGeometry; mat: MeshStandardMaterial; items: Inst[]; shadow: boolean }[];
   windowMats: { mat: MeshStandardMaterial; office: boolean }[];
-  cranes: { x: number; z: number; h: number; jib: number; rot: number }[];
 }
 
 function build(map: CityMap): Built {
@@ -227,35 +227,8 @@ function build(map: CityMap): Built {
         }
       }
       if (rows.length === 2) for (let a = -len / 2 + 6; a < len / 2 - 4; a += 12) benches.add(alongX ? p.x + a : p.x, 0, alongX ? p.z : p.z + a, 1, 1, 1, alongX ? 0 : Math.PI / 2);
-    } else if (p.kind === "site") {
-      if (p.w >= 24 && p.d >= 24 && r() < 0.75) {
-        // a concrete frame going up: core, slabs, corner columns
-        const floors = 4 + Math.floor(r() * 9);
-        const fw = p.w - 8;
-        const fd = p.d - 8;
-        const top = floors * 3.6;
-        concrete.add(p.x - fw * 0.2, 0, p.z, 6, top + 3, 6);
-        for (let f = 1; f <= floors; f++) concrete.add(p.x, f * 3.6 - 0.35, p.z, fw, 0.35, fd);
-        for (const [ix, iz] of [
-          [-1, -1],
-          [-1, 1],
-          [1, -1],
-          [1, 1],
-        ])
-          concrete.add(p.x + (ix * (fw - 1)) / 2, 0, p.z + (iz * (fd - 1)) / 2, 0.7, top, 0.7);
-      } else {
-        // site cabins stacked two high, and material piles
-        // most of the site is bare ground; a few plots get a cabin cluster
-        const n = r() < 0.3 ? 1 + Math.floor(r() * 2) : 0;
-        for (let k = 0; k < n; k++) {
-          const x = p.x + (r() - 0.5) * Math.max(0, p.w - 8);
-          const z = p.z + (r() - 0.5) * Math.max(0, p.d - 4);
-          cabins.add(x, 0, z, 1, 1, 1, 0, "#3d6fb5");
-          if (r() < 0.5) cabins.add(x, 2.7, z, 1, 1, 1, 0, "#e6e1d6");
-        }
-        if (r() < 0.5) concrete.add(p.x + (r() - 0.5) * 4, 0, p.z + (r() - 0.5) * 4, 3 + r() * 3, 0.6 + r(), 2 + r() * 2);
-      }
     }
+    // site plots are bare ground here: the live construction site (building, cranes, cabins) is world/modules/Construction
   }
 
   // hoarding round the construction site
@@ -263,7 +236,9 @@ function build(map: CityMap): Built {
     const r = rng(77);
     let run = 0;
     let color = HOARDING_COLORS[0];
+    const gate = gatePieces(map, plan);
     for (const h of plan.hoardings) {
+      if (gate.some((g) => g.x === h.x && g.z === h.z && g.alongX === h.alongX)) continue; // Construction draws the gate
       if (run-- <= 0) {
         run = 3 + Math.floor(r() * 6);
         color = HOARDING_COLORS[Math.floor(r() * HOARDING_COLORS.length)];
@@ -313,8 +288,7 @@ function build(map: CityMap): Built {
   const cab = inst.find((x) => x.name === "carCabins");
   if (cab) cab.items = cab.items.map((it) => ({ m: it.m, c: it.c?.clone().multiplyScalar(0.55) }));
 
-  const cr = rng(91);
-  return { merged, inst, windowMats, cranes: plan.cranes.map((c) => ({ ...c, rot: cr() * Math.PI * 2 })) };
+  return { merged, inst, windowMats };
 }
 
 /** Low-detail blocks in a ring outside the bounds, leaving the streets that run off the map as roads. */
@@ -426,53 +400,9 @@ function Instanced({ geo, mat, items, shadow, name }: Built["inst"][number]) {
   return <instancedMesh ref={ref} name={name} args={[geo, mat, items.length]} castShadow={shadow} receiveShadow raycast={noRaycast} />;
 }
 
-function Crane({ x, z, h, jib, rot, light }: Built["cranes"][number] & { light: MeshStandardMaterial }) {
-  const [sx, sz] = toScene(x, z);
-  const yellow = "#e8b32a";
-  return (
-    <group position={[sx, 0, sz]} name="crane">
-      <mesh position-y={h / 2} castShadow raycast={noRaycast}>
-        <boxGeometry args={[1.8, h, 1.8]} />
-        <meshStandardMaterial color={yellow} roughness={0.7} wireframe={false} />
-      </mesh>
-      <group position-y={h} rotation-y={rot}>
-        <mesh position={[jib / 2 - 2, 1, 0]} castShadow raycast={noRaycast}>
-          <boxGeometry args={[jib, 1.3, 1.3]} />
-          <meshStandardMaterial color={yellow} roughness={0.7} />
-        </mesh>
-        <mesh position={[-8, 1, 0]} castShadow raycast={noRaycast}>
-          <boxGeometry args={[14, 1.1, 1.6]} />
-          <meshStandardMaterial color={yellow} roughness={0.7} />
-        </mesh>
-        <mesh position={[-13, -0.4, 0]} castShadow raycast={noRaycast}>
-          <boxGeometry args={[3.5, 2.6, 2.6]} />
-          <meshStandardMaterial color="#8d8d88" roughness={1} />
-        </mesh>
-        <mesh position={[0, 4, 0]} raycast={noRaycast}>
-          <coneGeometry args={[1.1, 6, 4]} />
-          <meshStandardMaterial color={yellow} roughness={0.7} />
-        </mesh>
-        <mesh position={[1.6, -1.2, 1.4]} raycast={noRaycast}>
-          <boxGeometry args={[2.2, 2.2, 2]} />
-          <meshStandardMaterial color="#e6e1d6" roughness={0.6} />
-        </mesh>
-        {/* hook line partway out the jib */}
-        <mesh position={[jib * 0.6, -h * 0.3, 0]} raycast={noRaycast}>
-          <boxGeometry args={[0.12, h * 0.6, 0.12]} />
-          <meshStandardMaterial color="#333" />
-        </mesh>
-        <mesh position={[jib - 2, 1.9, 0]} material={light} raycast={noRaycast}>
-          <sphereGeometry args={[0.5, 8, 6]} />
-        </mesh>
-      </group>
-    </group>
-  );
-}
-
 export default function Infill() {
   const { map } = useWorld();
   const built = useMemo(() => build(map), [map]);
-  const craneLight = useMemo(() => new MeshStandardMaterial({ color: "#ff3b2f", emissive: "#ff2a1a", emissiveIntensity: 0 }), []);
   const shopfront = built.inst.find((x) => x.name === "shopfronts")?.mat;
 
   useEffect(
@@ -488,13 +418,12 @@ export default function Infill() {
         geo.dispose();
         mat.dispose();
       });
-      craneLight.dispose();
     },
-    [built, craneLight],
+    [built],
   );
 
   // same window-glow curve as Buildings: homes light up in the evening, offices during working hours
-  useFrame(({ clock }) => {
+  useFrame(() => {
     const hour = hourOf(useSim.getState().t);
     const n = Math.round(nightLevel(hour) * 20) / 20;
     const late = hour >= 23 || hour < 6;
@@ -506,7 +435,6 @@ export default function Infill() {
     }
     const shop = n * (late ? 0.08 : 0.35);
     if (shopfront && shopfront.emissiveIntensity !== shop) shopfront.emissiveIntensity = shop;
-    craneLight.emissiveIntensity = n > 0.1 ? (Math.sin(clock.elapsedTime * 3) > 0 ? 2 : 0.3) : 0;
   });
 
   return (
@@ -516,9 +444,6 @@ export default function Infill() {
       ))}
       {built.inst.map((x) => (
         <Instanced key={x.name} {...x} />
-      ))}
-      {built.cranes.map((c, i) => (
-        <Crane key={i} {...c} light={craneLight} />
       ))}
     </group>
   );

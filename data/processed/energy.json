@@ -3,12 +3,12 @@
     {
       "label": "NESO Carbon Intensity API (CC BY 4.0), London regionid 13, half-hourly estimates 2026-09-17 to 2026-09-30",
       "url": "https://api.carbonintensity.org.uk/regional/intensity/2026-09-17T00:00Z/2026-10-01T00:00Z/regionid/13",
-      "fetchedAt": "2026-10-15T11:51:29Z"
+      "fetchedAt": "2026-10-15T09:07:04Z"
     },
     {
       "label": "NESO Carbon Intensity API (CC BY 4.0), London regionid 13, half-hourly estimates 2026-10-01 to 2026-10-14",
       "url": "https://api.carbonintensity.org.uk/regional/intensity/2026-10-01T00:00Z/2026-10-15T00:00Z/regionid/13",
-      "fetchedAt": "2026-10-15T11:51:31Z"
+      "fetchedAt": "2026-10-15T09:07:06Z"
     },
     {
       "label": "DESNZ ND-NEED 2026, England and Wales (published 30 Sep 2026): median electricity intensity by building use from metered 2024 consumption",

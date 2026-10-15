@@ -482,3 +482,65 @@ class StreetEvent(Model):
     streetId: str  # a Street.id from the map
     label: str
     severity: float = Field(ge=0, le=1)
+
+
+# --- GET /api/stores/{storeId}/overview, POST /api/stores/{storeId}/optimize -----------------
+# Additive (docs/STORE_PAGE.md): the owner's store page in one call, built by backend/overview.py.
+# Store-scoped like insights: this shop's numbers only, never another shop's id, name or figures.
+
+OverviewStatus = Literal["not_started", "improving", "best_found"]
+Certainty = Literal["likely", "worth testing", "uncertain"]
+AdviceStatus = Literal["new", "applied", "tested_better", "tested_worse"]
+
+
+class OverviewNumber(Model):
+    value: float
+    change: float  # fraction vs the baseline run (0.33 = +33%)
+
+
+class OverviewNumbers(Model):
+    customersPerWeek: OverviewNumber
+    energyCostPerWeekGbp: OverviewNumber
+    kwhPerWeek: OverviewNumber
+    # Margin on extra customers minus extra energy cost vs the baseline (economics.py).
+    profitChangePerWeekGbp: float
+
+
+class OverviewAdvice(Model):
+    text: str  # one plain sentence with the number an owner cares about
+    gbpPerWeek: float
+    certainty: Certainty  # high -> likely, medium -> worth testing, low -> uncertain
+    status: AdviceStatus
+    suggestion: Suggestion | None
+
+
+class OverviewHistoryItem(Model):
+    run: int
+    label: str  # "Your current settings", "Open till 03:30", "Lights 18–00 off"
+    customersPerWeek: int
+    kwhPerWeek: float
+    profitChangePerWeekGbp: float
+    changes: list[str]  # "Close 22:30 → 03:30", "Lights 18–00 low → off"
+    best: bool  # this shop's most profitable run vs its baseline (not the area's best run)
+
+
+class StoreOverview(Model):
+    storeId: str
+    name: str
+    type: StoreType
+    run: int
+    baselineRun: int
+    bestRun: int | None  # this shop's best run; null while only the baseline exists
+    status: OverviewStatus
+    headline: str
+    numbers: OverviewNumbers
+    advice: list[OverviewAdvice] = Field(max_length=3)
+    history: list[OverviewHistoryItem]
+    note: str = "Simulated, not guaranteed."
+    # Additive: how many times this shop's owner adapted during `run` (owner_events.json).
+    ownerChanges: int | None = Optional()
+
+
+class OptimizeRequest(Model):
+    # Runs in the session, the baseline included (it usually comes back from the run cache).
+    maxRuns: int = Field(default=6, ge=2, le=10)

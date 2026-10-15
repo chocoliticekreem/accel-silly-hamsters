@@ -101,8 +101,13 @@ Tests live in `tests/test_<module>*.py`, one file set per owner.
 
 - Deterministic in `seed` (numpy `default_rng(seed)`; derive sub-streams per day/agent so a change at one
   store does not reshuffle who arrives). Same seed + same configs = byte-identical run files.
-- ~600–1200 agents per day, ~1000–2000 store visits per day, peak concurrent ≲ 400. Day file < 2.5 MB.
-  Full run < 90 s on a laptop.
+- The map is 1.5 km × 1.5 km (bounds x −800 to 700 m, z ±750 m around Shoreditch High Street station,
+  so XOYO is inside): ~68 stores plus 2–4 real nightclubs, stations Shoreditch High Street (st1) and
+  Liverpool Street (st2), an entry on every street that leaves the edge, ≤ 2,500 buildings. The
+  hand-written fallback stays a 500 m schematic; read `bounds` from map.json.
+- 2,000–4,000 general arrivals per weekday (`demand.SIM_WEEKDAY_ARRIVALS` = 3,500, so each store keeps
+  the ~41 visits a day the 500 m map gave; club-goers on top), peak concurrent ≲ 600. Day file < 3 MB.
+  Full run ~5 s on a laptop (`sim.citizens.GENERAL_ARRIVALS_PER_DAY` caps the level at 4,000).
 - Returning pool fixed across the 14 days with memory (found-closed by store × hour band, satisfaction per
   store). One-offs appear once.
 - Club spill-out at club close on club nights; spill-out agents look for late food/drink near the club,
@@ -124,8 +129,11 @@ Run 0 is the hand-made sample from the contract; it disappears from `/api/runs` 
   outputs, shared city context first in the prompt (prompt cache). Offline: deterministic heuristic.
 - Hard rules (`agents/rules.py`, applied to every proposal from any source, rejections logged): 30-min
   steps; inside `licensedHours` (default caps by type); open window ≥ 60 min and closed gap ≥ 30 min;
-  ≤ 2 changes per store per week (= per iteration); valid levels/hours; clubs immutable; never a store
-  config already tried (`cache.store_config_tried`).
+  a day no longer than the type's cap (`MAX_OPEN_HOURS`: cafe 13 h, restaurant 14, takeaway 17, bar 15,
+  shop 12, off-licence 16), unless the owner already trades longer; ≤ 2 changes per store per week
+  (= per iteration); valid levels/hours; clubs immutable; never a store config already tried
+  (`cache.store_config_tried`). The cap exists because extra hours cost staff time the sim does not
+  price yet; once revenue is on real scale, wages per open hour replace it as the brake.
 - Analyst: `training.py` owns the loop, checkpoint after every step, stop rule (gain < THRESHOLD for
   PATIENCE runs, or MAX_RUNS, or budget). Decisions sit behind one `AnalystBackend` interface:
   heuristic (offline), messages (Messages API tool-use loop with `run_sim`, `get_kpis`,

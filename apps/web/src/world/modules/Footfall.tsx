@@ -34,7 +34,7 @@ const SCALE = 2;
 /** Centre-to-centre spacing between two figures at SCALE (shoulders plus swinging limbs). */
 const MIN_GAP = 1.9;
 /** Never shove a walker further than this off their line; past it a brief brush beats walking through walls. */
-const MAX_PUSH = 3;
+const MAX_PUSH = 1.6;
 /** A place's walkers start/finish at any routable node this close to it, not all at the single nearest node. */
 const PLACE_RADIUS = 25;
 /** A station empties onto every street around it. */
@@ -130,9 +130,14 @@ interface Walker {
   trousers: Color;
   skin: Color;
   stride: number;
+  /** Current side-step away from others (scene metres), eased frame to frame so nobody jumps. */
+  ox: number;
+  oz: number;
 }
 
 const pt = newPoint();
+/** How fast a side-step follows the separator (1/s); lower = smoother, higher = tighter. */
+const EASE = 4;
 
 export default function Footfall() {
   const { map, live } = useWorld();
@@ -173,6 +178,8 @@ export default function Footfall() {
       trousers: TROUSERS[Math.floor(r() * TROUSERS.length)],
       skin: SKIN_TONES[Math.floor(r() * SKIN_TONES.length)],
       stride: r() * Math.PI * 2,
+      ox: 0,
+      oz: 0,
     }));
     return { walkers, assign };
   }, [map]);
@@ -187,6 +194,10 @@ export default function Footfall() {
       xs: new Float32Array(cap),
       zs: new Float32Array(cap),
       heading: new Float32Array(MAX_WALKERS),
+      baseX: new Float32Array(MAX_WALKERS),
+      roadX: new Float32Array(MAX_WALKERS),
+      roadZ: new Float32Array(MAX_WALKERS),
+      baseZ: new Float32Array(MAX_WALKERS),
       phase: new Float32Array(MAX_WALKERS),
       who: new Int32Array(MAX_WALKERS),
       sep: createSeparator(cap),
@@ -217,8 +228,14 @@ export default function Footfall() {
       }
       w.path.at(w.s, w.side, w.inset, pt);
       const [x, z] = toScene(pt.x, pt.z);
-      f.xs[fixed + k] = x;
-      f.zs[fixed + k] = z;
+      // ask the separator from where this walker already is (path + its current side-step)
+      f.xs[fixed + k] = x + w.ox;
+      f.zs[fixed + k] = z + w.oz;
+      f.baseX[k] = x;
+      f.baseZ[k] = z;
+      // unit vector pointing from the kerb toward the road, in scene coords (right-normal (dz,-dx) × side, z flipped)
+      f.roadX[k] = -w.side * pt.dz;
+      f.roadZ[k] = -w.side * pt.dx;
       f.heading[k] = Math.atan2(pt.dx, -pt.dz);
       f.phase[k] = time * 7 * (w.speed / PACE) + w.stride;
       f.who[k] = i;
@@ -226,10 +243,20 @@ export default function Footfall() {
     }
     // step aside: nobody walks through anybody, sim agents included
     f.sep.separate(f.xs, f.zs, fixed + k, MIN_GAP, { fixed, maxPush: MAX_PUSH });
+    const ease = Math.min(1, dt * EASE);
     for (let q = 0; q < k; q++) {
       const w = world.walkers[f.who[q]];
       const phase = f.phase[q];
-      people.set(q, f.xs[fixed + q], Math.abs(Math.sin(phase)) * 0.05, f.zs[fixed + q], f.heading[q], phase, true, SCALE, w.color, w.trousers, w.skin);
+      // glide toward the separated spot instead of snapping to it
+      w.ox += (f.xs[fixed + q] - f.baseX[q] - w.ox) * ease;
+      w.oz += (f.zs[fixed + q] - f.baseZ[q] - w.oz) * ease;
+      // never step toward the road: drop any side-step component pointing at the carriageway
+      const toRoad = w.ox * f.roadX[q] + w.oz * f.roadZ[q];
+      if (toRoad > 0) {
+        w.ox -= toRoad * f.roadX[q];
+        w.oz -= toRoad * f.roadZ[q];
+      }
+      people.set(q, f.baseX[q] + w.ox, Math.abs(Math.sin(phase)) * 0.05, f.baseZ[q] + w.oz, f.heading[q], phase, true, SCALE, w.color, w.trousers, w.skin);
     }
     people.commit(k);
   });

@@ -18,7 +18,7 @@ LLM_CACHE_DIR = CACHE_DIR / "llm"
 RUNS_DIR = ROOT / "runs"
 
 # Simulation
-SIM_VERSION = "0.1.0"  # bump on any change that alters sim output; it is part of the run-cache key
+SIM_VERSION = "0.2.0"  # bump on any change that alters sim output; it is part of the run-cache key
 DEFAULT_SEED = 42
 TICK_MINUTES = 5
 # Self-learning city (docs/OWNER_ACTIONS.md): street events, and every shop's owner adapting day by
@@ -58,6 +58,9 @@ OFFLINE = os.getenv("OFFLINE", "") == "1"
 # Analyst backend: "auto" (messages when credentials exist, else heuristic), "heuristic",
 # "messages" (Messages API tool-use loop) or "managed" (Managed Agents session).
 ANALYST_BACKEND = os.getenv("ANALYST_BACKEND", "auto")
+
+# Hosted read-only demo: READ_ONLY=1 refuses requests that start work (POST .../optimize -> 403).
+READ_ONLY = os.getenv("READ_ONLY", "") == "1"
 
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"

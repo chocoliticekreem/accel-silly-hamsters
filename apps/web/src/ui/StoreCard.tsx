@@ -17,6 +17,7 @@ import { InsightsPanel } from "./InsightsPanel";
 import { SuggestionList } from "./SuggestionList";
 import { TypeIcon } from "./TypeIcon";
 import { navigate, storePath } from "../router";
+import { SafetyCardExtras } from "./SafetyCardExtras";
 
 export function StoreCard() {
   const id = useSim((s) => s.selectedStoreId);
@@ -121,6 +122,7 @@ export function StoreCard() {
       ) : (
       <>
       {state?.reason && <div className="owner-now">“{state.reason}”</div>}
+      <SafetyCardExtras storeId={id} />
       {cfg && <HourStrip cfg={cfg} hour={hour} prev={prev} licence={store.licensedHours ?? undefined} />}
       {!isClub && (
         <>

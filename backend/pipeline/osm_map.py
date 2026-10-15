@@ -1,25 +1,20 @@
 """Build data/processed/map.json (contract.MapData) from OpenStreetMap via the Overpass API.
 
-One Overpass query (cached in data/raw/osm/) is turned into a cartoon map of the MAP_BOUNDS
-rectangle (1350 m x 950 m: Brick Lane in the east to Old Street station in the west, Quaker
-Street in the south to Hoxton in the north) in local metres around Shoreditch High Street
-station, which stays the origin (equirectangular projection, x east, z north):
+One Overpass query (cached in data/raw/osm/) is turned into a 1.5 km x 1.5 km cartoon map in
+local metres around Shoreditch High Street station (equirectangular projection, x east, z north):
 
   streets    walkable highways as straight polylines. Junction clusters are merged, parallel
              one-way carriageways folded into one, every crossing split so that streets meeting
              or crossing share one exact vertex, everything clipped to the bounds, and only the
              largest connected piece kept (the sim builds its walk graph from shared points).
   buildings  axis-aligned boxes with the footprint's area, pulled back off the carriageways,
-             at most MAX_BUILDINGS.
-  stores     ~38 named venues in a balanced type mix plus 2-3 clubs, each in its own building,
-             with one typical daily window parsed from OSM opening_hours (else type defaults).
-  entries    street entries where streets leave the map edge, the station (st1), and one
-             station entry per Old Street entrance (st2...). Entries, station doors and every
-             store's door are exact street vertices.
-  landmarks  named places the frontend labels: both stations, Encode Hub (the hackathon
-             venue), art'otel London Hoxton and Boxpark Shoreditch, each with its building.
-             Heights come from OSM height / building:levels / building:part, else a published
-             height (art'otel), else the default for the building kind.
+             at most MAX_BUILDINGS (the largest).
+  stores     ~68 named venues in a balanced type mix plus 2-4 clubs (real nightclubs), each in
+             its own building, with one typical daily window parsed from OSM opening_hours
+             (else type defaults).
+  entries    a street entry on every street that leaves the map edge, Shoreditch High Street
+             (st1) and every other railway station inside the bounds (st2, ...). Entries,
+             station doors and every store's door are exact street vertices.
 
 If Overpass is unreachable the hand-written layout from map_fallback is written instead, and the
 step is not marked as built, so the next pipeline run tries OSM again.
@@ -38,16 +33,12 @@ from dataclasses import dataclass
 from itertools import pairwise
 from typing import Any
 
-import httpx
-
 from backend import cache, store, timeutil
 from backend.contract import (
     Bounds,
     Building,
     BuildingKind,
     EntryPoint,
-    Landmark,
-    LandmarkKind,
     MapData,
     MapStore,
     Source,
@@ -70,16 +61,17 @@ from backend.pipeline.map_fallback import (
 Point = tuple[float, float]
 Box = tuple[float, float, float, float]  # centre x, centre z, w (x extent), d (z extent)
 
+# The OSM map, 1.5 km x 1.5 km around Shoreditch High Street station (the origin). It reaches
+# 50 m further west than east so that XOYO on Cowper Street is inside.
+BOUNDS = Bounds(minX=-800.0, maxX=700.0, minZ=-750.0, maxZ=750.0)
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 OSM_COPYRIGHT_URL = "https://www.openstreetmap.org/copyright"
 APPROX_ORIGIN = (51.5233, -0.0754)  # Shoreditch High Street station, refined from OSM
-# The map rectangle in metres around the station (x east, z north). West far enough for Old
-# Street station and its roundabout (~910 m W), north past Encode Hub on Pitfield Street
-# (~480 m N), east past Brick Lane, south past Quaker Street.
-MAP_BOUNDS = Bounds(minX=-1050.0, maxX=300.0, minZ=-300.0, maxZ=650.0)
-QUERY_MARGIN_M = 150.0  # room around the bounds for the station offset and edge clipping
+# Around APPROX_ORIGIN, which is 65 m west of the station: covers BOUNDS with at least 85 m to
+# spare for edge clipping.
+QUERY_HALF_SIZE_M = 850.0
 EARTH_RADIUS_M = 6_371_008.8
-MAP_BUILDER_VERSION = 4  # bump when the processing changes, so the pipeline cache rebuilds
+MAP_BUILDER_VERSION = 5  # bump when the processing changes, so the pipeline cache rebuilds
 
 # Street network simplification, in metres.
 JUNCTION_MERGE_M = 12.0  # junction nodes this close become one (dual carriageways, junction boxes)
@@ -90,9 +82,7 @@ CROSSING_TOUCH_M = 0.75  # an end this close to another street's line counts as 
 DEAD_END_JOIN_M = 5.0  # a dead end this close to another street is joined to it
 STUB_MAX_M = 8.0  # shorter dangling spurs left behind by junction merging are removed
 DOOR_REUSE_M = 2.0  # a door this close to an existing vertex uses that vertex
-ENTRY_MERGE_M = 30.0  # street entries closer than this along the edge are one entry
-MINOR_ENTRY_SPACING_M = 75.0  # residential streets only add an entry this far from the others
-MAJOR_ENTRY_WIDTH_M = 10.0  # tertiary and wider: always an entry
+ENTRY_MERGE_M = 30.0  # street ends closer than this along the edge are one entry (the widest)
 
 ROAD_CLASSES = {
     "trunk",
@@ -109,11 +99,14 @@ ROAD_CLASSES = {
 NAMED_PATH_CLASSES = {"service", "footway", "cycleway", "path", "steps"}
 SKIPPED_FOOTWAYS = {"sidewalk", "crossing", "traffic_island", "link"}
 
-# Buildings.
-MAX_BUILDINGS = 1500
-MAX_HEIGHT_M = 250.0  # tallest box allowed (Principal Tower, the tallest nearby, is ~160 m)
+# Buildings. The cap keeps the 3D scene light: the smallest footprints go first.
+MAX_BUILDINGS = 2500
 MIN_BUILDING_AREA_M2 = 25.0
 MIN_BUILDING_SIDE_M = 3.0
+# City boxes thinner than this, or longer than MAX_CITY_ASPECT times their width, are slivers
+# (canopies, strips between footprints) and are dropped.
+MIN_CITY_SIDE_M = 4.0
+MAX_CITY_ASPECT = 6.0
 STREET_CLEARANCE_M = 1.0  # boxes stop this far past the carriageway edge (the pavement)
 CLEARANCE_STEP_M = 0.5
 CITY_MIN_AREA_SHARE = 0.35  # a box that must lose more than this to clear the streets is dropped
@@ -134,14 +127,24 @@ WORK_LANDUSE = {"commercial", "retail", "industrial", "railway"}
 
 # Stores.
 TYPE_TARGETS: dict[StoreType, int] = {
-    "cafe": 8,
-    "restaurant": 8,
-    "takeaway": 7,
-    "bar": 7,
-    "shop": 5,
-    "offlicence": 3,
+    "cafe": 14,
+    "restaurant": 14,
+    "takeaway": 12,
+    "bar": 12,
+    "shop": 10,
+    "offlicence": 6,
 }
-MIN_CLUBS, MAX_CLUBS = 2, 3  # late-opening bars are promoted when OSM has too few nightclubs
+MIN_CLUBS, MAX_CLUBS = 2, 4  # late-opening bars are promoted when OSM has too few nightclubs
+# Venues OpenStreetMap still lists that have closed, with the source that says so. OSM lags reality
+# in nightlife; a closed club would fake a crowd at closing time and a demo venue judges can check.
+CLOSED_VENUES: dict[str, str] = {
+    "club aquarium": (
+        "Closed by Islington Council (licence suspended Jan 2020, "
+        "https://www.timeout.com/london/news/nightlife-news-old-streets-club-aquarium-has-had-its-"
+        "licence-suspended-011720); the site was later relicensed as a different venue "
+        "(https://www.islingtontribune.co.uk/article/former-aquarium-nightspot-gets-2am-licence)"
+    ),
+}
 AMENITY_TYPES: dict[str, StoreType] = {
     "cafe": "cafe",
     "restaurant": "restaurant",
@@ -152,7 +155,7 @@ AMENITY_TYPES: dict[str, StoreType] = {
 }
 OFFLICENCE_SHOPS = {"alcohol", "wine"}  # UK off-licences: shop=alcohol, and wine merchants
 SKIPPED_SHOPS = {"mall", "vacant"}
-SPREAD_CAP_M = 60.0  # spacing beyond this no longer matters when spreading stores out
+SPREAD_CAP_M = 120.0  # spacing beyond this no longer matters when spreading stores out
 MAX_DOOR_DISTANCE_M = 40.0  # venues further than this from any street are not used
 SYNTHETIC_BOX_M = (10.0, 8.0)  # store box at the venue when OSM has no footprint for it
 SYNTHETIC_STATION_BOX: Box = (0.0, 0.0, 40.0, 15.0)  # when OSM has no station building
@@ -168,16 +171,14 @@ class MapBuildError(RuntimeError):
 
 
 def _query_bbox() -> tuple[float, float, float, float]:
-    """(south, west, north, east) around APPROX_ORIGIN: MAP_BOUNDS plus QUERY_MARGIN_M."""
     lat0, lon0 = APPROX_ORIGIN
-    m_per_lat = math.radians(1) * EARTH_RADIUS_M
-    m_per_lon = m_per_lat * math.cos(math.radians(lat0))
-    b, margin = MAP_BOUNDS, QUERY_MARGIN_M
+    dlat = math.degrees(QUERY_HALF_SIZE_M / EARTH_RADIUS_M)
+    dlon = math.degrees(QUERY_HALF_SIZE_M / (EARTH_RADIUS_M * math.cos(math.radians(lat0))))
     return (
-        round(lat0 + (b.minZ - margin) / m_per_lat, 5),
-        round(lon0 + (b.minX - margin) / m_per_lon, 5),
-        round(lat0 + (b.maxZ + margin) / m_per_lat, 5),
-        round(lon0 + (b.maxX + margin) / m_per_lon, 5),
+        round(lat0 - dlat, 5),
+        round(lon0 - dlon, 5),
+        round(lat0 + dlat, 5),
+        round(lon0 + dlon, 5),
     )
 
 
@@ -187,17 +188,14 @@ def overpass_query() -> str:
     bbox = f"({s},{w},{n},{e})"
     venues = "^(cafe|restaurant|fast_food|bar|pub|nightclub)$"
     return (
-        "[out:json][timeout:180][maxsize:536870912];\n(\n"
+        "[out:json][timeout:180];\n(\n"
         f'  way["highway"]{bbox};\n'
         f'  way["building"]{bbox};\n'
         f'  relation["building"]{bbox};\n'
-        f'  way["building:part"]{bbox};\n'
         f'  nwr["amenity"~"{venues}"]{bbox};\n'
         f'  nwr["shop"]{bbox};\n'
         f'  nwr["railway"="station"]{bbox};\n'
         f'  nwr["public_transport"="station"]{bbox};\n'
-        f'  node["railway"="subway_entrance"]{bbox};\n'
-        f'  node["name"~" - Exit "]{bbox};\n'
         f'  node["office"]{bbox};\n'
         f'  way["landuse"]{bbox};\n'
         ");\nout body;\n>;\nout skel qt;\n"
@@ -207,11 +205,7 @@ def overpass_query() -> str:
 def fetch_overpass() -> tuple[dict[str, Any], str]:
     """POST the query through the scrape cache. Raises common.FetchError when unreachable."""
     body, fetched_at = common.fetch(
-        "osm",
-        OVERPASS_URL,
-        method="POST",
-        data={"data": overpass_query()},
-        timeout=httpx.Timeout(240.0, connect=15.0),
+        "osm", OVERPASS_URL, method="POST", data={"data": overpass_query()}
     )
     return body, fetched_at
 
@@ -272,6 +266,7 @@ class Station:
     lat: float
     lon: float
     osm_id: str | None  # None when the station was not found and APPROX_ORIGIN is used
+    name: str = STATION_NAME
 
 
 def find_station(osm: OsmData) -> Station:
@@ -282,6 +277,32 @@ def find_station(osm: OsmData) -> Station:
             lat, lon = osm.nodes[node_id]
             return Station(lat, lon, f"node/{node_id}")
     return Station(*APPROX_ORIGIN, osm_id=None)
+
+
+def station_name(osm_name: str) -> str:
+    """One name per station: OSM maps a main-line station's node as "London Liverpool Street"
+    and its Underground node as "Liverpool Street" (TfL's name for both)."""
+    return osm_name.strip().removeprefix("London ").strip()
+
+
+def other_stations(osm: OsmData, proj: Projection) -> list[Station]:
+    """Every other railway=station node inside the bounds, one per station name, at the node
+    nearest the map origin (the side of the station that faces into the area)."""
+    nearest: dict[str, tuple[float, int]] = {}
+    for node_id, tags in sorted(osm.node_tags.items()):
+        name = station_name(tags.get("name", ""))
+        if tags.get("railway") != "station" or not name or STATION_NAME.lower() in name.lower():
+            continue
+        x, z = proj.to_local(*osm.nodes[node_id])
+        if not _inside((x, z)):
+            continue
+        distance = math.hypot(x, z)
+        if name not in nearest or distance < nearest[name][0]:
+            nearest[name] = (distance, node_id)
+    return [
+        Station(*osm.nodes[node_id], osm_id=f"node/{node_id}", name=name)
+        for name, (_, node_id) in sorted(nearest.items())
+    ]
 
 
 # --- geometry -------------------------------------------------------------------------------
@@ -317,33 +338,39 @@ def _douglas_peucker(points: list[Point], tolerance: float) -> list[int]:
     return sorted(keep)
 
 
-def _inside(p: Point, bounds: Bounds, margin: float = 0.0) -> bool:
-    """True when p lies inside the bounds shrunk by margin (on the edge counts as inside)."""
+def _inside(p: Point, bounds: Bounds = BOUNDS, inset: float = 0.0) -> bool:
+    """True when p lies inside the bounds shrunk by inset on every side."""
     return (
-        bounds.minX + margin - 1e-9 <= p[0] <= bounds.maxX - margin + 1e-9
-        and bounds.minZ + margin - 1e-9 <= p[1] <= bounds.maxZ - margin + 1e-9
+        bounds.minX + inset - 1e-9 <= p[0] <= bounds.maxX - inset + 1e-9
+        and bounds.minZ + inset - 1e-9 <= p[1] <= bounds.maxZ - inset + 1e-9
     )
 
 
-def _at_edge(value: float, low: float, high: float) -> bool:
-    return abs(value - low) < 1e-6 or abs(value - high) < 1e-6
+def _edges(bounds: Bounds) -> tuple[tuple[float, float], tuple[float, float]]:
+    """The boundary coordinates per axis: (minX, maxX), (minZ, maxZ)."""
+    return (bounds.minX, bounds.maxX), (bounds.minZ, bounds.maxZ)
 
 
-def on_edge(p: Point, bounds: Bounds | None = None) -> bool:
-    """True when p lies on the map boundary (default: the OSM map's MAP_BOUNDS)."""
-    b = bounds or MAP_BOUNDS
-    return _inside(p, b) and (_at_edge(p[0], b.minX, b.maxX) or _at_edge(p[1], b.minZ, b.maxZ))
+def _edge_at(value: float, edges: tuple[float, float]) -> float | None:
+    """The boundary coordinate within 1e-6 of value, if there is one."""
+    return next((edge for edge in edges if abs(value - edge) < 1e-6), None)
 
 
-def _snap(value: float, low: float, high: float) -> float:
-    value = max(low, min(high, value))
-    if abs(value - low) < 1e-6:
-        return low
-    return high if abs(value - high) < 1e-6 else value
+def on_edge(p: Point, bounds: Bounds = BOUNDS) -> bool:
+    """True when p lies on the map boundary."""
+    return _inside(p, bounds) and any(
+        _edge_at(value, edges) is not None for value, edges in zip(p, _edges(bounds), strict=True)
+    )
 
 
 def _snap_to_edge(p: Point, bounds: Bounds) -> Point:
-    return _snap(p[0], bounds.minX, bounds.maxX), _snap(p[1], bounds.minZ, bounds.maxZ)
+    """p clamped into the bounds, a coordinate within 1e-6 of the boundary set exactly onto it."""
+    snapped = []
+    for value, edges in zip(p, _edges(bounds), strict=True):
+        value = max(edges[0], min(edges[1], value))
+        edge = _edge_at(value, edges)
+        snapped.append(value if edge is None else edge)
+    return snapped[0], snapped[1]
 
 
 def _clip_to_rect(
@@ -371,7 +398,7 @@ def _clip_to_rect(
 
 
 def _clip_segment(a: Point, b: Point, bounds: Bounds) -> tuple[Point, Point] | None:
-    """Clip segment ab to the bounds rectangle."""
+    """Clip segment ab to the bounds."""
     span = _clip_to_rect(a, b, (bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ))
     if span is None:
         return None
@@ -903,10 +930,12 @@ def _merge_close_nodes(net: _Network, radius: float, bounds: Bounds) -> None:
 
 def _drop_edge_runs(net: _Network, bounds: Bounds) -> None:
     """Remove segments lying on the boundary itself (a street clipped along the map edge)."""
-    limits = ((bounds.minX, bounds.maxX), (bounds.minZ, bounds.maxZ))
     for a, b in list(net.segs):
         pa, pb = net.pos[a], net.pos[b]
-        if any(_at_edge(pa[i], *limits[i]) and abs(pa[i] - pb[i]) < 1e-6 for i in (0, 1)):
+        if any(
+            _edge_at(pa[i], edges) is not None and abs(pa[i] - pb[i]) < 1e-6
+            for i, edges in enumerate(_edges(bounds))
+        ):
             del net.segs[(a, b)]
     net.drop_unused_nodes()
 
@@ -947,22 +976,19 @@ class StreetNetworkReport:
     dropped_disconnected: list[str]
 
 
-def build_street_network(
-    osm: OsmData, proj: Projection, bounds: Bounds | None = None
-) -> tuple[_Network, StreetNetworkReport]:
+def build_street_network(osm: OsmData, proj: Projection) -> tuple[_Network, StreetNetworkReport]:
     """Walkable OSM highways -> a connected, planar network inside the bounds."""
-    bounds = bounds or MAP_BOUNDS
     net = _raw_network(osm, proj)
     _merge_junctions(net, JUNCTION_MERGE_M)
     _simplify(net, SIMPLIFY_TOLERANCE_M)
-    _clip(net, bounds)
+    _clip(net, BOUNDS)
     _fold_parallel_carriageways(net)
     _planarize(net)
-    _join_dead_ends(net, bounds)
-    _merge_close_nodes(net, CROSSING_SNAP_M, bounds)
-    _drop_edge_runs(net, bounds)
+    _join_dead_ends(net, BOUNDS)
+    _merge_close_nodes(net, CROSSING_SNAP_M, BOUNDS)
+    _drop_edge_runs(net, BOUNDS)
     dropped = _keep_largest_component(net)
-    _prune_stubs(net, bounds)
+    _prune_stubs(net, BOUNDS)
     if not net.segs:
         raise MapBuildError("no walkable streets inside the bounds")
     return net, StreetNetworkReport(dropped_disconnected=dropped)
@@ -1121,7 +1147,6 @@ class Footprint:
     tags: dict[str, str]
     ring: list[Point]
     area: float
-    part_height: float | None = None  # tallest building:part inside the outline, in metres
 
     @property
     def bbox(self) -> tuple[float, float, float, float]:
@@ -1129,12 +1154,7 @@ class Footprint:
         zs = [p[1] for p in self.ring]
         return min(xs), min(zs), max(xs), max(zs)
 
-    @property
-    def centroid(self) -> Point:
-        minx, minz, maxx, maxz = self.bbox
-        return (minx + maxx) / 2, (minz + maxz) / 2
-
-    def box(self, bounds: Bounds) -> Box | None:
+    def box(self) -> Box | None:
         """Axis-aligned box with the footprint's area, clipped to the bounds (None if too thin).
 
         A rotated footprint's bounding box can be twice its area; scaling the box down to the
@@ -1144,9 +1164,9 @@ class Footprint:
         bw, bd = maxx - minx, maxz - minz
         scale = min(1.0, math.sqrt(self.area / (bw * bd))) if bw * bd > 0 else 1.0
         cx, cz = (minx + maxx) / 2, (minz + maxz) / 2
-        if not _inside((cx, cz), bounds):
+        if not _inside((cx, cz)):
             return None
-        return _clip_box((cx, cz, bw * scale, bd * scale), bounds)
+        return _clip_box((cx, cz, bw * scale, bd * scale))
 
 
 Corridor = tuple[Point, Point, float]  # street segment and how far buildings must keep from it
@@ -1225,10 +1245,10 @@ def _side_gap(before: Box, after: Box, a: Point, b: Point) -> float:
     return segment_box_distance(a, b, strip)
 
 
-def _clip_box(box: Box, bounds: Bounds) -> Box | None:
+def _clip_box(box: Box) -> Box | None:
     cx, cz, w, d = box
-    x0, x1 = max(bounds.minX, cx - w / 2), min(bounds.maxX, cx + w / 2)
-    z0, z1 = max(bounds.minZ, cz - d / 2), min(bounds.maxZ, cz + d / 2)
+    x0, x1 = max(BOUNDS.minX, cx - w / 2), min(BOUNDS.maxX, cx + w / 2)
+    z0, z1 = max(BOUNDS.minZ, cz - d / 2), min(BOUNDS.maxZ, cz + d / 2)
     if x1 - x0 < MIN_BUILDING_SIDE_M or z1 - z0 < MIN_BUILDING_SIDE_M:
         return None
     return (x0 + x1) / 2, (z0 + z1) / 2, x1 - x0, z1 - z0
@@ -1289,38 +1309,7 @@ def footprints(osm: OsmData, proj: Projection) -> list[Footprint]:
             if ring:
                 key = f"relation/{relation['id']}#{index}"
                 found.append(Footprint(key, tags, ring, _polygon_area(ring)))
-    _attach_part_heights(found, osm, proj)
     return found
-
-
-def _attach_part_heights(found: list[Footprint], osm: OsmData, proj: Projection) -> None:
-    """Towers are often mapped as a low outline plus building:part ways carrying the real
-    height; give each outline the height of the tallest part whose centre lies inside it."""
-    parts: list[tuple[Point, float]] = []
-    for way in osm.ways.values():
-        if "building:part" not in way.tags or way.tags["building:part"] in SKIPPED_BUILDINGS:
-            continue
-        height = tagged_height(way.tags)
-        ring = _ring(way.nodes, osm, proj)
-        if height is None or not ring:
-            continue
-        parts.append(
-            ((sum(p[0] for p in ring) / len(ring), sum(p[1] for p in ring) / len(ring)), height)
-        )
-    if not parts:
-        return
-    grid: dict[tuple[int, int], list[tuple[Point, float]]] = defaultdict(list)
-    for centre, height in parts:
-        grid[(math.floor(centre[0] / 50), math.floor(centre[1] / 50))].append((centre, height))
-    for fp in found:
-        minx, minz, maxx, maxz = fp.bbox
-        best: float | None = None
-        for gx in range(math.floor(minx / 50), math.floor(maxx / 50) + 1):
-            for gz in range(math.floor(minz / 50), math.floor(maxz / 50) + 1):
-                for centre, height in grid.get((gx, gz), ()):
-                    if (best is None or height > best) and _point_in_polygon(centre, fp.ring):
-                        best = height
-        fp.part_height = best
 
 
 def _landuse_areas(osm: OsmData, proj: Projection) -> list[tuple[str, list[Point]]]:
@@ -1338,24 +1327,13 @@ def _number(value: str | None) -> float | None:
     return float(match.group(1)) if match else None
 
 
-def tagged_height(tags: dict[str, str]) -> float | None:
-    """height tag, else (building:levels + roof:levels) x LEVEL_HEIGHT_M, else None."""
+def building_height(tags: dict[str, str], kind: BuildingKind) -> float:
+    """height tag, else building:levels x LEVEL_HEIGHT_M, else the default for the kind."""
     height = _number(tags.get("height"))
     if height is None:
         levels = _number(tags.get("building:levels"))
-        roof = _number(tags.get("roof:levels")) or 0.0
-        height = (levels + roof) * LEVEL_HEIGHT_M if levels else None
-    return height or None
-
-
-def building_height(
-    tags: dict[str, str], kind: BuildingKind, part_height: float | None = None
-) -> float:
-    """The taller of the outline's own height (tagged_height) and its tallest building:part,
-    else the default for the kind; clamped to 3 m .. MAX_HEIGHT_M."""
-    heights = [h for h in (tagged_height(tags), part_height) if h]
-    height = max(heights) if heights else DEFAULT_HEIGHT_M[kind]
-    return round(min(MAX_HEIGHT_M, max(3.0, height)), 1)
+        height = levels * LEVEL_HEIGHT_M if levels else None
+    return round(min(150.0, max(3.0, height or DEFAULT_HEIGHT_M[kind])), 1)
 
 
 def _building_kind(
@@ -1368,7 +1346,8 @@ def _building_kind(
         return "office"  # office, commercial, retail, industrial, hotel, school, ...
     if any(_point_in_polygon(p, fp.ring) for p in office_points):
         return "office"
-    centre = fp.centroid
+    box = fp.box()
+    centre = (box[0], box[1]) if box else fp.ring[0]
     for use, ring in landuse:
         if _point_in_polygon(centre, ring):
             if use in RESIDENTIAL_LANDUSE:
@@ -1584,44 +1563,41 @@ def _resolve_footprint(
     return None, False
 
 
-def _synthetic_box(point: Point, net: _Network, bounds: Bounds) -> Box | None:
+def _synthetic_box(point: Point, net: _Network) -> Box | None:
     """A small store box at the venue, pushed back so it does not sit on the carriageway."""
     w, d = SYNTHETIC_BOX_M
     nearest = net.nearest_segment(point)
     if nearest is None:
-        return _clip_box((point[0], point[1], w, d), bounds)
+        return _clip_box((point[0], point[1], w, d))
     key, foot, dist = nearest
     clearance = net.segs[key].width / 2 + 1 + max(w, d) / 2
     if 0 < dist < clearance:
         scale = clearance / dist
         point = (foot[0] + (point[0] - foot[0]) * scale, foot[1] + (point[1] - foot[1]) * scale)
-    return _clip_box((point[0], point[1], w, d), bounds)
+    return _clip_box((point[0], point[1], w, d))
 
 
 def venue_candidates(
     osm: OsmData,
     proj: Projection,
     buildings: list[Footprint],
-    reserved: set[str],
+    station_fp: Footprint | None,
     net: _Network,
-    bounds: Bounds,
 ) -> list[Venue]:
-    """Named cafes, restaurants, takeaways, bars, shops, off-licences and clubs in the bounds.
-    Venues inside a reserved footprint (the station, landmark buildings) are skipped."""
+    """Named cafes, restaurants, takeaways, bars, shops, off-licences and clubs in the bounds."""
     corridors = _street_corridors(net)
-    reserved_fps = [b for b in buildings if b.key in reserved]
     venues: list[Venue] = []
     for key, tags, point, ring in _venue_elements(osm, proj):
         store_type = _venue_type(tags)
         name = tags.get("name", "").strip()
-        if store_type is None or not name or not _inside(point, bounds, margin=5):
+        if store_type is None or not name or not _inside(point, inset=5.0):
+            continue
+        if name.lower() in CLOSED_VENUES:
             continue
         fp, shares_building = _resolve_footprint(key, tags, point, ring, buildings)
-        if fp is not None and fp.key in reserved:
+        if fp is not None and station_fp is not None and fp.key == station_fp.key:
             continue
-        if any(_point_in_polygon(point, b.ring) for b in reserved_fps):
-            continue
-        box = fp.box(bounds) if fp else _synthetic_box(point, net, bounds)
+        box = fp.box() if fp else _synthetic_box(point, net)
         box = clear_of_streets(box, corridors, STORE_MIN_AREA_SHARE) if box else None
         nearest = net.nearest_segment((box[0], box[1])) if box else None
         if box is None or nearest is None or nearest[2] > MAX_DOOR_DISTANCE_M:
@@ -1664,12 +1640,21 @@ def _licence(venue_type: StoreType, trading: tuple[str, str]) -> tuple[str, str]
     return widen_licence(LICENSED_HOURS[venue_type], trading)
 
 
+def _is_club_night(venue: Venue) -> bool:
+    """A nightclub whose OSM hours never pass midnight trades as a cafe or bar (Café 1001 on
+    Dray Walk: 08:00-24:00), so it would fake a 03:00 spill-out; unknown hours count as nights."""
+    latest = _latest_close(venue.opening_hours)
+    return latest is None or latest[0] > 720
+
+
 def _pick_clubs(venues: list[Venue]) -> tuple[list[Venue], bool]:
-    """Every club candidate, nearest the origin first (select_stores keeps MAX_CLUBS of them)."""
-    clubs = sorted(
-        (v for v in venues if v.type == "club"),
-        key=lambda v: (round(math.hypot(*v.centre), 1), v.osm_key),
-    )
+    """Real nightclubs, largest first (the club crowd scales with floor area); late-opening
+    bars stand in only when OSM has fewer than MIN_CLUBS."""
+    nightclubs = [v for v in venues if v.type == "club" and _is_club_night(v)]
+    clubs: list[Venue] = []
+    for venue in sorted(nightclubs, key=lambda v: (-v.floor_area, v.osm_key)):
+        if len(clubs) < MAX_CLUBS and not any(_conflicts(venue, c) for c in clubs):
+            clubs.append(venue)
     if len(clubs) >= MIN_CLUBS:
         return clubs, False
     late: list[tuple[tuple[int, int, int], Venue]] = []
@@ -1694,9 +1679,10 @@ def _pick_clubs(venues: list[Venue]) -> tuple[list[Venue], bool]:
 def _pick_demo(
     venues: list[Venue], clubs: list[Venue], walk: WalkGraph
 ) -> tuple[Venue, Venue, float] | None:
-    """The takeaway closest (on foot) to a club that shuts before midnight but is licensed
-    to trade until DEMO_TRADE_UNTIL: the dark shop next to the club in the demo."""
-    best: tuple[float, str, Venue, Venue] | None = None
+    """A takeaway that shuts before midnight but is licensed to trade until DEMO_TRADE_UNTIL,
+    within DEMO_MAX_WALK_M on foot of a club: the dark shop next to the club in the demo. The
+    biggest club with such a takeaway wins (its crowd makes the spill-out), then the nearest."""
+    best: tuple[float, float, str, Venue, Venue] | None = None
     for venue in venues:
         if venue.type != "takeaway" or any(_conflicts(venue, c) for c in clubs):
             continue
@@ -1707,9 +1693,10 @@ def _pick_demo(
             continue
         for club in clubs:
             walk_m = walk.walk_distance(club.centre, venue.centre)
-            if walk_m <= DEMO_MAX_WALK_M and (best is None or (walk_m, venue.osm_key) < best[:2]):
-                best = (walk_m, venue.osm_key, venue, club)
-    return None if best is None else (best[2], best[3], best[0])
+            rank = (-club.floor_area, walk_m, venue.osm_key)
+            if walk_m <= DEMO_MAX_WALK_M and (best is None or rank < best[:3]):
+                best = (*rank, venue, club)
+    return None if best is None else (best[3], best[4], best[1])
 
 
 def _fill_types(venues: list[Venue], chosen: list[Venue], taken: list[Venue]) -> list[Venue]:
@@ -1754,13 +1741,6 @@ def select_stores(venues: list[Venue], walk: WalkGraph) -> StoreSelection:
             f"no takeaway within {DEMO_MAX_WALK_M:.0f} m of a club that closes before midnight "
             f"and is licensed until {DEMO_TRADE_UNTIL}"
         )
-    # The demo club first, then the clubs nearest the origin.
-    chosen = [demo[1]]
-    for club in clubs:
-        if len(chosen) < MAX_CLUBS and club not in chosen:
-            if not any(_conflicts(club, c) for c in chosen):
-                chosen.append(club)
-    clubs = chosen
     stores = _fill_types([v for v in venues if v.type != "club"], [demo[0]], clubs)
     return StoreSelection(
         clubs=clubs,
@@ -1834,23 +1814,24 @@ def _map_store(store_id: str, building_id: str, venue: Venue) -> MapStore:
 
 
 def _other_buildings(
-    buildings: list[Footprint],
-    used: set[str],
-    corridors: list[Corridor],
-    budget: int,
-    bounds: Bounds,
+    buildings: list[Footprint], used: set[str], corridors: list[Corridor], budget: int
 ) -> list[tuple[Footprint, Box]]:
     """Non-store buildings clear of the streets, without slivers, largest first, up to budget."""
     keep: list[tuple[Footprint, Box]] = []
     for fp in buildings:
         if fp.key in used or fp.area < MIN_BUILDING_AREA_M2:
             continue
-        box = fp.box(bounds)
+        box = fp.box()
         box = clear_of_streets(box, corridors, CITY_MIN_AREA_SHARE) if box else None
-        if box is not None:
+        if box is not None and not _is_sliver(box):
             keep.append((fp, box))
     keep.sort(key=lambda item: (-item[0].area, item[0].key))
     return sorted(keep[:budget], key=lambda item: item[0].key)
+
+
+def _is_sliver(box: Box) -> bool:
+    short, long = sorted(box[2:])
+    return short < MIN_CITY_SIDE_M or long > MAX_CITY_ASPECT * short
 
 
 @dataclass
@@ -1862,81 +1843,59 @@ class MapBuildReport:
     dropped_streets: list[str]
     store_hours_from_osm: int
     notes: list[str]
+    stations: list[str]
 
 
-def build_map(
-    overpass: dict[str, Any], fetched_at: str | None, bounds: Bounds | None = None
-) -> tuple[MapData, MapBuildReport]:
+def build_map(overpass: dict[str, Any], fetched_at: str | None) -> tuple[MapData, MapBuildReport]:
     """Overpass JSON -> contract.MapData (pure: no network, no files)."""
-    bounds = bounds or MAP_BOUNDS
     osm = OsmData.from_overpass(overpass)
     station = find_station(osm)
     proj = Projection(station.lat, station.lon)
-    net, net_report = build_street_network(osm, proj, bounds)
+    others = other_stations(osm, proj)
+    net, net_report = build_street_network(osm, proj)
     buildings = footprints(osm, proj)
     station_fp = _station_footprint(buildings)
-    landmark_fps, landmark_notes = _landmark_footprints(buildings, bounds)
-    reserved = {fp.key for fp in landmark_fps.values()}
-    if station_fp:
-        reserved.add(station_fp.key)
     walk = WalkGraph(net.segment_points())
-    venues = venue_candidates(osm, proj, buildings, reserved, net, bounds)
-    selection = select_stores(venues, walk)
+    selection = select_stores(venue_candidates(osm, proj, buildings, station_fp, net), walk)
 
     entries = _store_entries(selection)
     map_buildings, map_stores = _store_buildings(entries, net)
-    used = {v.footprint.key for _, v in entries if v.footprint} | reserved
-    station_box = station_fp.box(bounds) if station_fp else None
+    used = {v.footprint.key for _, v in entries if v.footprint}
+    station_box = station_fp.box() if station_fp else None
     station_box = station_box or SYNTHETIC_STATION_BOX
-    station_height = building_height(
-        station_fp.tags if station_fp else {},
-        "station",
-        station_fp.part_height if station_fp else None,
+    station_height = building_height(station_fp.tags if station_fp else {}, "station")
+    map_buildings.append(
+        _make_building(f"b{len(map_buildings) + 1}", "station", station_box, station_height)
     )
-    station_building = _make_building(
-        f"b{len(map_buildings) + 1}", "station", station_box, station_height
-    )
-    map_buildings.append(station_building)
+    if station_fp:
+        used.add(station_fp.key)
     corridors = _street_corridors(net)
-    city = _CityContext.of(osm, proj)
-    landmark_buildings, extra_sources = _landmark_buildings(
-        landmark_fps, city, corridors, net, bounds, first_index=len(map_buildings) + 1
-    )
-    map_buildings += list(landmark_buildings.values())
     map_buildings += _city_buildings(
-        buildings, used, corridors, city, bounds, first_index=len(map_buildings) + 1
+        osm, proj, buildings, used, corridors, first_index=len(map_buildings) + 1
     )
 
-    station_door = _door(net, (station_box[0], station_box[1]))
-    other_stations, station_notes = _other_station_doors(osm, proj, net, bounds)
-    edge_entries = _edge_entries(net, bounds)
+    station_doors = [(STATION_NAME, _door(net, (station_box[0], station_box[1])))]
+    station_doors += [(s.name, _door(net, proj.to_local(s.lat, s.lon))) for s in others]
+    edge_entries = _edge_entries(net)
     for node in net.pos:
         net.pos[node] = (round(net.pos[node][0], 1), round(net.pos[node][1], 1))
     entry_points = [
         EntryPoint(id=f"e{i}", kind="street", name=name or None, x=net.pos[n][0], z=net.pos[n][1])
         for i, (n, name) in enumerate(edge_entries, start=1)
     ]
-    sx, sz = net.pos[station_door]
-    entry_points.append(EntryPoint(id="st1", kind="station", name=STATION_NAME, x=sx, z=sz))
-    for other in other_stations:
-        for door in other.doors:
-            x, z = net.pos[door]
-            number = len(entry_points) - len(edge_entries) + 1
-            entry_points.append(
-                EntryPoint(id=f"st{number}", kind="station", name=other.name, x=x, z=z)
-            )
+    entry_points += [
+        EntryPoint(id=f"st{i}", kind="station", name=name, x=net.pos[n][0], z=net.pos[n][1])
+        for i, (name, n) in enumerate(station_doors, start=1)
+    ]
     data = MapData(
-        bounds=bounds,
+        bounds=BOUNDS,
         streets=_assemble_streets(net),
         buildings=map_buildings,
         stores=map_stores,
         entryPoints=entry_points,
-        sources=_osm_sources(fetched_at) + extra_sources,
-        landmarks=_landmarks(station_building, landmark_buildings, other_stations),
+        sources=_osm_sources(fetched_at),
     )
-    report = _report(station, selection, net_report, entries)
-    report.notes += landmark_notes + station_notes
-    return data, report
+    return data, _report(station, others, selection, net_report, entries)
 
 
 def _store_buildings(
@@ -1947,292 +1906,34 @@ def _store_buildings(
     stores: list[MapStore] = []
     for index, (store_id, venue) in enumerate(entries, start=1):
         kind: BuildingKind = "club" if store_id.startswith("c") else "store"
-        fp = venue.footprint
-        if fp is not None and "building" in fp.tags:
-            height = building_height(fp.tags, kind, fp.part_height)
-        else:
-            height = building_height({}, kind)
+        tags = venue.footprint.tags if venue.footprint else {}
+        height = building_height(tags if "building" in tags else {}, kind)
         buildings.append(_make_building(f"b{index}", kind, venue.box, height, store_id))
         stores.append(_map_store(store_id, f"b{index}", venue))
         _door(net, venue.centre)
     return buildings, stores
 
 
-@dataclass
-class _CityContext:
-    """Land use areas and office points, for telling offices from homes (bbox-prefiltered)."""
-
-    landuse: list[tuple[str, list[Point], tuple[float, float, float, float]]]
-    office_points: list[Point]
-
-    @classmethod
-    def of(cls, osm: OsmData, proj: Projection) -> _CityContext:
-        office_points = [
-            proj.to_local(*osm.nodes[n]) for n, tags in osm.node_tags.items() if "office" in tags
-        ]
-        landuse = []
-        for use, ring in _landuse_areas(osm, proj):
-            xs, zs = [p[0] for p in ring], [p[1] for p in ring]
-            landuse.append((use, ring, (min(xs), min(zs), max(xs), max(zs))))
-        return cls(landuse, office_points)
-
-    def kind(self, fp: Footprint) -> BuildingKind:
-        minx, minz, maxx, maxz = fp.bbox
-        offices = [p for p in self.office_points if minx <= p[0] <= maxx and minz <= p[1] <= maxz]
-        cx, cz = fp.centroid
-        landuse = [
-            (use, ring)
-            for use, ring, (x0, z0, x1, z1) in self.landuse
-            if x0 <= cx <= x1 and z0 <= cz <= z1
-        ]
-        return _building_kind(fp, landuse, offices)
-
-
 def _city_buildings(
+    osm: OsmData,
+    proj: Projection,
     buildings: list[Footprint],
     used: set[str],
     corridors: list[Corridor],
-    city: _CityContext,
-    bounds: Bounds,
     first_index: int,
 ) -> list[Building]:
     """Every other building as an office or residential box, up to MAX_BUILDINGS in total."""
-    out: list[Building] = []
-    budget = MAX_BUILDINGS - first_index + 1
-    others = _other_buildings(buildings, used, corridors, budget, bounds)
-    for index, (fp, box) in enumerate(others, start=first_index):
-        kind = city.kind(fp)
-        height = building_height(fp.tags, kind, fp.part_height)
-        out.append(_make_building(f"b{index}", kind, box, height))
-    return out
-
-
-# --- landmarks and the other stations -------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class LandmarkSpec:
-    """A real building the frontend labels; found in OSM by its name."""
-
-    id: str
-    name: str
-    kind: LandmarkKind
-    note: str
-    height_m: float | None = None  # used only when OSM has no height for the building
-    height_source: Source | None = None
-
-
-ARTOTEL_HEIGHT_SOURCE = Source(
-    label="The Skyscraper Center (CTBUH): art'otel London Hoxton, 92.2 m, 26 storeys "
-    "(static reference, checked 2026-10-15)",
-    url="https://www.skyscrapercenter.com/building/artotel-london-hoxton/39457",
-)
-LANDMARK_BUILDINGS: tuple[LandmarkSpec, ...] = (
-    LandmarkSpec(
-        "encode-hub",
-        "Encode Hub",
-        "venue",
-        "Hackathon venue, 41 Pitfield Street, N1 6DA",
-    ),
-    LandmarkSpec(
-        "artotel-london-hoxton",
-        "art'otel London Hoxton",
-        "hotel",
-        "26-storey hotel tower, 1-3 Rivington Street / Old Street, EC2A 3DT",
-        height_m=92.2,
-        height_source=ARTOTEL_HEIGHT_SOURCE,
-    ),
-    LandmarkSpec(
-        "boxpark-shoreditch",
-        "Boxpark Shoreditch",
-        "market",
-        "Shipping-container food and retail market, 2-10 Bethnal Green Road",
-    ),
-)
-STATION_LANDMARK_ID = "shoreditch-high-street"
-STATION_NOTE = "London Overground (Windrush line), on the viaduct; the map origin"
-# Other stations inside the bounds: OSM station name -> (landmark id, note). Each of their
-# street entrances becomes a kind="station" entry point named after the station.
-OTHER_STATIONS: dict[str, tuple[str, str]] = {
-    "Old Street": ("old-street", "Northern line (underground), under Old Street roundabout"),
-}
-STATION_ENTRANCE_RADIUS_M = 200.0  # entrances this close to the station node belong to it
-ENTRANCE_MERGE_M = 10.0  # entrances closer than this are one entry
-LANDMARK_MIN_AREA_SHARE = 0.1  # a landmark box may shrink this far to clear the streets
-
-
-def _plain_name(name: str) -> str:
-    return re.sub(r"\s+", " ", name.replace("’", "'").strip().lower())
-
-
-def _landmark_footprints(
-    buildings: list[Footprint], bounds: Bounds
-) -> tuple[dict[str, Footprint], list[str]]:
-    """Landmark id -> its building outline (the largest one with that name inside the bounds)."""
-    found: dict[str, Footprint] = {}
-    notes: list[str] = []
-    for spec in LANDMARK_BUILDINGS:
-        named = [
-            fp
-            for fp in buildings
-            if _plain_name(fp.tags.get("name", "")) == _plain_name(spec.name)
-            and _inside(fp.centroid, bounds)
-        ]
-        if named:
-            found[spec.id] = max(named, key=lambda fp: (fp.area, fp.key))
-        else:
-            notes.append(f"landmark {spec.name!r} not found as a building inside the bounds")
-    return found, notes
-
-
-def _landmark_buildings(
-    landmark_fps: dict[str, Footprint],
-    city: _CityContext,
-    corridors: list[Corridor],
-    net: _Network,
-    bounds: Bounds,
-    first_index: int,
-) -> tuple[dict[str, Building], list[Source]]:
-    """One building per landmark, always kept (outside the MAX_BUILDINGS largest-first cut)."""
-    specs = {spec.id: spec for spec in LANDMARK_BUILDINGS}
-    out: dict[str, Building] = {}
-    sources: list[Source] = []
-    for landmark_id, fp in landmark_fps.items():
-        spec = specs[landmark_id]
-        box = fp.box(bounds)
-        box = clear_of_streets(box, corridors, LANDMARK_MIN_AREA_SHARE) if box else None
-        box = box or _synthetic_box(fp.centroid, net, bounds)
-        if box is None:
-            continue
-        kind = city.kind(fp)
-        height = building_height(fp.tags, kind, fp.part_height)
-        if spec.height_m and _number(fp.tags.get("height")) is None:
-            # A published height beats one estimated from building:levels.
-            height = spec.height_m
-            if spec.height_source:
-                sources.append(spec.height_source)
-        building_id = f"b{first_index + len(out)}"
-        out[landmark_id] = _make_building(building_id, kind, box, height)
-    return out, sources
-
-
-@dataclass
-class OtherStation:
-    landmark_id: str
-    name: str
-    note: str
-    position: Point  # the OSM station node
-    doors: list[int]  # street vertices of its entrances
-
-
-def _other_station_doors(
-    osm: OsmData, proj: Projection, net: _Network, bounds: Bounds
-) -> tuple[list[OtherStation], list[str]]:
-    """OTHER_STATIONS found in OSM inside the bounds, each with a door vertex per entrance
-    (the station node itself when no entrance is mapped)."""
-    stations: list[OtherStation] = []
-    notes: list[str] = []
-    for name, (landmark_id, note) in OTHER_STATIONS.items():
-        node = _station_node(osm, name)
-        if node is None:
-            notes.append(f"station {name!r} not found in OSM")
-            continue
-        centre = proj.to_local(*osm.nodes[node])
-        if not _inside(centre, bounds):
-            notes.append(f"station {name!r} lies outside the bounds")
-            continue
-        entrances = _station_entrances(osm, proj, name, centre) or [centre]
-        doors: list[int] = []
-        for point in entrances:
-            if not _inside(point, bounds):
-                continue
-            door = _door(net, point)
-            if door not in doors:
-                doors.append(door)
-        stations.append(OtherStation(landmark_id, name, note, centre, doors))
-        notes.append(f"{name}: {len(doors)} entrance(s) as station entry points")
-    return stations, notes
-
-
-def _station_node(osm: OsmData, name: str) -> int | None:
-    for node_id, tags in sorted(osm.node_tags.items()):
-        is_station = tags.get("railway") == "station" or tags.get("public_transport") == "station"
-        if is_station and _plain_name(tags.get("name", "")) == _plain_name(name):
-            return node_id
-    return None
-
-
-def _station_entrances(osm: OsmData, proj: Projection, name: str, centre: Point) -> list[Point]:
-    """Entrances of the station: railway=subway_entrance / train_station_entrance nodes, and
-    nodes named "<station> - Exit N", near the station node. One entrance per ref (the
-    railway-tagged one first); entrances within ENTRANCE_MERGE_M of each other are one."""
-    found: list[tuple[bool, str, int, Point]] = []
-    exit_name = re.compile(rf"^{re.escape(_plain_name(name))}\b.*\bexit\b")
-    for node_id, tags in sorted(osm.node_tags.items()):
-        tagged = tags.get("railway") in ("subway_entrance", "train_station_entrance")
-        if not tagged and not exit_name.match(_plain_name(tags.get("name", ""))):
-            continue
-        point = proj.to_local(*osm.nodes[node_id])
-        if _dist(point, centre) <= STATION_ENTRANCE_RADIUS_M:
-            found.append((not tagged, tags.get("ref", ""), node_id, point))
-    kept: list[Point] = []
-    refs: set[str] = set()
-    for _, ref, _, point in sorted(found):
-        if ref and ref in refs:
-            continue
-        if any(_dist(point, other) < ENTRANCE_MERGE_M for other in kept):
-            continue
-        refs.add(ref)
-        kept.append(point)
-    return kept
-
-
-def _landmarks(
-    station_building: Building,
-    landmark_buildings: dict[str, Building],
-    other_stations: list[OtherStation],
-) -> list[Landmark]:
-    landmarks = [
-        Landmark(
-            id=STATION_LANDMARK_ID,
-            name=STATION_NAME,
-            kind="station",
-            buildingId=station_building.id,
-            x=station_building.x,
-            z=station_building.z,
-            h=station_building.h,
-            note=STATION_NOTE,
-        )
+    landuse = _landuse_areas(osm, proj)
+    office_points = [
+        proj.to_local(*osm.nodes[n]) for n, tags in osm.node_tags.items() if "office" in tags
     ]
-    for other in other_stations:
-        landmarks.append(
-            Landmark(
-                id=other.landmark_id,
-                name=other.name,
-                kind="station",
-                buildingId=None,
-                x=round(other.position[0], 1),
-                z=round(other.position[1], 1),
-                h=0.0,
-                note=other.note,
-            )
-        )
-    for spec in LANDMARK_BUILDINGS:
-        building = landmark_buildings.get(spec.id)
-        if building is not None:
-            landmarks.append(
-                Landmark(
-                    id=spec.id,
-                    name=spec.name,
-                    kind=spec.kind,
-                    buildingId=building.id,
-                    x=building.x,
-                    z=building.z,
-                    h=building.h,
-                    note=spec.note,
-                )
-            )
-    return landmarks
+    city: list[Building] = []
+    budget = MAX_BUILDINGS - first_index + 1
+    others = _other_buildings(buildings, used, corridors, budget)
+    for index, (fp, box) in enumerate(others, start=first_index):
+        kind = _building_kind(fp, landuse, office_points)
+        city.append(_make_building(f"b{index}", kind, box, building_height(fp.tags, kind)))
+    return city
 
 
 def _osm_sources(fetched_at: str | None) -> list[Source]:
@@ -2247,27 +1948,37 @@ def _osm_sources(fetched_at: str | None) -> list[Source]:
 
 
 def _door(net: _Network, centre: Point) -> int:
-    """Make the street point nearest a building centre a vertex (the building's door)."""
+    """Make the street point nearest a building centre a vertex (the building's door).
+
+    A point within CROSSING_TOUCH_M of another street (inside a narrow fork) would touch it
+    without sharing a vertex, so that door goes on the nearer end of its segment instead.
+    """
     nearest = net.nearest_segment(centre)
     if nearest is None:
         raise MapBuildError("no street to put a door on")
-    return net.split(nearest[0], nearest[1])
+    seg, foot, _ = nearest
+    for other in net.segs:
+        if other == seg:
+            continue
+        _, touch = _project_on_segment(foot, net.pos[other[0]], net.pos[other[1]])
+        if _dist(touch, foot) <= CROSSING_TOUCH_M:
+            return min(seg, key=lambda n: _dist(net.pos[n], foot))
+    return net.split(seg, foot)
 
 
-def _edge_entries(net: _Network, bounds: Bounds) -> list[tuple[int, str]]:
-    """Street ends on the map edge: every main road (one per ENTRY_MERGE_M), plus residential
-    streets at least MINOR_ENTRY_SPACING_M from the others. Ordered clockwise from north."""
+def _edge_entries(net: _Network) -> list[tuple[int, str]]:
+    """An entry on every street that leaves the map edge; street ends within ENTRY_MERGE_M of a
+    wider one (the other carriageway, a path beside a road) share its entry. Ordered clockwise
+    from north."""
     adj = net.adjacency()
     candidates: list[tuple[float, Point, int, str]] = []
     for node, nbrs in adj.items():
-        if on_edge(net.pos[node], bounds):
+        if on_edge(net.pos[node]):
             way = net.segs[_key(node, nbrs[0])]
-            if way.highway in ROAD_CLASSES:
-                candidates.append((-way.width, net.pos[node], node, way.name))
+            candidates.append((-way.width, net.pos[node], node, way.name))
     chosen: list[tuple[int, str]] = []
-    for neg_width, p, node, name in sorted(candidates):
-        spacing = ENTRY_MERGE_M if -neg_width >= MAJOR_ENTRY_WIDTH_M else MINOR_ENTRY_SPACING_M
-        if all(_dist(p, net.pos[c]) > spacing for c, _ in chosen):
+    for _, p, node, name in sorted(candidates):
+        if all(_dist(p, net.pos[c]) > ENTRY_MERGE_M for c, _ in chosen):
             chosen.append((node, name))
     return sorted(
         chosen,
@@ -2277,6 +1988,7 @@ def _edge_entries(net: _Network, bounds: Bounds) -> list[tuple[int, str]]:
 
 def _report(
     station: Station,
+    others: list[Station],
     selection: StoreSelection,
     net_report: StreetNetworkReport,
     entries: list[tuple[str, Venue]],
@@ -2285,9 +1997,14 @@ def _report(
     notes = []
     if station.osm_id is None:
         notes.append(f"station not found in OSM; origin = approximate {APPROX_ORIGIN}")
+    clubs = ", ".join(f"{ids[c.osm_key]} {c.name} ({c.osm_key})" for c in selection.clubs)
     if selection.promoted_bars:
-        promoted = ", ".join(f"{ids[c.osm_key]} {c.name}" for c in selection.clubs)
-        notes.append(f"no amenity=nightclub in the bounds; promoted late-opening bars: {promoted}")
+        notes.append(
+            f"fewer than {MIN_CLUBS} amenity=nightclub open past midnight in the bounds; "
+            f"clubs with promoted late-opening bars: {clubs}"
+        )
+    else:
+        notes.append(f"clubs (amenity=nightclub, largest first): {clubs}")
     demo = (
         f"{ids[selection.demo.osm_key]} {selection.demo.name} is {selection.demo_walk_m} m "
         f"on foot from {ids[selection.demo_club.osm_key]} {selection.demo_club.name}"
@@ -2299,6 +2016,8 @@ def _report(
         dropped_streets=net_report.dropped_disconnected,
         store_hours_from_osm=with_hours,
         notes=notes,
+        stations=[f"st1 {STATION_NAME} ({station.osm_id or 'approximate'})"]
+        + [f"st{i} {s.name} ({s.osm_id})" for i, s in enumerate(others, start=2)],
     )
 
 
@@ -2309,9 +2028,7 @@ def _pipeline_inputs() -> dict[str, Any]:
     return {
         "builder": MAP_BUILDER_VERSION,
         "query": overpass_query(),
-        "bounds": MAP_BOUNDS.model_dump(),
-        "landmarks": [spec.name for spec in LANDMARK_BUILDINGS],
-        "stations": sorted(OTHER_STATIONS),
+        "bounds": BOUNDS.model_dump(),
         "maxBuildings": MAX_BUILDINGS,
         "targets": TYPE_TARGETS,
         "clubs": (MIN_CLUBS, MAX_CLUBS),
@@ -2357,6 +2074,7 @@ def _print_summary(data: MapData, report: MapBuildReport) -> None:
         f"entries {[e.id for e in data.entryPoints]}"
     )
     print(f"  store hours from OSM opening_hours: {report.store_hours_from_osm}/{len(data.stores)}")
+    print(f"  stations: {'; '.join(report.stations)}")
     print(f"  demo: {report.demo}")
     for note in report.notes:
         print(f"  note: {note}")

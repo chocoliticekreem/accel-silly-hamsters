@@ -5,14 +5,15 @@ SIM_WEEKDAY_ARRIVALS and every real count is scaled by one factor, written into 
 
 Measured (TfL open data, no key needed):
   NUMBAT 2025 typical-day workbooks, one per day type: exits by quarter hour for every station
-  with entries in the map (Shoreditch High Street, Old Street). Exits are people arriving into
-  the area, so they give each station's arrivals by hour, the stations' split of the station
-  budget, the weekend/weekday volume ratio and, in the Fri/Sat 00:00-05:00 bands, the Night
-  Overground.
-  Unified API, Windrush line Night route: confirms the night service calls at the station.
-Assumed (named constants below, repeated in the notes): the stations' share of all arrivals, the
-street-entry timing mix, club fill and the regulars model. Club events are not scraped (Resident
-Advisor, Dice and Eventbrite restrict it); club nights come from the map's club opening hours.
+  inside the map (Shoreditch High Street; Liverpool Street = its LU and NR rows). Exits are
+  people arriving, so they give each station's arrivals by hour, the weekend/weekday volume
+  ratio and, in the Fri/Sat 00:00-05:00 bands, the night services.
+  Unified API, Windrush line Night route: confirms the Night Overground calls at Shoreditch High
+  Street.
+Assumed (named constants below, repeated in the notes): the share of each station's exits that
+walks into the map area, the stations' share of all arrivals, the street-entry timing mix, club
+fill and the regulars model. Club events are not scraped (Resident Advisor, Dice and Eventbrite
+restrict it); club nights come from the map's club opening hours.
 """
 
 from __future__ import annotations
@@ -60,9 +61,37 @@ NIGHT_LABELS = {
 }
 STATION_NAME = "Shoreditch High Street"
 STATION_NAPTAN = "910GSHRDHST"
-OLD_STREET = "Old Street"
-# Map station name -> its row in the NUMBAT Station_Exits sheet (when they differ).
-NUMBAT_ROW_NAMES: dict[str, str] = {}
+
+
+@dataclass(frozen=True)
+class RailStation:
+    """A station the map can hold: the NUMBAT rows summed for it, and the share of its exits
+    that walk into the map area (an assumption; `basis` says why, and goes into the notes)."""
+
+    numbat_rows: tuple[str, ...]
+    into_area: float
+    basis: str
+
+
+# Keyed by the station entry's name in map.json; a station entry with any other name counts as
+# Shoreditch High Street, the map origin.
+RAIL_STATIONS: dict[str, RailStation] = {
+    STATION_NAME: RailStation(
+        numbat_rows=(STATION_NAME,),
+        into_area=0.9,
+        basis="the map origin, 700-800 m (about a 10-minute walk) from every edge, so nearly "
+        "every exit stays in the area; 10% assumed to walk on past the edges or change to a bus",
+    ),
+    "Liverpool Street": RailStation(
+        numbat_rows=("Liverpool Street LU", "Liverpool Street NR"),
+        into_area=0.2,
+        basis="the station sits ~150 m inside the south edge and ~300 m inside the west edge; "
+        "most of its commuters walk south and west into the City (Bank, Bishopsgate south, "
+        "Leadenhall, Moorgate), outside the map, while Broadgate's offices north of the "
+        "station, Spitalfields and the walk up Bishopsgate to Shoreditch are inside: one exit "
+        "in five assumed to head into the area",
+    ),
+}
 EXITS_SHEET = "Station_Exits"
 QUARTER_HOUR_LABEL = re.compile(r"^(\d{2})(\d{2})-\d{4}$")  # "0500-0515"
 QUARTER_HOURS_PER_DAY = 96
@@ -84,51 +113,51 @@ WEEKEND_DAYS = ("sat", "sun")
 WORKING_DAYS = tuple(d for d in timeutil.WEEKDAYS if d not in WEEKEND_DAYS)
 
 # Used only when NUMBAT is unreachable: calendar_profiles() of the five 2025 workbooks as fetched
-# on SNAPSHOT_DATE (mean exits per clock hour, SHS and Old Street). The file is then flagged
-# fallback=True.
+# on SNAPSHOT_DATE (mean exits per clock hour, per RAIL_STATIONS key; Liverpool Street = LU + NR
+# rows). The file is then flagged fallback=True.
 SNAPSHOT_DATE = "2026-10-15"
 NUMBAT_FOLDER_URL = "https://crowding.data.tfl.gov.uk/#!NUMBAT%2FNUMBAT%202025%2F"
 # fmt: off
 SNAPSHOT_EXITS = {
-    "weekday": [
-        24.6, 0.0, 0.0, 0.0, 0.0, 8.9, 201.4, 733.4, 1807.2, 1802.2, 911.4, 600.0,
-        560.2, 497.6, 440.1, 453.0, 538.2, 693.9, 799.1, 576.1, 335.6, 209.6, 178.5, 123.9,
-    ],
-    "weekend": [
-        145.5, 47.4, 22.9, 13.8, 7.8, 9.9, 49.8, 97.1, 223.9, 440.8, 662.0, 838.3,
-        957.7, 990.3, 911.1, 826.2, 735.9, 680.2, 639.2, 579.4, 429.9, 296.5, 238.3, 179.0,
-    ],
-}
-OLD_STREET_SNAPSHOT_EXITS = {
-    "weekday": [
-        89.1, 3.1, 0.0, 0.0, 0.0, 24.0, 443.3, 1760.8, 4131.9, 4112.3, 1829.9, 1059.2,
-        986.1, 1034.7, 971.5, 966.9, 1214.2, 1684.6, 1752.5, 1175.7, 808.6, 651.6, 635.3, 452.3,
-    ],
-    "weekend": [
-        438.9, 27.8, 0.0, 0.0, 0.0, 3.3, 55.9, 195.5, 447.1, 635.1, 808.9, 943.9,
-        1080.5, 1225.1, 1216.5, 1189.4, 1249.3, 1323.0, 1321.2, 1229.7, 963.2, 759.9, 708.1, 579.2,
-    ],
+    STATION_NAME: {
+        "weekday": [
+            24.6, 0.0, 0.0, 0.0, 0.0, 8.9, 201.4, 733.4, 1807.2, 1802.2, 911.4, 600.0,
+            560.2, 497.6, 440.1, 453.0, 538.2, 693.9, 799.1, 576.1, 335.6, 209.6, 178.5, 123.9,
+        ],
+        "weekend": [
+            145.5, 47.4, 22.9, 13.8, 7.8, 9.9, 49.8, 97.1, 223.9, 440.8, 662.0, 838.3,
+            957.7, 990.3, 911.1, 826.2, 735.9, 680.2, 639.2, 579.4, 429.9, 296.5, 238.3, 179.0,
+        ],
+    },
+    "Liverpool Street": {
+        "weekday": [
+            491.8, 25.2, 0.0, 0.0, 0.1, 2319.5, 9377.8, 18590.5, 29108.8, 22641.0, 11102.3,
+            7887.0, 7540.1, 7349.0, 7157.6, 8128.6, 10863.7, 14195.4, 12092.8, 6891.6, 4434.9,
+            3765.8, 3553.7, 2208.5,
+        ],
+        "weekend": [
+            1794.7, 330.0, 123.1, 88.2, 56.3, 439.2, 2033.8, 3461.9, 3737.7, 5157.9, 6733.3,
+            8318.1, 9227.2, 9580.9, 9074.1, 9057.4, 9224.8, 9331.5, 8632.9, 6772.7, 4817.2,
+            4086.7, 4618.1, 3705.9,
+        ],
+    },
 }
 # fmt: on
-SNAPSHOT_EXITS_BY_STATION: dict[str, dict[str, list[float]]] = {
-    STATION_NAME: SNAPSHOT_EXITS,
-    OLD_STREET: OLD_STREET_SNAPSHOT_EXITS,
-}
 
 NIGHT_ROUTE_URL = "https://api.tfl.gov.uk/Line/windrush/Route/Sequence/outbound"
 
 # --- scale and entry points -----------------------------------------------------------------
 
-# Agents per weekday via all entry points (BUILD_NOTES budget: 600-1200). The map grew ~5x (to
-# Old Street and Hoxton) with ~1.6x the stores; 1000 (was 800) keeps a 14-day run near 5 s.
-SIM_WEEKDAY_ARRIVALS = 1000.0
-# Assumption: share of all arrivals into the area that come through the map's stations
-# (Shoreditch High Street and Old Street; split between them by their measured exits). The rest
-# walk in from Liverpool Street, buses, bikes and neighbouring streets. Was 0.30 for SHS alone
-# on the 500 m map; Old Street is a major Northern line station (~2.3x SHS's exits).
-STATION_SHARE = 0.45
+# Agents per weekday via all entry points (BUILD_NOTES: 2,000-4,000 for the 1.5 km map). 3,500
+# keeps the ~68 stores at the visits per store the 500 m map gave its 24 (~41 a day).
+SIM_WEEKDAY_ARRIVALS = 3500.0
+# Assumption: share of all arrivals into the area that come out of the stations inside the map
+# (30% for Shoreditch High Street alone on the 500 m map; Liverpool Street is now inside too).
+# The rest walk in from Old Street, Aldgate East, Moorgate and Hoxton just past the edges, or
+# come by bus, by bike or on foot from home.
+STATION_SHARE = 0.40
 # Street arrivals are not measured by hour here (TfL BUSTO bus files are 55-125 MB). They reuse
-# the station's exit timing plus this share of night-time-economy walk-ins.
+# the stations' exit timing plus this share of night-time-economy walk-ins.
 STREET_LEISURE_SHARE = {"weekday": 0.30, "weekend": 0.40}
 # Relative weight of those walk-ins by clock hour: (start hour, end hour, weight).
 LEISURE_BANDS: dict[str, list[tuple[int, int, float]]] = {
@@ -178,29 +207,16 @@ class SourceFormatError(ValueError):
 
 @dataclass
 class StationExits:
-    """Mean exits (real people) per clock hour on a weekday and on a weekend calendar day:
-    `weekday`/`weekend` summed over the stations, `by_station` station name -> (weekday,
-    weekend)."""
+    """Mean exits (real people) per clock hour on a weekday and on a weekend calendar day, per
+    station (RAIL_STATIONS key)."""
 
-    weekday: list[float]
-    weekend: list[float]
+    weekday: dict[str, list[float]]
+    weekend: dict[str, list[float]]
     sources: list[Source]
     measured: bool
-    night_exits: dict[str, float] = field(default_factory=dict)  # SHS: day type -> 01:00-05:00
+    # station -> NUMBAT day type -> exits 01:00-05:00
+    night_exits: dict[str, dict[str, float]] = field(default_factory=dict)
     error: str | None = None
-    by_station: dict[str, tuple[list[float], list[float]]] = field(default_factory=dict)
-
-    @classmethod
-    def combine(
-        cls, by_station: dict[str, tuple[list[float], list[float]]], **kwargs: Any
-    ) -> StationExits:
-        weekday = [sum(v[0][h] for v in by_station.values()) for h in range(24)]
-        weekend = [sum(v[1][h] for v in by_station.values()) for h in range(24)]
-        return cls(weekday=weekday, weekend=weekend, by_station=by_station, **kwargs)
-
-    def profile(self, station: str, day_type: str) -> list[float]:
-        weekday, weekend = self.by_station[station]
-        return weekday if day_type == "weekday" else weekend
 
 
 # --- build ----------------------------------------------------------------------------------
@@ -236,7 +252,6 @@ def cache_inputs(map_data: MapData) -> dict[str, Any]:
     club_buildings = {c.buildingId for c in clubs}
     return {
         "model": MODEL_VERSION,
-        "scale": [SIM_WEEKDAY_ARRIVALS, STATION_SHARE],
         "numbat": [numbat_url(d) for d in NUMBAT_DAY_TYPES],
         "entryPoints": [e.model_dump(mode="json") for e in map_data.entryPoints],
         "streets": [s.model_dump(mode="json") for s in map_data.streets],
@@ -247,21 +262,30 @@ def cache_inputs(map_data: MapData) -> dict[str, Any]:
     }
 
 
+def rail_station_of(entry: EntryPoint) -> str:
+    """The RAIL_STATIONS key a station entry stands for (another name: Shoreditch High Street)."""
+    return entry.name if entry.name in RAIL_STATIONS else STATION_NAME
+
+
 def build_demand(map_data: MapData) -> DemandFile:
     """Compute demand.json for a map. No caching of the result and no file writes."""
     if not map_data.entryPoints:
         raise ValueError("map.json has no entry points; demand needs at least one")
-    exits = station_exit_profiles(station_names(map_data))
+    station_entries = [e for e in map_data.entryPoints if e.kind == "station"]
+    # A map without a station entry still takes its street timing from Shoreditch High Street.
+    stations = sorted({rail_station_of(e) for e in station_entries}) or [STATION_NAME]
+    exits = station_exit_profiles(stations)
     night_source, night_calls_station = night_route_check()
 
-    rail_weekday, rail_weekend = sum(exits.weekday), sum(exits.weekend)
-    real_weekday = rail_weekday / STATION_SHARE
+    into = into_area_arrivals(exits)
+    rail = {day_type: sum(sum(hours) for hours in into[day_type].values()) for day_type in into}
+    real_weekday = rail["weekday"] / STATION_SHARE
     agents_per_person = SIM_WEEKDAY_ARRIVALS / real_weekday
     totals = {
         "weekday": SIM_WEEKDAY_ARRIVALS,
-        "weekend": SIM_WEEKDAY_ARRIVALS * rail_weekend / rail_weekday,
+        "weekend": SIM_WEEKDAY_ARRIVALS * rail["weekend"] / rail["weekday"],
     }
-    entries, street_widths = allocate_entries(map_data, exits, totals)
+    entries, street_widths = allocate_entries(map_data, into, totals)
     nights = club_nights(map_data, agents_per_person)
     share, pool, am_shares = returning_estimate(entries, totals)
 
@@ -269,17 +293,24 @@ def build_demand(map_data: MapData) -> DemandFile:
     notes = [
         f"Units: sim agents per hour (expected values; sample e.g. Poisson per hour), not real "
         f"people. Scale: 1 sim agent ~ {1 / agents_per_person:.0f} real arrivals.",
-        f"Scale derivation: station exits ({_station_split(exits)}) {rail_weekday:,.0f} per "
-        f"weekday and {rail_weekend:,.0f} per weekend day ({_numbat_label(exits)}); assumed "
-        f"station share {STATION_SHARE:.0%} of all arrivals into the area gives "
-        f"{real_weekday:,.0f} real "
-        f"arrivals per weekday; weekday sim total fixed at {SIM_WEEKDAY_ARRIVALS:.0f} (BUILD_NOTES "
-        f"budget 600-1200/day); weekend total {totals['weekend']:.0f} follows the measured "
-        f"weekend/weekday exit ratio {rail_weekend / rail_weekday:.2f}.",
-        "Station entries: each station's budget is its share of the stations' measured exits; "
-        "hour-of-day = that station's exits (people arriving into the area; quarter-hour bands "
-        "summed to hours), TfL traffic days (05:00-05:00) mapped to calendar days; a station's "
-        "entrances (Old Street has several) share its budget equally.",
+        f"Scale derivation: station exits per weekday / weekend day ({_numbat_label(exits)}) x "
+        f"the share walking into the map area (assumption): {_into_area_detail(exits, into)}; "
+        f"rail arrivals into the area {rail['weekday']:,.0f} per weekday and "
+        f"{rail['weekend']:,.0f} per weekend day. Assumed station share {STATION_SHARE:.0%} of "
+        f"all arrivals into the area gives {real_weekday:,.0f} real arrivals per weekday; "
+        f"weekday sim total fixed at {SIM_WEEKDAY_ARRIVALS:,.0f} (BUILD_NOTES budget 2,000-4,000 "
+        f"a day for the 1.5 km x 1.5 km map); weekend total {totals['weekend']:,.0f} follows the "
+        f"measured weekend/weekday ratio of those rail arrivals, "
+        f"{rail['weekend'] / rail['weekday']:.2f}.",
+        "Station entries: hour-of-day = each station's own exits (people arriving; quarter-hour "
+        "bands summed to hours), TfL traffic days (05:00-05:00) mapped to calendar days; the "
+        "stations split the station budget by their arrivals into the area, and several entries "
+        "of one station split its share equally. Into-area shares (assumptions): "
+        + "; ".join(
+            f"{name} {RAIL_STATIONS[name].into_area:.0%}: {RAIL_STATIONS[name].basis}"
+            for name in stations
+        )
+        + ".",
         _night_note(exits, night_calls_station),
         _street_note(street_widths),
         _club_note(map_data, nights, agents_per_person),
@@ -322,50 +353,53 @@ def numbat_url(day_type: str) -> str:
     return NUMBAT_URL.format(day_type=day_type)
 
 
-def station_exit_profiles(stations: Sequence[str] = (STATION_NAME,)) -> StationExits:
-    """Exits per hour for each station from the five NUMBAT workbooks, or the embedded snapshot
-    for every station when any of them fails."""
-    by_station: dict[str, dict[str, list[float]]] = {name: {} for name in stations}
-    profiles: dict[str, dict[str, list[float]]] = {}
+def station_exit_profiles(stations: Sequence[str]) -> StationExits:
+    """Exits per hour for each station (RAIL_STATIONS keys) from the five NUMBAT workbooks, or
+    the embedded snapshot on failure."""
+    rows = [row for name in stations for row in RAIL_STATIONS[name].numbat_rows]
+    by_workbook: dict[str, dict[str, list[float]]] = {name: {} for name in stations}
     sources: list[Source] = []
     try:
         for day_type, label in NUMBAT_DAY_TYPES.items():
-            workbook: dict[str, bytes] = {}  # one download per workbook for all stations
-            fetched = ""
+            hourly, fetched_at = numbat_hourly_exits(day_type, rows)
             for name in stations:
-                hourly, fetched = numbat_hourly_exits(day_type, name, workbook)
-                by_station[name][day_type] = hourly
+                by_workbook[name][day_type] = _sum_by_hour(
+                    [hourly[row] for row in RAIL_STATIONS[name].numbat_rows]
+                )
             sources.append(
                 common.cite(
-                    f"TfL NUMBAT 2025, typical {label}: {', '.join(stations)} station exits by "
-                    "quarter hour",
+                    f"TfL NUMBAT 2025, typical {label}: station exits by quarter hour "
+                    f"({', '.join(rows)})",
                     numbat_url(day_type),
-                    fetched,
+                    fetched_at,
                 )
             )
-        for name in stations:
-            profiles[name] = calendar_profiles(by_station[name])
-            if min(sum(profiles[name]["weekday"]), sum(profiles[name]["weekend"])) <= 0:
-                raise SourceFormatError(f"{name} has no exits in the NUMBAT workbooks")
+        profiles = {name: calendar_profiles(by_workbook[name]) for name in stations}
+        empty = [n for n, p in profiles.items() if min(sum(p["weekday"]), sum(p["weekend"])) <= 0]
+        if empty:
+            raise SourceFormatError(f"{', '.join(empty)} has no exits in the NUMBAT workbooks")
     except (common.FetchError, SourceFormatError) as e:
         log.warning("demand: TfL NUMBAT unavailable, using the embedded snapshot: %s", e)
-        snapshots = {name: SNAPSHOT_EXITS_BY_STATION.get(name, SNAPSHOT_EXITS) for name in stations}
-        return StationExits.combine(
-            {name: (list(v["weekday"]), list(v["weekend"])) for name, v in snapshots.items()},
+        return StationExits(
+            weekday={name: list(SNAPSHOT_EXITS[name]["weekday"]) for name in stations},
+            weekend={name: list(SNAPSHOT_EXITS[name]["weekend"]) for name in stations},
             sources=[
                 common.cite(
-                    f"TfL NUMBAT 2025 station exits, snapshot embedded in demand.py (taken "
-                    f"{SNAPSHOT_DATE}; live source unavailable, fallback)",
+                    f"TfL NUMBAT 2025 station exits ({', '.join(stations)}), snapshot embedded "
+                    f"in demand.py (taken {SNAPSHOT_DATE}; live source unavailable, fallback)",
                     NUMBAT_FOLDER_URL,
                 )
             ],
             measured=False,
             error=str(e),
         )
-    shs = by_station.get(STATION_NAME, {})
-    night = {d: sum(h[1:TRAFFIC_DAY_START_HOUR]) for d, h in shs.items()}
-    return StationExits.combine(
-        {name: (p["weekday"], p["weekend"]) for name, p in profiles.items()},
+    night = {
+        name: {d: sum(h[1:TRAFFIC_DAY_START_HOUR]) for d, h in by_workbook[name].items()}
+        for name in stations
+    }
+    return StationExits(
+        weekday={name: p["weekday"] for name, p in profiles.items()},
+        weekend={name: p["weekend"] for name, p in profiles.items()},
         sources=sources,
         measured=True,
         night_exits=night,
@@ -373,28 +407,33 @@ def station_exit_profiles(stations: Sequence[str] = (STATION_NAME,)) -> StationE
 
 
 def numbat_hourly_exits(
-    day_type: str, station: str = STATION_NAME, workbook: dict[str, bytes] | None = None
-) -> tuple[list[float], str]:
-    """`station` exits per clock hour over one NUMBAT traffic day, and when the workbook was
-    fetched. `workbook` shares one download between the stations of a build.
+    day_type: str, stations: Sequence[str]
+) -> tuple[dict[str, list[float]], str]:
+    """Exits per clock hour over one NUMBAT traffic day for each NUMBAT station row, and when
+    the workbook was last fetched.
 
-    The scrape cache (data/raw/tfl/) keeps the extracted quarter-hour row, not the ~12 MB file.
+    The scrape cache (data/raw/tfl/) keeps each station's extracted quarter-hour row, not the
+    ~12 MB file; the workbook is downloaded once for all the rows the cache lacks.
     """
     url = numbat_url(day_type)
-    row = NUMBAT_ROW_NAMES.get(station, station)
-    key = {"extract": EXITS_SHEET, "station": row}
-    cached = cache.scrape_get("tfl", url, key)
-    if cached is None:
-        workbook = {} if workbook is None else workbook
-        if url not in workbook:
-            workbook[url] = _download(url)
+    found = {
+        station: cached
+        for station in stations
+        if (cached := cache.scrape_get("tfl", url, _extract_key(station))) is not None
+    }
+    missing = [station for station in stations if station not in found]
+    if missing:
         fetched_at = store.now_iso()
-        cached = {
-            "content": parse_station_exits(workbook[url], row),
-            "fetchedAt": fetched_at,
-        }
-        cache.scrape_put("tfl", url, key, cached, fetched_at)
-    return hourly_from_quarter_hours(cached["content"]), cached["fetchedAt"]
+        parsed = parse_station_exits(_download(url), missing)
+        for station in missing:
+            found[station] = {"content": parsed[station], "fetchedAt": fetched_at}
+            cache.scrape_put("tfl", url, _extract_key(station), found[station], fetched_at)
+    hourly = {station: hourly_from_quarter_hours(found[station]["content"]) for station in stations}
+    return hourly, max(found[station]["fetchedAt"] for station in stations)
+
+
+def _extract_key(station: str) -> dict[str, str]:
+    return {"extract": EXITS_SHEET, "station": station}
 
 
 def _download(url: str) -> bytes:
@@ -420,8 +459,9 @@ def _download(url: str) -> bytes:
     return b"".join(chunks)
 
 
-def parse_station_exits(xlsx: bytes, station: str) -> dict[str, float]:
-    """Quarter-hour exits for `station` from a NUMBAT workbook, keyed by band start "HHMM"."""
+def parse_station_exits(xlsx: bytes, stations: Sequence[str]) -> dict[str, dict[str, float]]:
+    """Quarter-hour exits for each of `stations` (NUMBAT station names) from a NUMBAT workbook,
+    keyed by band start "HHMM"."""
     try:
         workbook = openpyxl.load_workbook(io.BytesIO(xlsx), read_only=True, data_only=True)
     except (zipfile.BadZipFile, OSError, KeyError) as e:
@@ -431,14 +471,19 @@ def parse_station_exits(xlsx: bytes, station: str) -> dict[str, float]:
             raise SourceFormatError(f"NUMBAT workbook has no {EXITS_SHEET} sheet")
         header: tuple[Any, ...] | None = None
         station_col = -1
+        found: dict[str, dict[str, float]] = {}
         for row in workbook[EXITS_SHEET].iter_rows(values_only=True):
             if header is None:
                 if "Station" in row and any(_quarter_hour_start(c) for c in row):
                     header, station_col = row, row.index("Station")
                 continue
-            if station_col < len(row) and row[station_col] == station:
-                return _quarter_hour_values(header, row)
-        raise SourceFormatError(f"{station!r} not found in the {EXITS_SHEET} sheet")
+            name = row[station_col] if station_col < len(row) else None
+            if isinstance(name, str) and name in stations and name not in found:
+                found[name] = _quarter_hour_values(header, row)
+        missing = ", ".join(repr(s) for s in stations if s not in found)
+        if missing:
+            raise SourceFormatError(f"{missing} not found in the {EXITS_SHEET} sheet")
+        return found
     finally:
         workbook.close()
 
@@ -489,6 +534,18 @@ def calendar_profiles(by_workbook: dict[str, list[float]]) -> dict[str, list[flo
     return {
         "weekday": _mean_by_hour([days[d] for d in WORKING_DAYS]),
         "weekend": _mean_by_hour([days[d] for d in WEEKEND_DAYS]),
+    }
+
+
+def into_area_arrivals(exits: StationExits) -> dict[str, dict[str, list[float]]]:
+    """Day type -> station -> real people per clock hour who exit the station and walk into the
+    map area (exits x the station's RAIL_STATIONS share)."""
+    return {
+        day_type: {
+            name: [v * RAIL_STATIONS[name].into_area for v in hours]
+            for name, hours in by_station.items()
+        }
+        for day_type, by_station in (("weekday", exits.weekday), ("weekend", exits.weekend))
     }
 
 
@@ -550,47 +607,37 @@ def street_width_at(entry: EntryPoint, streets: Sequence[Street]) -> float:
     return nearest[1]
 
 
-def station_key(entry: EntryPoint) -> str:
-    """The station an entry belongs to (unnamed station entries are Shoreditch High Street)."""
-    return entry.name or STATION_NAME
-
-
-def station_names(map_data: MapData) -> list[str]:
-    """Stations with entries in the map, Shoreditch High Street first (it always sets the
-    timing when the map has no station entry)."""
-    names = {station_key(e) for e in map_data.entryPoints if e.kind == "station"}
-    return sorted(names or {STATION_NAME}, key=lambda name: (name != STATION_NAME, name))
-
-
 def allocate_entries(
-    map_data: MapData, exits: StationExits, totals: dict[str, float]
+    map_data: MapData, into: dict[str, dict[str, list[float]]], totals: dict[str, float]
 ) -> tuple[dict[str, EntryDemand], dict[str, float]]:
     """Hourly arrivals for every entry point, and the street width that weighted each street entry.
 
-    Station entries share STATION_SHARE of the daily total: each station by its share of the
-    stations' exits that day, following its own exit shape, split equally over its entrances.
-    Street entries share the rest in proportion to the width of the street they sit on, timed
-    by the stations' combined exits mixed with leisure walk-ins.
+    into: day type -> station -> real arrivals into the area per clock hour (into_area_arrivals).
+    Station entries share STATION_SHARE of the daily total in proportion to their station's
+    arrivals into the area and follow that station's exit shape (entries of one station split it
+    equally); street entries share the rest in proportion to the width of the street they sit
+    on, timed by all the stations' arrivals together mixed with leisure walk-ins.
     """
     stations = [e for e in map_data.entryPoints if e.kind == "station"]
     streets = [e for e in map_data.entryPoints if e.kind == "street"]
     station_share = STATION_SHARE if stations and streets else (1.0 if stations else 0.0)
-    groups: dict[str, list[EntryPoint]] = {}
-    for entry in stations:
-        groups.setdefault(station_key(entry), []).append(entry)
     widths = {e.id: street_width_at(e, map_data.streets) for e in streets}
     total_width = sum(widths.values())
+    by_station: dict[str, list[EntryPoint]] = {}
+    for entry in stations:
+        by_station.setdefault(rail_station_of(entry), []).append(entry)
     hourly: dict[str, dict[str, list[float]]] = {e.id: {} for e in map_data.entryPoints}
     for day_type, total in totals.items():
         station_total = total * station_share
-        combined = exits.weekday if day_type == "weekday" else exits.weekend
-        for name, members in groups.items():
-            profile = exits.profile(name, day_type)
-            per_entry = station_total * sum(profile) / sum(combined) / len(members)
-            shape = _normalise(profile)
+        arrivals = into[day_type]
+        in_map = sum(sum(arrivals[name]) for name in by_station)
+        for name, members in by_station.items():
+            per_entry = station_total * sum(arrivals[name]) / in_map / len(members)
+            shape = _normalise(arrivals[name])
             for entry in members:
                 hourly[entry.id][day_type] = [per_entry * s for s in shape]
-        street_hours = street_shape(_normalise(combined), day_type)
+        rail_shape = _normalise(_sum_by_hour(list(arrivals.values())))
+        street_hours = street_shape(rail_shape, day_type)
         for entry in streets:
             per_entry = (total - station_total) * widths[entry.id] / total_width
             hourly[entry.id][day_type] = [per_entry * s for s in street_hours]
@@ -678,14 +725,19 @@ def returning_estimate(
 # --- notes ----------------------------------------------------------------------------------
 
 
-def _station_split(exits: StationExits) -> str:
-    return ", ".join(f"{name} {sum(v[0]):,.0f}" for name, v in exits.by_station.items())
-
-
 def _numbat_label(exits: StationExits) -> str:
     if exits.measured:
         return "TfL NUMBAT 2025, mean of calendar days"
     return f"TfL NUMBAT 2025 snapshot of {SNAPSHOT_DATE}, fallback"
+
+
+def _into_area_detail(exits: StationExits, into: dict[str, dict[str, list[float]]]) -> str:
+    return "; ".join(
+        f"{name} {sum(exits.weekday[name]):,.0f} / {sum(exits.weekend[name]):,.0f} x "
+        f"{RAIL_STATIONS[name].into_area:.0%} = {sum(into['weekday'][name]):,.0f} / "
+        f"{sum(into['weekend'][name]):,.0f}"
+        for name in exits.weekday
+    )
 
 
 def _night_note(exits: StationExits, calls_station: bool | None) -> str:
@@ -696,12 +748,15 @@ def _night_note(exits: StationExits, calls_station: bool | None) -> str:
     else:
         route = "TfL's Windrush Night route did NOT list Shoreditch High Street this build"
     if exits.night_exits:
-        measured = ", ".join(f"{NIGHT_LABELS[d]} {v:.0f}" for d, v in exits.night_exits.items())
-        data = f"NUMBAT SHS exits 01:00-05:00 by night: {measured}"
+        measured = "; ".join(
+            f"{name}: " + ", ".join(f"{NIGHT_LABELS[d]} {v:.0f}" for d, v in nights.items())
+            for name, nights in exits.night_exits.items()
+        )
+        data = f"NUMBAT exits 01:00-05:00 by night: {measured}"
     else:
         data = "per-night NUMBAT exits not available (snapshot)"
     return (
-        f"Night Overground: {route}; {data}. Late station arrivals therefore sit in the 00-04 "
+        f"Night services: {route}; {data}. Late station arrivals therefore sit in the 00-04 "
         "hours of the weekend profile (Sat/Sun mornings) and are ~0 on weekday nights."
     )
 
@@ -711,7 +766,8 @@ def _street_note(widths: dict[str, float]) -> str:
     split = ", ".join(f"{entry_id} {width:g} m" for entry_id, width in widths.items()) or "none"
     return (
         f"Street entries (assumption): hourly arrivals at street edges are not measured here; "
-        f"timing = {1 - weekday:.0%} weekday / {1 - weekend:.0%} weekend SHS exit timing plus "
+        f"timing = {1 - weekday:.0%} weekday / {1 - weekend:.0%} weekend exit timing of the "
+        f"stations' arrivals into the area plus "
         f"{weekday:.0%} / {weekend:.0%} night-time-economy walk-ins (weekday 11:00-01:00, peak "
         f"17-23; weekend 10:00-04:00, peak 20-24). Split across street entries by the width of "
         f"the street each sits on: {split}."
@@ -777,6 +833,10 @@ def _normalise(values: Sequence[float]) -> list[float]:
 
 def _mean_by_hour(days: Sequence[Sequence[float]]) -> list[float]:
     return [sum(day[h] for day in days) / len(days) for h in range(24)]
+
+
+def _sum_by_hour(profiles: Sequence[Sequence[float]]) -> list[float]:
+    return [sum(profile[h] for profile in profiles) for h in range(24)]
 
 
 def _rounded(values: Sequence[float]) -> list[float]:
