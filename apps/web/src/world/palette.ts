@@ -48,4 +48,4 @@ export const BUILDING_COLORS: Record<BuildingKind, string> = {
 export const LAMP = "#ffc857"; // the warm lit-window yellow, also the UI accent
 export const LIGHT_INTENSITY: Record<LightLevel, number> = { off: 0, low: 0.55, high: 1 };
 
-export const GROUND = { grass: "#7d917a", pavement: "#b9bec6", asphalt: "#5b6270", marking: "#e8e2cf" };
+export const GROUND = { grass: "#7d917a", city: "#9ea2a8", pavement: "#b9bec6", asphalt: "#5b6270", marking: "#e8e2cf" };

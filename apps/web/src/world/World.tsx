@@ -21,11 +21,13 @@ import Skyline from "./modules/Skyline";
 import StreetDressing from "./modules/StreetDressing";
 import StreetEvents from "./modules/StreetEvents";
 import Streets from "./modules/Streets";
+import Surroundings from "./modules/Surroundings";
 import Traffic from "./modules/Traffic";
 
 export const MODULES: Record<string, ComponentType> = {
   Sky,
   Ground,
+  Surroundings,
   Skyline,
   Streets,
   Buildings,

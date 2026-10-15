@@ -1,7 +1,7 @@
 // Module: Infill (decorative only). Fills the land the real OSM map leaves empty with believable Shoreditch fabric:
 // brick terraces and warehouses along street frontages, offices, yards, pocket parks with railings, car parks, a
 // Boxpark-style container market and a fenced construction site with cranes on the biggest void (the Goodsyard),
-// plus a low-detail ring of blocks outside the map so the city doesn't stop dead at the edge.
+// (Beyond the map edge the Surroundings module takes over with one continuous street network.)
 // Pure set dressing: never clickable (raycast disabled), never feeds data. Planning lives in sim/infill.ts.
 // Draw calls: buildings are merged per material (window textures need per-building UVs), everything else is instanced.
 import { useFrame } from "@react-three/fiber";
@@ -19,10 +19,10 @@ import {
   type Material,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import type { CityMap, Street } from "../../api/contract";
+import type { CityMap } from "../../api/contract";
 import { rng, type Rng } from "../../mock/rng";
 import { toScene } from "../../sim/geometry";
-import { planInfill, rectStreetDistance, type Plot, type Rect } from "../../sim/infill";
+import { planInfill, type Plot } from "../../sim/infill";
 import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
@@ -272,8 +272,6 @@ function build(map: CityMap): Built {
     }
   }
 
-  ring(map, addBuilding, addRoof, pads, trunks, crowns);
-
   // ---- materials & geometries ----
   const windowMats: Built["windowMats"] = [];
   const merged: Built["merged"] = [];
@@ -315,99 +313,6 @@ function build(map: CityMap): Built {
 
   const cr = rng(91);
   return { merged, inst, windowMats, cranes: plan.cranes.map((c) => ({ ...c, rot: cr() * Math.PI * 2 })) };
-}
-
-/** Low-detail blocks in a ring outside the bounds, leaving the streets that run off the map as roads. */
-function ring(
-  map: CityMap,
-  addBuilding: (style: Style, x: number, z: number, w: number, d: number, h: number, y0?: number) => void,
-  addRoof: (x: number, z: number, w: number, d: number, y: number, hh: number) => void,
-  pads: Bag,
-  trunks: Bag,
-  crowns: Bag,
-) {
-  const { minX, maxX, minZ, maxZ } = map.bounds;
-  const r = rng(4242);
-  const OUT = 90; // ring reaches this far beyond the bounds
-  // streets that leave the map, continued straight out as roads
-  const exits: Street[] = [];
-  for (const s of map.streets)
-    for (const [k, k2] of [
-      [0, 1],
-      [s.points.length - 1, s.points.length - 2],
-    ]) {
-      const [x, z] = s.points[k];
-      const onEdge = Math.abs(x - minX) < 2 || Math.abs(x - maxX) < 2 || Math.abs(z - minZ) < 2 || Math.abs(z - maxZ) < 2;
-      if (!onEdge || s.points.length < 2) continue;
-      const [px, pz] = s.points[k2];
-      const len = Math.hypot(x - px, z - pz) || 1;
-      const end: [number, number] = [x + ((x - px) / len) * (OUT + 40), z + ((z - pz) / len) * (OUT + 40)];
-      exits.push({ id: `${s.id}-exit`, name: s.name, width: s.width, points: [[x, z], end] });
-      const [sx, sz] = toScene(x, z);
-      const [ex, ez] = toScene(...end);
-      const o = new Object3D();
-      o.position.set((sx + ex) / 2, 0.03, (sz + ez) / 2);
-      o.rotation.set(0, Math.atan2(ex - sx, ez - sz), 0);
-      o.scale.set(s.width, 1, Math.hypot(ex - sx, ez - sz));
-      o.updateMatrix();
-      pads.items.push({ m: o.matrix.clone(), c: new Color(GROUND.asphalt) });
-    }
-
-  // pavement under the ring, as four strips
-  const cx = (minX + maxX) / 2;
-  const cz = (minZ + maxZ) / 2;
-  const W = maxX - minX;
-  const D = maxZ - minZ;
-  const pav = "#aeb2b8";
-  pads.add(cx, -0.03, maxZ + 8 + (OUT - 8) / 2, W + OUT * 2, 1, OUT - 8, 0, pav);
-  pads.add(cx, -0.03, minZ - 8 - (OUT - 8) / 2, W + OUT * 2, 1, OUT - 8, 0, pav);
-  pads.add(maxX + 8 + (OUT - 8) / 2, -0.03, cz, OUT - 8, 1, D + 16, 0, pav);
-  pads.add(minX - 8 - (OUT - 8) / 2, -0.03, cz, OUT - 8, 1, D + 16, 0, pav);
-
-  const placed: Rect[] = [];
-  const clear = (b: Rect) =>
-    exits.every((e) => rectStreetDistance(b, e) > e.width / 2 + 5) &&
-    placed.every((o) => Math.abs(o.x - b.x) * 2 >= o.w + b.w + 0.5 || Math.abs(o.z - b.z) * 2 >= o.d + b.d + 0.5);
-  const styles: Style[] = ["brick", "brickDark", "stock", "warehouse", "office", "brickWarm", "officeWarm"];
-  // two rows deep on each side: a frontage row facing the map, a back row behind a lane
-  for (const [inner, depthRange] of [
-    [14, [14, 22]],
-    [44, [16, 30]],
-  ] as const) {
-    for (const side of ["n", "s", "e", "w"] as const) {
-      const horizontal = side === "n" || side === "s";
-      const from = (horizontal ? minX : minZ) - (horizontal ? OUT : inner);
-      const to = (horizontal ? maxX : maxZ) + (horizontal ? OUT : inner);
-      let a = from;
-      while (a < to) {
-        const len = 12 + r() * 22;
-        const dep = depthRange[0] + r() * (depthRange[1] - depthRange[0]);
-        const along = a + len / 2;
-        const off = inner + dep / 2;
-        const b: Rect = horizontal
-          ? { x: along, z: side === "n" ? maxZ + off : minZ - off, w: len - 0.4, d: dep }
-          : { x: side === "e" ? maxX + off : minX - off, z: along, w: dep, d: len - 0.4 };
-        a += len + (r() < 0.15 ? 8 : 0);
-        if (!clear(b)) continue;
-        placed.push(b);
-        if (r() < 0.12) {
-          // a little green between blocks
-          pads.add(b.x, 0, b.z, b.w, 1, b.d, 0, "#6f9a5c");
-          for (let k = 0; k < 3; k++) {
-            const tx = b.x + (r() - 0.5) * (b.w - 4);
-            const tz = b.z + (r() - 0.5) * (b.d - 4);
-            trunks.add(tx, 0, tz, 1, 1, 1);
-            crowns.add(tx, 0, tz, 1, 1, 1, 0, "#62875a");
-          }
-          continue;
-        }
-        const style = styles[Math.floor(r() * styles.length)];
-        const h = style.startsWith("office") ? 18 + r() * 24 : 10 + r() * 9;
-        addBuilding(style, b.x, b.z, b.w, b.d, h);
-        if (!style.startsWith("office")) addRoof(b.x, b.z, b.w + 0.4, b.d + 0.4, h, 0.45);
-      }
-    }
-  }
 }
 
 function Instanced({ geo, mat, items, shadow, name }: Built["inst"][number]) {
