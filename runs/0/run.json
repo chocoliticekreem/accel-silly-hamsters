@@ -1,0 +1,14 @@
+{
+  "run": 0,
+  "seed": 42,
+  "status": "done",
+  "kpis": {
+    "visits": 2828,
+    "kwh": 1448.0,
+    "visitsPerKwh": 1.953,
+    "returnRate": 0.36
+  },
+  "notebook": "Sample run: hand-made data, not simulated",
+  "createdAt": "2026-10-15T09:00:00Z",
+  "costPerStoreWeekGbp": 0.0
+}

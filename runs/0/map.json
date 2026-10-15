@@ -1,0 +1,328 @@
+{
+  "bounds": {
+    "minX": -250.0,
+    "maxX": 250.0,
+    "minZ": -250.0,
+    "maxZ": 250.0
+  },
+  "streets": [
+    {
+      "id": "shoreditch-high-st",
+      "name": "Shoreditch High St",
+      "points": [
+        [
+          0.0,
+          -250.0
+        ],
+        [
+          0.0,
+          250.0
+        ]
+      ],
+      "width": 12.0
+    },
+    {
+      "id": "redchurch-st",
+      "name": "Redchurch St",
+      "points": [
+        [
+          0.0,
+          60.0
+        ],
+        [
+          250.0,
+          60.0
+        ]
+      ],
+      "width": 8.0
+    },
+    {
+      "id": "great-eastern-st",
+      "name": "Great Eastern St",
+      "points": [
+        [
+          -250.0,
+          -60.0
+        ],
+        [
+          0.0,
+          -60.0
+        ]
+      ],
+      "width": 10.0
+    },
+    {
+      "id": "holywell-ln",
+      "name": "Holywell Lane",
+      "points": [
+        [
+          0.0,
+          -60.0
+        ],
+        [
+          250.0,
+          -60.0
+        ]
+      ],
+      "width": 8.0
+    },
+    {
+      "id": "rivington-st",
+      "name": "Rivington St",
+      "points": [
+        [
+          -250.0,
+          140.0
+        ],
+        [
+          0.0,
+          140.0
+        ]
+      ],
+      "width": 8.0
+    }
+  ],
+  "buildings": [
+    {
+      "id": "b12",
+      "kind": "store",
+      "storeId": "s3",
+      "x": 30.0,
+      "z": 40.0,
+      "w": 20.0,
+      "d": 15.0,
+      "h": 12.0
+    },
+    {
+      "id": "b13",
+      "kind": "office",
+      "x": -60.0,
+      "z": 10.0,
+      "w": 40.0,
+      "d": 30.0,
+      "h": 30.0
+    },
+    {
+      "id": "b14",
+      "kind": "club",
+      "storeId": "c1",
+      "x": 80.0,
+      "z": -30.0,
+      "w": 30.0,
+      "d": 25.0,
+      "h": 10.0
+    },
+    {
+      "id": "b15",
+      "kind": "store",
+      "storeId": "s1",
+      "x": 115.0,
+      "z": -32.0,
+      "w": 16.0,
+      "d": 14.0,
+      "h": 9.0
+    },
+    {
+      "id": "b16",
+      "kind": "store",
+      "storeId": "s2",
+      "x": 120.0,
+      "z": 74.0,
+      "w": 18.0,
+      "d": 14.0,
+      "h": 10.0
+    },
+    {
+      "id": "b17",
+      "kind": "store",
+      "storeId": "s4",
+      "x": -30.0,
+      "z": -78.0,
+      "w": 16.0,
+      "d": 12.0,
+      "h": 8.0
+    },
+    {
+      "id": "b18",
+      "kind": "residential",
+      "x": -150.0,
+      "z": 95.0,
+      "w": 50.0,
+      "d": 40.0,
+      "h": 24.0
+    },
+    {
+      "id": "b19",
+      "kind": "residential",
+      "x": 160.0,
+      "z": -150.0,
+      "w": 60.0,
+      "d": 40.0,
+      "h": 21.0
+    },
+    {
+      "id": "b20",
+      "kind": "office",
+      "x": -140.0,
+      "z": -150.0,
+      "w": 50.0,
+      "d": 50.0,
+      "h": 36.0
+    },
+    {
+      "id": "b21",
+      "kind": "station",
+      "x": -22.0,
+      "z": -20.0,
+      "w": 20.0,
+      "d": 16.0,
+      "h": 7.0
+    },
+    {
+      "id": "b22",
+      "kind": "residential",
+      "x": 60.0,
+      "z": 160.0,
+      "w": 50.0,
+      "d": 40.0,
+      "h": 27.0
+    },
+    {
+      "id": "b23",
+      "kind": "office",
+      "x": 170.0,
+      "z": 130.0,
+      "w": 50.0,
+      "d": 40.0,
+      "h": 30.0
+    }
+  ],
+  "stores": [
+    {
+      "id": "s1",
+      "name": "Night Kebab",
+      "type": "takeaway",
+      "buildingId": "b15",
+      "licensedHours": {
+        "open": "10:00",
+        "close": "04:00"
+      },
+      "defaultHours": {
+        "open": "11:00",
+        "close": "23:00"
+      },
+      "floorArea": 85.0
+    },
+    {
+      "id": "s2",
+      "name": "Corner Bar",
+      "type": "bar",
+      "buildingId": "b16",
+      "licensedHours": {
+        "open": "12:00",
+        "close": "01:00"
+      },
+      "defaultHours": {
+        "open": "16:00",
+        "close": "00:00"
+      },
+      "floorArea": 140.0
+    },
+    {
+      "id": "s3",
+      "name": "Cafe",
+      "type": "cafe",
+      "buildingId": "b12",
+      "licensedHours": {
+        "open": "06:00",
+        "close": "04:00"
+      },
+      "defaultHours": {
+        "open": "07:00",
+        "close": "23:00"
+      },
+      "floorArea": 120.0
+    },
+    {
+      "id": "s4",
+      "name": "Corner Shop",
+      "type": "shop",
+      "buildingId": "b17",
+      "licensedHours": {
+        "open": "06:00",
+        "close": "23:00"
+      },
+      "defaultHours": {
+        "open": "08:00",
+        "close": "20:00"
+      },
+      "floorArea": 60.0
+    },
+    {
+      "id": "c1",
+      "name": "Basement Club",
+      "type": "club",
+      "buildingId": "b14",
+      "licensedHours": {
+        "open": "22:00",
+        "close": "04:00"
+      },
+      "defaultHours": {
+        "open": "22:00",
+        "close": "03:00"
+      },
+      "floorArea": 600.0
+    }
+  ],
+  "entryPoints": [
+    {
+      "id": "e1",
+      "kind": "street",
+      "x": 0.0,
+      "z": 250.0
+    },
+    {
+      "id": "e2",
+      "kind": "street",
+      "x": 0.0,
+      "z": -250.0
+    },
+    {
+      "id": "e3",
+      "kind": "street",
+      "x": 250.0,
+      "z": 60.0
+    },
+    {
+      "id": "e4",
+      "kind": "street",
+      "x": -250.0,
+      "z": -60.0
+    },
+    {
+      "id": "e5",
+      "kind": "street",
+      "x": 250.0,
+      "z": -60.0
+    },
+    {
+      "id": "e6",
+      "kind": "street",
+      "x": -250.0,
+      "z": 140.0
+    },
+    {
+      "id": "st1",
+      "kind": "station",
+      "name": "Shoreditch High St",
+      "x": 0.0,
+      "z": 0.0
+    }
+  ],
+  "sources": [
+    {
+      "label": "Hand-made sample map (not OpenStreetMap), from the contract sample",
+      "url": "docs/FRONTEND_PROMPT.md"
+    }
+  ]
+}
