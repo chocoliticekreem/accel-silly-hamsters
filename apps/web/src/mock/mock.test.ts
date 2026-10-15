@@ -92,6 +92,42 @@ describe("store insights", () => {
   });
 });
 
+describe("store overview (owner page)", () => {
+  const kebab = () => state.map.stores.find((s) => s.name === "Kebab Co")!.id;
+
+  it("defaults to the best run and tells the owner, in plain words, what changed and what it earned", async () => {
+    const o = (await api.overview(kebab()))!;
+    expect(o.run).toBe(state.bestRun());
+    expect(o.status).toBe("best_found");
+    expect(o.history[0]).toMatchObject({ run: 1, label: "Your current settings" });
+    expect(o.history.some((h) => h.label === "Open till 03:00")).toBe(true);
+    expect(o.numbers.customersPerWeek.change).toBeGreaterThan(0);
+    expect(o.numbers.profitChangePerWeekGbp).toBeGreaterThan(0);
+    expect(o.headline).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u); // no emoji
+    // "best" in the history is this shop's most profitable run
+    const best = o.history.filter((h) => h.best);
+    expect(best).toHaveLength(1);
+    expect(best[0].profitChangePerWeekGbp).toBe(Math.max(...o.history.map((h) => h.profitChangePerWeekGbp)));
+  });
+
+  it("gives run-1 advice as plain sentences, best £ first, at most three", async () => {
+    const o = (await api.overview(kebab(), 1))!;
+    expect(o.advice.length).toBeGreaterThan(0);
+    expect(o.advice.length).toBeLessThanOrEqual(3);
+    expect(o.advice.some((a) => /^Stay open until 03:00: about \d+ more customers a week\.$/.test(a.text))).toBe(true);
+    expect(o.advice[0].gbpPerWeek).toBeGreaterThanOrEqual(o.advice[o.advice.length - 1].gbpPerWeek);
+    for (const a of o.advice) expect(["likely", "worth testing", "uncertain"]).toContain(a.certainty);
+    expect(o.headline).toBe(o.advice[0].text);
+  });
+
+  it("keeps to this shop (data firewall) and has no page for clubs", async () => {
+    const o = (await api.overview(kebab()))!;
+    const json = JSON.stringify(o);
+    for (const s of state.map.stores) if (s.id !== kebab()) expect(json).not.toContain(`"${s.id}"`);
+    expect(await api.overview("c1")).toBeNull();
+  });
+});
+
 describe("mock runs", () => {
   it("returns runs whose main KPI improves from run 1 to the best run", async () => {
     const runs = await api.runs();

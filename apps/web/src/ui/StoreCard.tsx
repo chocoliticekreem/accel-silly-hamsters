@@ -12,6 +12,8 @@ import { HourStrip } from "./HourStrip";
 import { Icon } from "./icons";
 import { InsightsPanel } from "./InsightsPanel";
 import { SuggestionList } from "./SuggestionList";
+import { TypeIcon } from "./TypeIcon";
+import { navigate, storePath } from "../router";
 
 export function StoreCard() {
   const id = useSim((s) => s.selectedStoreId);
@@ -62,7 +64,9 @@ export function StoreCard() {
   return (
     <aside className="store-card panel" aria-label={`${store.name} card`}>
       <header className="card-head" style={{ ["--accent" as string]: STORE_COLORS[store.type].awning }}>
-        <span className="type-badge">{STORE_COLORS[store.type].icon}</span>
+        <span className="type-badge">
+          <TypeIcon type={store.type} />
+        </span>
         <div>
           <h2>{store.name}</h2>
           <div className="card-sub">
@@ -101,8 +105,8 @@ export function StoreCard() {
       {tab === "insights" && !isClub ? (
         <>
           <InsightsPanel storeId={id} run={run} onApply={() => apply("store")} />
-          <button className="btn btn-report" onClick={() => useSim.getState().openPanel("report")}>
-            <Icon name="report" /> Weekly report
+          <button className="btn btn-report" onClick={() => navigate(storePath(id))}>
+            <Icon name="report" /> Open shop page
           </button>
         </>
       ) : (
@@ -134,8 +138,8 @@ export function StoreCard() {
               {busy === "all" ? "Applying…" : "Apply all"}
             </button>
           </div>
-          <button className="btn btn-report" onClick={() => useSim.getState().openPanel("report")}>
-            <Icon name="report" /> Weekly report
+          <button className="btn btn-report" onClick={() => navigate(storePath(id))}>
+            <Icon name="report" /> Open shop page
           </button>
         </>
       )}

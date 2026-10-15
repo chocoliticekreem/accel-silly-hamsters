@@ -9,6 +9,7 @@ import { STORE_COLORS } from "../world/palette";
 import { Delta } from "./Delta";
 import { Icon } from "./icons";
 import { SuggestionRow } from "./SuggestionList";
+import { TypeIcon } from "./TypeIcon";
 
 type Decision = "approve" | "reject";
 
@@ -60,7 +61,9 @@ export function OwnerReport() {
     <div className="modal-backdrop" onClick={close}>
       <section className="report panel" role="dialog" aria-label="Weekly report" onClick={(e) => e.stopPropagation()}>
         <header className="card-head" style={{ ["--accent" as string]: STORE_COLORS[store.type].awning }}>
-          <span className="type-badge">{STORE_COLORS[store.type].icon}</span>
+          <span className="type-badge">
+            <TypeIcon type={store.type} />
+          </span>
           <div>
             <div className="eyebrow">Weekly report · run {run}</div>
             <h2>{store.name}</h2>

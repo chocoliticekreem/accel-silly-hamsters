@@ -14,6 +14,7 @@ import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { LAMP, LIGHT_INTENSITY, STORE_COLORS } from "../palette";
 import { glowTexture } from "../textures";
+import { TypeIcon } from "../../ui/TypeIcon";
 
 export default function Stores() {
   const { map } = useWorld();
@@ -173,7 +174,7 @@ function StoreBox({ store, b, nx, nz }: { store: Store; b: Building; nx: number;
       {(hovered || selected) && (
         <Html position={[0, h + 4, 0]} center distanceFactor={260} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
           <div className="map-label">
-            <span>{colors.icon}</span>
+            <TypeIcon type={store.type} size={14} />
             {store.name}
           </div>
         </Html>

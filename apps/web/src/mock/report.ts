@@ -1,47 +1,15 @@
 // Suggestions = the config diff between a run and the next one. Owner report = the diff between what a store
 // runs in a given run and the best run found, with impact taken from the simulated results.
-import type { ExpectedDelta, LightLevel, OwnerReport, RunStores, StoreType, Suggestion } from "../api/contract";
+import type { ExpectedDelta, OwnerReport, RunStores, StoreType, Suggestion } from "../api/contract";
 import { DAYS_PER_RUN, type Confidence } from "../api/contract";
 import { parseHHMM } from "../sim/time";
-import type { RunConfig, StoreConfig } from "./configs";
+import type { RunConfig } from "./configs";
 import { LIGHT_KWH } from "./simulate";
 
-/** Average spend per visit (£) by type, for the £/week line. */
-export const SPEND_GBP: Record<StoreType, number> = { cafe: 6, restaurant: 22, takeaway: 9, bar: 14, shop: 15, offlicence: 8, club: 0 };
-export const GBP_PER_KWH = 0.28;
-/** Share of extra takings an owner keeps (the £/week line is profit, not revenue). */
-export const GROSS_MARGIN = 0.3;
-
-/** A suggestion before its expected delta is known (Omit that keeps the field union intact). */
-export type Change = Suggestion extends infer S ? (S extends Suggestion ? Omit<S, "expectedDelta"> : never) : never;
-
-/** Groups consecutive hours whose lighting changed the same way into one suggestion. */
-function lightingDiff(storeId: string, a: LightLevel[], b: LightLevel[]): Omit<Extract<Suggestion, { field: "lighting" }>, "expectedDelta">[] {
-  const out: Omit<Extract<Suggestion, { field: "lighting" }>, "expectedDelta">[] = [];
-  // walk the day starting at 05:00 so overnight ranges (23–03) stay together
-  const order = Array.from({ length: 24 }, (_, i) => (i + 5) % 24);
-  let cur: (typeof out)[number] | null = null;
-  for (const h of order) {
-    if (a[h] === b[h]) {
-      cur = null;
-      continue;
-    }
-    if (cur && cur.from === a[h] && cur.to === b[h] && cur.hours[cur.hours.length - 1] === (h + 23) % 24) cur.hours.push(h);
-    else {
-      cur = { storeId, field: "lighting", hours: [h], from: a[h], to: b[h] };
-      out.push(cur);
-    }
-  }
-  return out;
-}
-
-export function diffStore(storeId: string, a: StoreConfig, b: StoreConfig): Change[] {
-  const out: Change[] = [];
-  if (a.open !== b.open) out.push({ storeId, field: "open", from: a.open, to: b.open });
-  if (a.close !== b.close) out.push({ storeId, field: "close", from: a.close, to: b.close });
-  out.push(...lightingDiff(storeId, a.lighting, b.lighting));
-  return out;
-}
+import { diffStore, type Change } from "../sim/diff";
+export { GBP_PER_KWH, GROSS_MARGIN, SPEND_GBP } from "../sim/economics";
+import { GBP_PER_KWH, GROSS_MARGIN, SPEND_GBP } from "../sim/economics";
+export { diffStore, type Change };
 
 const frac = (a: number, b: number) => (a > 0 ? Math.round(((b - a) / a) * 100) / 100 : 0);
 

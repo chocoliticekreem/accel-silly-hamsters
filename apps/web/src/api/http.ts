@@ -1,5 +1,6 @@
 // Real backend client. Every path matches docs/FRONTEND_PROMPT.md.
-import type { Api } from "./contract";
+import { ApiError, type Api, type AnalystStatus } from "./contract";
+import { overviewFromParts } from "./overviewFallback";
 
 export function httpApi(base: string): Api {
   const root = base.replace(/\/$/, "");
@@ -24,11 +25,11 @@ export function httpApi(base: string): Api {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`POST ${path} → ${res.status}`);
+    if (!res.ok) throw new ApiError(`POST ${path} → ${res.status}`, res.status);
     return res.json() as Promise<T>;
   }
 
-  return {
+  const self: Api = {
     map: () => get("/api/map"),
     runs: () => get("/api/runs"),
     runStores: (run) => get(`/api/runs/${run}/stores`),
@@ -42,7 +43,13 @@ export function httpApi(base: string): Api {
     summary: (run) => getOptional(`/api/runs/${run}/summary`),
     health: () => getOptional("/api/health"),
     insights: (storeId, run) => getOptional(`/api/stores/${encodeURIComponent(storeId)}/insights?run=${run}`),
+    // the real endpoint when served, else composed from runs + store results + suggestions
+    overview: async (storeId, run) =>
+      (await getOptional(`/api/stores/${encodeURIComponent(storeId)}/overview${run === undefined ? "" : `?run=${run}`}`)) ??
+      overviewFromParts(self, storeId, run),
+    optimize: (storeId, maxRuns) => post<AnalystStatus>(`/api/stores/${encodeURIComponent(storeId)}/optimize`, maxRuns ? { maxRuns } : {}),
   };
+  return self;
 }
 
 /** Resolves a backend-relative URL (e.g. a report pdfUrl) against the API origin. */

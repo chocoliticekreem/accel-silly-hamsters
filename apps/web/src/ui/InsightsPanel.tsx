@@ -1,6 +1,7 @@
 // Store insights ("PostHog for shop energy"): ranked actions first, then the evidence behind them —
 // funnel, the 24-hour picture (passers-by, visits, people who found it shut), where the kWh goes,
 // anonymous benchmarks and who comes in. Numbers and short labels only.
+import { ChartColumn, Clock, DoorClosed, Flashlight, Lightbulb, type LucideIcon } from "lucide-react";
 import type { StoreInsights } from "../api/contract";
 import { useInsights } from "../state/data";
 import { useSim } from "../state/store";
@@ -12,12 +13,12 @@ import { Pips, SuggestionRow } from "./SuggestionList";
 
 type Insight = StoreInsights["insights"][number];
 
-const KIND_ICON: Record<Insight["kind"], string> = {
-  missed_demand: "🚪",
-  wasted_energy: "💡",
-  dead_hours: "🕰",
-  lighting_opportunity: "🔦",
-  benchmark: "📊",
+const KIND_ICON: Record<Insight["kind"], LucideIcon> = {
+  missed_demand: DoorClosed,
+  wasted_energy: Lightbulb,
+  dead_hours: Clock,
+  lighting_opportunity: Flashlight,
+  benchmark: ChartColumn,
 };
 
 function replayFrom(url: string, storeId: string) {
@@ -34,7 +35,10 @@ function InsightCard({ ins, storeId, onApply }: { ins: Insight; storeId: string;
     <li className={`insight sev-${ins.severity}`}>
       <div className="insight-head">
         <span className="insight-icon" aria-hidden>
-          {KIND_ICON[ins.kind]}
+          {(() => {
+            const I = KIND_ICON[ins.kind];
+            return <I size={14} />;
+          })()}
         </span>
         <b className="insight-title">{ins.title}</b>
         <Pips level={ins.confidence} />
