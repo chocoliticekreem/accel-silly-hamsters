@@ -383,7 +383,7 @@ def test_optimize_defaults_and_validation(client: TestClient, fake_train: list[d
     assert client.post("/api/stores/s1/optimize").status_code == 202
     assert fake_train[-1] == {"max_runs": 6, "scope_store": "s1"}
     save_state("stopped")
-    assert client.post("/api/stores/s1/optimize", json={"maxRuns": 11}).status_code == 422
+    assert client.post("/api/stores/s1/optimize", json={"maxRuns": 41}).status_code == 422
     assert client.post("/api/stores/s1/optimize", json={"maxRuns": 1}).status_code == 422
     assert client.post("/api/stores/c1/optimize").status_code == 404
     assert client.post("/api/stores/nope/optimize").status_code == 404
