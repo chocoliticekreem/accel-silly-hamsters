@@ -1,6 +1,7 @@
 // Owners are people, and the city has an economy (docs/PEOPLE_ECONOMY.md). Additive endpoints, kept apart from
 // contract.ts: owners and their money, the ledger, life stories, interventions (forked runs) and daily headlines.
-// Same switch as client.ts: VITE_API_URL unset = mock. Every endpoint is optional: a 404 reads as empty / null.
+// Same switch as client.ts (live backend, the production snapshot, else mock). Every endpoint is optional: a 404 reads as empty / null.
+import { API_URL } from "./client";
 import type { AgentDay } from "./contract";
 import { mockEconomyApi } from "../mock/economy";
 
@@ -240,5 +241,5 @@ export function httpEconomyApi(base: string): EconomyApi {
   };
 }
 
-const ECON_URL: string | undefined = import.meta.env.VITE_API_URL || undefined;
+const ECON_URL: string | undefined = API_URL;
 export const economyApi: EconomyApi = ECON_URL ? httpEconomyApi(ECON_URL) : mockEconomyApi();
