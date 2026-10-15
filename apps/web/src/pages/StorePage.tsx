@@ -3,7 +3,7 @@
 // granular analytics only behind "Details". No emoji; always "simulated, not guaranteed".
 import { ArrowLeft, Check, ChevronDown, ChevronRight, Download, ExternalLink, FlaskConical, NotebookPen, PlayCircle, Sparkles, X } from "lucide-react";
 import { useState } from "react";
-import { API_URL, USING_MOCK, api } from "../api/client";
+import { API_URL, api } from "../api/client";
 import { absoluteUrl } from "../api/http";
 import { ApiError, type StoreOverview } from "../api/contract";
 import { navigate, storePath } from "../router";
@@ -123,7 +123,7 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
         <button className="sp-back" onClick={() => navigate("/")}>
           <ArrowLeft size={16} /> Shoreditch
         </button>
-        {USING_MOCK && <span className="chip chip-mock">mock data</span>}
+
       </header>
 
       {error && <div className="empty">Couldn't load this shop</div>}
@@ -265,7 +265,7 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
           <section className="sp-card">
             <div className="sp-card-head">
               <h2>What we tried</h2>
-              <span className="muted">same 14 days, re-simulated</span>
+              <span className="muted">same 14 days, re-run</span>
             </div>
             <div className="sp-table-wrap">
             <table className="sp-history">
@@ -315,7 +315,6 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
             {details && <InsightsPanel storeId={storeId} run={o.run} />}
           </section>
 
-          <footer className="sp-note">{o.note ?? "Simulated, not guaranteed."} · You approve every change · Only your shop's data</footer>
         </main>
       )}
       <DemoBar />

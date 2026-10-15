@@ -22,6 +22,7 @@ import Infill from "./modules/Infill";
 import Construction from "./modules/Construction";
 import Sky from "./modules/Sky";
 import Stores from "./modules/Stores";
+import Businesses from "./modules/Businesses";
 import StreetLights from "./modules/StreetLights";
 import Footfall from "./modules/Footfall";
 import Skyline from "./modules/Skyline";
@@ -68,6 +69,7 @@ export const MODULES: Record<string, ComponentType> = {
   Infill,
   Construction,
   Stores,
+  Businesses,
   HeroLandmarks,
   StreetLights,
   StreetDressing,

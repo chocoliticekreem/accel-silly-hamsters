@@ -7,14 +7,32 @@ import { absoluteUrl } from "../api/http";
 import { navigate, storePath } from "../router";
 import { SuggestionRow } from "../ui/SuggestionList";
 
-const DEMO_STORE = "s65";
-const LONG_RUN = 20;
+// the demo shop, found by name so a map rebuild that renumbers stores keeps the link working
+const DEMO_STORE_NAME = "City Best Wine";
+
+type Level = "off" | "low" | "high";
+const LEVELS: Level[] = ["off", "low", "high"];
+const TIMES = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`);
+type Draft = { open: string; close: string; lighting: Level[] };
+
+/** POST/PUT to the backend; the error message carries the API's reason (e.g. a broken rule). */
+async function send<T>(path: string, method: "POST" | "PUT", body: unknown): Promise<T> {
+  if (!API_URL) throw new Error("Connect the backend to run sessions and experiments");
+  const res = await fetch(`${API_URL.replace(/\/$/, "")}${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const d = data?.detail;
+    const why = d?.rejections?.map((r: { reason?: string }) => r.reason).filter(Boolean).join("; ");
+    throw new Error(typeof d === "string" ? d : d?.message ? `${d.message}${why ? `: ${why}` : ""}` : `Request failed (${res.status})`);
+  }
+  return data as T;
+}
 
 const STEPS: { key: Step; title: string; text: string }[] = [
   { key: "plan", title: "The analyst plans", text: "Picks the next experiment from every run so far." },
   { key: "propose", title: "Your shop's agent proposes", text: "Up to two changes to hours or lighting, from your shop's data only." },
   { key: "check", title: "Hard rules check", text: "Licensed hours, safe day lengths, 30-minute steps. Unsafe ideas never run." },
-  { key: "simulate", title: "14 days are simulated", text: "Every customer in Shoreditch lives the same fortnight with the new settings." },
+  { key: "simulate", title: "14 days play out", text: "Every customer in Shoreditch lives the same fortnight with the new settings." },
   { key: "report", title: "A report is written", text: "Customers, kWh and £ a week, with confidence and evidence." },
   { key: "approve", title: "You approve", text: "Nothing changes in your shop until you say yes." },
 ];
@@ -69,13 +87,18 @@ export function AgentsPage({ storeId: requested }: { storeId: string | null }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [decided, setDecided] = useState<Record<string, "approve" | "reject">>({});
+  const [levers, setLevers] = useState({ hours: true, lighting: true });
+  const [maxRuns, setMaxRuns] = useState(20);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draftRun, setDraftRun] = useState<number | null>(null);
+  const [pending, setPending] = useState<number | null>(null);
 
   // no shop, or one this map doesn't have (the mock city): the demo shop when present, else the first shop
   useEffect(() => {
     void api.map().then((m) => {
       const shops = m.stores.filter((s) => s.type !== "club");
       if (storeId && shops.some((s) => s.id === storeId)) return;
-      setStoreId(shops.find((s) => s.id === DEMO_STORE)?.id ?? shops[0]?.id ?? null);
+      setStoreId(shops.find((s) => s.name === DEMO_STORE_NAME)?.id ?? shops[0]?.id ?? null);
     });
   }, [storeId]);
 
@@ -94,13 +117,36 @@ export function AgentsPage({ storeId: requested }: { storeId: string | null }) {
 
   useEffect(() => {
     void refresh();
-    const id = window.setInterval(() => void refresh(), running ? 2000 : 8000);
+    const id = window.setInterval(() => void refresh(), running || pending !== null ? 2000 : 8000);
     return () => window.clearInterval(id);
-  }, [refresh, running]);
+  }, [refresh, running, pending]);
 
   const history = overview?.history ?? [];
   const best = history.find((h) => h.best) ?? null;
   const shownRun = picked ?? best?.run ?? history[history.length - 1]?.run ?? null;
+
+  useEffect(() => {
+    if (pending !== null && history.some((h) => h.run === pending)) setPending(null);
+  }, [pending, history]);
+
+  // the experiment editor starts from the selected run's settings for this shop
+  useEffect(() => {
+    if (!storeId || shownRun === null) return;
+    let live = true;
+    void api
+      .runStores(shownRun)
+      .then((all) => {
+        const cfg = all[storeId];
+        if (live && cfg) {
+          setDraft({ open: cfg.open, close: cfg.close, lighting: [...cfg.lighting] as Level[] });
+          setDraftRun(shownRun);
+        }
+      })
+      .catch(() => null);
+    return () => {
+      live = false;
+    };
+  }, [storeId, shownRun]);
 
   useEffect(() => {
     if (!storeId || shownRun === null) return;
@@ -132,7 +178,9 @@ export function AgentsPage({ storeId: requested }: { storeId: string | null }) {
     setBusy(true);
     setMessage(null);
     try {
-      await api.optimize(storeId, LONG_RUN);
+      if (!levers.hours && !levers.lighting) throw new Error("Pick at least one thing the agents may change");
+      if (API_URL) await send("/api/training/config", "PUT", { levers, maxRuns, patience: 3, storeAgents: "heuristic" });
+      await api.optimize(storeId, maxRuns);
       setMessage("The agents are running. New runs appear below as they finish.");
       await refresh();
     } catch (e) {
@@ -152,6 +200,26 @@ export function AgentsPage({ storeId: requested }: { storeId: string | null }) {
       setBusy(false);
     }
   };
+
+  const runExperiment = async () => {
+    if (!storeId || !draft) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await send<{ queuedRun: number }>(`/api/stores/${encodeURIComponent(storeId)}/experiment`, "POST", { ...draft, baseRun: draftRun ?? undefined });
+      setMessage(`Your experiment is run ${res.queuedRun}: it appears below once its 14 days have run.`);
+      setPending(res.queuedRun);
+      setPicked(res.queuedRun);
+      await refresh();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not run the experiment");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cycle = (hour: number) =>
+    setDraft((d) => (d ? { ...d, lighting: d.lighting.map((l, h) => (h === hour ? LEVELS[(LEVELS.indexOf(l) + 1) % 3] : l)) } : d));
 
   const decide = async (i: number, decision: "approve" | "reject") => {
     if (!storeId || shownRun === null) return;
@@ -191,13 +259,9 @@ export function AgentsPage({ storeId: requested }: { storeId: string | null }) {
         </div>
         <div className="ag-controls">
           <span className={`ag-pill ${running ? "on" : ""}`}>{status}</span>
-          {running ? (
+          {running && (
             <button className="ag-btn" disabled={busy} onClick={() => void stop()}>
-              Stop
-            </button>
-          ) : (
-            <button className="ag-btn ag-primary" disabled={busy} onClick={() => void start()}>
-              {history.length > 1 ? "Run the agents again" : "Start the agents"}
+              Stop the agents
             </button>
           )}
           {session && (
@@ -208,6 +272,73 @@ export function AgentsPage({ storeId: requested }: { storeId: string | null }) {
         </div>
       </header>
       {message && <p className="ag-message">{message}</p>}
+
+      <section className="ag-grid">
+        <div className="ag-card">
+          <h2>Let the agents experiment</h2>
+          <p className="ag-muted">One long session: the agents keep testing settings until three runs in a row fail to beat your best, then stop on their own.</p>
+          <div className="ag-form">
+            <label>
+              <input type="checkbox" checked={levers.hours} onChange={(e) => setLevers((l) => ({ ...l, hours: e.target.checked }))} /> Opening hours
+            </label>
+            <label>
+              <input type="checkbox" checked={levers.lighting} onChange={(e) => setLevers((l) => ({ ...l, lighting: e.target.checked }))} /> Lighting
+            </label>
+            <label>
+              Up to <input className="ag-num" type="number" min={4} max={40} value={maxRuns} onChange={(e) => setMaxRuns(Math.max(4, Math.min(40, Number(e.target.value) || 4)))} /> runs
+            </label>
+          </div>
+          {running ? (
+            <button className="ag-btn" disabled={busy} onClick={() => void stop()}>
+              Stop the agents
+            </button>
+          ) : (
+            <button className="ag-btn ag-primary" disabled={busy} onClick={() => void start()}>
+              {history.length > 1 ? "Start another long session" : "Start a long session"}
+            </button>
+          )}
+        </div>
+
+        <div className="ag-card">
+          <h2>Try your own settings</h2>
+          <p className="ag-muted">
+            Starting from {draftRun === null ? "your current settings" : `run ${draftRun}`}. The same safety rules apply: licensed hours and sensible day lengths.
+          </p>
+          {draft && (
+            <>
+              <div className="ag-form">
+                <label>
+                  Open{" "}
+                  <select value={draft.open} onChange={(e) => setDraft({ ...draft, open: e.target.value })}>
+                    {TIMES.map((t) => (
+                      <option key={t}>{t}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Close{" "}
+                  <select value={draft.close} onChange={(e) => setDraft({ ...draft, close: e.target.value })}>
+                    {TIMES.map((t) => (
+                      <option key={t}>{t}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="ag-lights" role="group" aria-label="Lighting by hour">
+                {draft.lighting.map((l, h) => (
+                  <button key={h} className={`ag-light ${l}`} onClick={() => cycle(h)} title={`${String(h).padStart(2, "0")}:00 lights ${l}`}>
+                    <span>{String(h).padStart(2, "0")}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="ag-muted">Click an hour to switch its lights: off, low, high.</p>
+              <button className="ag-btn ag-primary" disabled={busy || running} onClick={() => void runExperiment()}>
+                {pending !== null ? `Simulating run ${pending}…` : "Run this experiment"}
+              </button>
+            </>
+          )}
+        </div>
+      </section>
 
       <section className="ag-card">
         <h2>How the agents work</h2>
@@ -253,7 +384,6 @@ export function AgentsPage({ storeId: requested }: { storeId: string | null }) {
               </li>
             ))}
           </ul>
-          <p className="ag-muted">{overview.note ?? "Simulated, not guaranteed."}</p>
         </div>
       </section>
 

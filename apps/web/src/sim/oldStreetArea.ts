@@ -1,9 +1,12 @@
 // What the OldStreet module (world/modules/OldStreet.tsx) owns, so other modules keep out of it.
 // Contract coords (x east, z north). Footprints are from OpenStreetMap (public/areas/oldstreet.json).
 
-/** Backend map buildings the OldStreet module replaces (White Collar Factory campus box b2159, Grind b431);
- * listed in areaKeepouts.ts REPLACED_BUILDINGS. */
-export const OLD_STREET_HIDDEN_BUILDINGS = ["b2159", "b431"];
+/** Spots (contract) of backend map boxes the OldStreet module replaces: the White Collar Factory campus box and Grind's
+ * kiosk. By position, not building id: ids are renumbered whenever the map is rebuilt. */
+export const OLD_STREET_REPLACED_SPOTS: [number, number][] = [
+  [-945.5, 217.6],
+  [-947.0, 300.6],
+];
 
 /** OSM ways the OldStreet module draws itself (for city-wide OSM bakers to skip): the White Collar Factory campus,
  * the station entrance pavilion, its lift houses, the Exit 2 stair house, Grind's kiosk, the public space

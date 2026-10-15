@@ -73,7 +73,7 @@ export function IncidentFeed({ run, t, windowMin = 24 * 60, limit = 3 }: { run: 
     <ol className="city-feed-list city-feed-incidents" aria-label="Police and safety">
       {rows.map((r) => (
         <li key={r.key}>
-          <button className={`feed-item feed-incident ${r.licence ? "feed-incident-licence" : ""}`} onClick={() => jump(r)} title={r.licence ? "Licensing decision (synthetic)" : "Synthetic incident · places, never people"}>
+          <button className={`feed-item feed-incident ${r.licence ? "feed-incident-licence" : ""}`} onClick={() => jump(r)} title={r.licence ? "Licensing decision" : "Incident"}>
             <span className="feed-icon">
               <r.Icon size={13} aria-hidden />
             </span>

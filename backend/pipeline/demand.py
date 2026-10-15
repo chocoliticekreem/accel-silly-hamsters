@@ -41,7 +41,7 @@ log = logging.getLogger(__name__)
 
 STEP = "demand"
 # Bump when a code change alters demand.json for the same map, so the pipeline cache rebuilds it.
-MODEL_VERSION = 5
+MODEL_VERSION = 6
 
 # --- TfL NUMBAT: station exits by quarter hour ----------------------------------------------
 
@@ -187,9 +187,13 @@ NIGHT_ROUTE_URL = "https://api.tfl.gov.uk/Line/windrush/Route/Sequence/outbound"
 
 # --- scale and entry points -----------------------------------------------------------------
 
-# Agents per weekday via all entry points (BUILD_NOTES: 2,000-4,000 for the 1.5 km map). 3,500
-# keeps the ~68 stores at the visits per store the 500 m map gave its 24 (~41 a day).
-SIM_WEEKDAY_ARRIVALS = 3500.0
+# Agents per weekday via all entry points. 3,500 kept the 1.5 km map's first ~68 stores at ~37
+# visits per store per day; with ~200 stores (3x) 7,400 keeps them there (measured: denser
+# stores turn more of each walk into visits, so the arrivals grow ~2x, not 3x).
+SIM_WEEKDAY_ARRIVALS = 7400.0
+# Club crowds keep the scale they had at 3,500 arrivals: more simulated stores means more of
+# the area's venues are modelled, not bigger nights in the clubs that were already there.
+CLUB_SCALE_ARRIVALS = 3500.0
 # Assumption: share of all arrivals into the area that come out of the stations inside the map
 # (30% for Shoreditch High Street alone on the 500 m map; 40% with Liverpool Street; 45% now
 # that Old Street is inside too). The rest walk in from Aldgate East, Moorgate, Barbican and
@@ -291,6 +295,7 @@ def cache_inputs(map_data: MapData) -> dict[str, Any]:
     club_buildings = {c.buildingId for c in clubs}
     return {
         "model": MODEL_VERSION,
+        "scale": (SIM_WEEKDAY_ARRIVALS, CLUB_SCALE_ARRIVALS),
         "numbat": [numbat_url(d) for d in NUMBAT_DAY_TYPES],
         "entryPoints": [e.model_dump(mode="json") for e in map_data.entryPoints],
         "streets": [s.model_dump(mode="json") for s in map_data.streets],
@@ -325,7 +330,8 @@ def build_demand(map_data: MapData) -> DemandFile:
         "weekend": SIM_WEEKDAY_ARRIVALS * rail["weekend"] / rail["weekday"],
     }
     entries, street_widths = allocate_entries(map_data, into, totals)
-    nights = club_nights(map_data, agents_per_person)
+    club_scale = agents_per_person * CLUB_SCALE_ARRIVALS / SIM_WEEKDAY_ARRIVALS
+    nights = club_nights(map_data, club_scale)
     share, pool, am_shares = returning_estimate(entries, totals)
 
     sources = [*exits.sources, *([night_source] if night_source else []), ADB_SOURCE]
@@ -337,8 +343,10 @@ def build_demand(map_data: MapData) -> DemandFile:
         f"rail arrivals into the area {rail['weekday']:,.0f} per weekday and "
         f"{rail['weekend']:,.0f} per weekend day. Assumed station share {STATION_SHARE:.0%} of "
         f"all arrivals into the area gives {real_weekday:,.0f} real arrivals per weekday; "
-        f"weekday sim total fixed at {SIM_WEEKDAY_ARRIVALS:,.0f} (BUILD_NOTES budget 2,000-4,000 "
-        f"a day for the 1.5 km x 1.5 km map); weekend total {totals['weekend']:,.0f} follows the "
+        f"weekday sim total fixed at {SIM_WEEKDAY_ARRIVALS:,.0f} (3,500 for the first ~68 "
+        f"stores of the 1.5 km x 1.5 km map, raised with the store count to keep each store's "
+        f"visits per day); club crowds keep the "
+        f"{CLUB_SCALE_ARRIVALS:,.0f} scale; weekend total {totals['weekend']:,.0f} follows the "
         f"measured weekend/weekday ratio of those rail arrivals, "
         f"{rail['weekend'] / rail['weekday']:.2f}.",
         "Station entries: hour-of-day = each station's own exits (people arriving; quarter-hour "

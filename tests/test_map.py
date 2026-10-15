@@ -347,9 +347,11 @@ def test_clubs_are_real_nightclubs_largest_first() -> None:
         _club_venue("Medium", 300, 200),
         _club_venue("Large", 400, 300),
         _club_venue("Tiny", 500, 50),
+        _club_venue("Mini", 600, 40),
+        _club_venue("Micro", 700, 30),
     ]
     clubs, promoted = osm_map._pick_clubs(venues)
-    assert [c.name for c in clubs] == ["Big", "Large", "Medium", "Small"]
+    assert [c.name for c in clubs] == ["Big", "Large", "Medium", "Small", "Tiny", "Mini"]
     assert len(clubs) == osm_map.MAX_CLUBS and not promoted
 
 
@@ -471,18 +473,44 @@ def test_ids_are_unique(map_data: MapData) -> None:
         assert len(ids) == len(set(ids))
 
 
+def _landmark_buildings(map_data: MapData) -> set[str]:
+    return {lm.buildingId for lm in map_data.landmarks or [] if lm.buildingId}
+
+
 def test_every_store_has_exactly_one_building_and_back(map_data: MapData) -> None:
+    """Each store owns its building, except landmark stores (LANDMARK_STORES), which share
+    their landmark's building; that building keeps no storeId."""
     buildings = {b.id: b for b in map_data.buildings}
-    for s in map_data.stores:
+    hosts = _landmark_buildings(map_data)
+    own = [s for s in map_data.stores if s.buildingId not in hosts]
+    for s in own:
         assert buildings[s.buildingId].storeId == s.id, s.id
+    for host in hosts:
+        assert buildings[host].storeId is None, host
     owners = Counter(b.storeId for b in map_data.buildings if b.storeId)
-    assert set(owners) == {s.id for s in map_data.stores}
+    assert set(owners) == {s.id for s in own}
     assert all(count == 1 for count in owners.values())
+
+
+def test_landmark_stores_sit_in_their_landmark(map_data: MapData) -> None:
+    if is_fallback(map_data):
+        pytest.skip("the fallback map has no landmark buildings")
+    by_landmark = {lm.id: lm.buildingId for lm in map_data.landmarks or []}
+    stores = {s.name: s for s in map_data.stores}
+    for spec in osm_map.LANDMARK_STORES:
+        store = stores[spec.name]
+        assert (store.type, store.buildingId) == (spec.type, by_landmark[spec.landmark_id])
+    boxpark = by_landmark["boxpark-shoreditch"]
+    types = Counter(s.type for s in map_data.stores if s.buildingId == boxpark)
+    assert types["takeaway"] >= 3 and types["shop"] >= 3
 
 
 def test_building_kinds_match_store_types(map_data: MapData) -> None:
     buildings = {b.id: b for b in map_data.buildings}
+    hosts = _landmark_buildings(map_data)
     for s in map_data.stores:
+        if s.buildingId in hosts:
+            continue
         assert buildings[s.buildingId].kind == ("club" if s.type == "club" else "store"), s.id
     for b in map_data.buildings:
         if b.storeId is None:
@@ -517,9 +545,9 @@ def test_entry_points(map_data: MapData) -> None:
         )
 
 
-# (non-club stores, stores per non-club type): the OSM map spreads ~68 venues over 1.5 km, the
-# fallback schematic keeps its 24.
-STORE_MIX = {"processed": ((60, 80), (5, 16)), "fallback": ((20, 30), (2, 8))}
+# (non-club stores, stores per non-club type): the OSM map spreads ~190 venues over 1.5 km plus
+# the landmark stores, the fallback schematic keeps its 24.
+STORE_MIX = {"processed": ((180, 230), (10, 50)), "fallback": ((20, 30), (2, 8))}
 
 
 def test_clubs_and_balanced_store_mix(map_data: MapData) -> None:
@@ -527,7 +555,7 @@ def test_clubs_and_balanced_store_mix(map_data: MapData) -> None:
         "fallback" if is_fallback(map_data) else "processed"
     ]
     types = Counter(s.type for s in map_data.stores)
-    assert 2 <= types["club"] <= 4
+    assert 2 <= types["club"] <= osm_map.MAX_CLUBS
     non_club = sum(n for t, n in types.items() if t != "club")
     assert low <= non_club <= high
     for store_type in NON_CLUB_TYPES:

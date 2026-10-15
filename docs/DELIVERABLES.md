@@ -1,7 +1,7 @@
 # Deliverables tracker
 
 Living checklist for the hackathon submission. Update the status column as things land; keep answers within the form limits.
-Last updated: 2026-10-15.
+Last updated: 2026-10-15 (afternoon).
 
 ## Submission form (draft answers)
 
@@ -36,15 +36,16 @@ Last updated: 2026-10-15.
 | --- | --- | --- | --- |
 | 3D city frontend | Arvin | `apps/web`, https://shoreditch-sim.vercel.app | Live (mock data) |
 | City visuals and accuracy pass | Arvin | `apps/web/src/world` | In progress |
-| Backend API | Anson | `backend/api`, Vercel project `shoreditch-sim-api` | Merged; not deployed |
-| Real OSM map | Anson | `data/processed/map.json` | In progress |
+| Backend API | Anson | `backend/api`, Vercel project `shoreditch-sim-api` | Merged; runs locally for the demo, not deployed |
+| Real OSM map | Anson + Arvin | `data/processed/map.json` (x −1050..700 m, z ±750 m: 72 venues incl. XOYO, Village Underground, Old Street) | Done |
 | Energy, personas, demand, calibration data | Anson | `data/processed/*.json` (PRs #5, #7, #8) | Done |
-| 14-day simulation | Anson | `backend/sim` (about 1.3 s per run) | In progress |
-| Store agents, analyst, training loop | Anson | `backend/agents` | In progress |
-| Adjustable training (objective, threshold, max runs, levers, stores, budget) | Anson | CLI + API | Not started |
-| Per-store insights ("PostHog for shop energy") | Anson | `GET /api/stores/{id}/insights`, Insights panel | In progress |
-| Owner report for every shop (+ PDF) | Anson | `GET /api/stores/{id}/report` | In progress |
+| 14-day simulation | Anson | `backend/sim` (about 6 s per run on the Old Street map; owners adapt day by day) | Done (citizen model with routines and diaries in progress) |
+| Store agents, analyst, training loop | Anson | `backend/agents` | Done |
+| Adjustable training (objective, threshold, max runs, levers, stores, budget) | Anson | CLI `train-config`, `PUT /api/training/config` (#58) | Done |
+| Per-store insights ("PostHog for shop energy") | Anson | `GET /api/stores/{id}/insights`, Insights panel | Done |
+| Owner report for every shop (+ PDF) | Anson | `GET /api/stores/{id}/report`, weekly report overlay on the shop card (#62) | Done |
 | Calibration chart | Arvin + Anson | History panel; `GET /api/calibration` | Placeholder targets (needs `BESTTIME_API_KEY` for real Popular Times) |
+| Client view: a shop's agents optimise it, every run and its report on one page | Anson | `/agents/:storeId` (#64, #65); demo shop City Best Wine `/agents/s65`; sessions explore until 3 runs fail to beat the best (#68, #69) | Done |
 | Overnight Claude training session (~10 runs, $30 cap) | Anson | `python -m backend.cli train` | Not started |
 | Run proof folder | Anson | `proof/` | Not started |
 | Sped-up recording | Arvin | upload | Not started |
