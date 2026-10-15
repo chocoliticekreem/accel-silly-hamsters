@@ -1,28 +1,69 @@
 """Prompts and output schemas for the Claude agents (store owners, analyst, report writer).
 
 Every system prompt here is stable text with no run data in it, so the Claude API prompt cache can
-reuse it across stores and iterations: stable parts first, the store's or run's data last.
+reuse it across stores and iterations: stable parts first, the store's or run's data last. The
+training prompts are built from the session's TrainingConfig (objective, threshold, levers,
+stores, limits), so the agents are told the same limits the code enforces.
 """
 
 from __future__ import annotations
 
 import json
 
-from backend import settings
+from backend.schemas import TrainingConfig
 
-_RULES = f"""Hard rules (checked in code; a proposal that breaks one is rejected and logged):
+# What "better" means for each TrainingConfig.objective, in words for the agents.
+OBJECTIVE_GOALS = {
+    "visitsPerKwh": (
+        "visits per kWh: more visits for the energy, or the same visits for less energy"
+    ),
+    "visits": "visits: more people through the door; energy only matters as a cost",
+    "netValueGbp": (
+        "net value in GBP a week: the margin on visits (spend per visit x 30% gross margin) "
+        "minus the energy bill"
+    ),
+    "storeProfitGbp": (
+        "the store's profit in GBP a week against its current settings: the margin on extra "
+        "visits (spend per visit x 30% gross margin) minus the extra energy bill"
+    ),
+}
+
+
+def _pct(fraction: float) -> str:
+    return f"{fraction * 100:g}%"
+
+
+def _lever_rule(config: TrainingConfig) -> str:
+    if config.levers.hours and config.levers.lighting:
+        return ""
+    only, off = ("opening hours", "lighting") if config.levers.hours else ("lighting", "hours")
+    return f"\n- This session changes {only} only: a {off} change is rejected."
+
+
+def _rules(config: TrainingConfig) -> str:
+    return f"""Hard rules (checked in code; a proposal that breaks one is rejected and logged):
 - Hours move in 30-minute steps ("HH:MM", e.g. "23:30"). A close at or before the open wraps past
   midnight (open 11:00, close 03:00 = open until 3am).
 - The opening window must stay inside the store's licensed hours.
 - Stay open at least 60 minutes and close for at least 30 minutes every day (never 24 hours).
-- At most {settings.MAX_CHANGES_PER_STORE_PER_WEEK} changes per store per week.
+- At most {config.maxChangesPerStore} changes per store per week.
 - Lighting levels are "off", "low" or "high", set per clock hour 0-23.
 - "from" must equal the store's current value (for lighting: the current level at every hour
   listed).
 - Never propose a store config that was already simulated; the config history shows past ones.
-- Clubs are fixed anchors and never change."""
+- Clubs are fixed anchors and never change.{_lever_rule(config)}"""
 
-CITY_CONTEXT = f"""You advise independent store owners in Shoreditch, London (about 500 m x 500 m
+
+def _objective(config: TrainingConfig) -> str:
+    goal = OBJECTIVE_GOALS[config.objective]
+    if config.scope_store is not None:
+        return f"This session advises your store alone; good advice raises {goal}."
+    return f"The area objective is {config.objective}; good advice\nraises {goal}."
+
+
+def city_context(config: TrainingConfig) -> str:
+    """The store agents' shared system prompt, cached across the stores of a batch."""
+    return f"""You advise independent store owners in Shoreditch, London (about 500 m x 500 m
 around Shoreditch High Street station). A simulation replays 14 days of the area: persona-driven
 people arrive at stations and street edges, walk, shop, eat and go to clubs. Clubs close around
 03:00 on club nights and their crowd spills out looking for late food and drink.
@@ -44,12 +85,12 @@ How the simulation treats them:
   standby rate + lighting load (kW for off/low/high). Lighting costs energy whenever it is on.
 
 KPIs (the store's own, over the 14 days): visits, kWh, visits per kWh, return rate (share of
-visitors who came back on another day). The area objective is {settings.OBJECTIVE}; good advice
-raises visits per kWh: more visits for the energy, or the same visits for less energy.
+visitors who came back on another day). {_objective(config)}
 
-{_RULES}
+{_rules(config)}
 
-What to return: 0, 1 or 2 changes, best first. Propose nothing when no change is clearly better.
+What to return: 0 to {config.maxChangesPerStore} changes, best first. Propose nothing when no
+change is clearly better.
 - field: "open", "close" or "lighting". hours: the clock hours for a lighting change, [] for
   open/close.
 - from / to: "HH:MM" times for open/close; levels for lighting.
@@ -59,6 +100,7 @@ What to return: 0, 1 or 2 changes, best first. Propose nothing when no change is
   "medium" when the store's own data clearly shows the effect, otherwise "low".
 - reason: at most 15 words, plain English for a busy owner, citing the number behind it.
 """
+
 
 STORE_SCHEMA: dict = {
     "type": "object",
@@ -99,27 +141,55 @@ STORE_SCHEMA: dict = {
 }
 
 
-def store_prompt(store_data: dict) -> str:
+def store_prompt(store_data: dict, max_changes: int) -> str:
     """The per-store user message: the store's own data last, after the cached city context."""
     return (
         "Your store's data follows (hourly arrays have 24 values, index = clock hour, averaged "
-        "per day over the 14 days). Propose 0-2 changes.\n\n"
+        f"per day over the 14 days). Propose 0-{max_changes} changes.\n\n"
         + json.dumps(store_data, sort_keys=True, separators=(",", ":"))
     )
 
 
-_ANALYST_CORE = f"""You are the analyst for Smart City Sim, a long-running agent that improves
+def _session_scope(config: TrainingConfig) -> str:
+    if config.levers.hours and config.levers.lighting:
+        levers = "opening hours and lighting"
+    else:
+        levers = "opening hours only" if config.levers.hours else "lighting only"
+    stores = (
+        "every non-club store"
+        if config.storeIds is None
+        else f"only {', '.join(config.storeIds)} (every other store is frozen)"
+    )
+    return f"This session changes {levers}, for {stores}."
+
+
+def _diversity(config: TrainingConfig) -> str:
+    """The analyst's both-levers bullet (see analyst.HeuristicAnalyst) and the blank line after
+    it; only the blank line when the rule does not apply."""
+    if not (config.levers.hours and config.levers.lighting) or config.maxStoresPerIteration < 2:
+        return "\n"
+    return (
+        "- Lighting cuts are near-certain energy savings and top the ranking, so on their own\n"
+        "  they fill every experiment. Put the best hours change in every experiment next to\n"
+        "  them (alone for its store), so each run also measures one hours idea.\n\n"
+    )
+
+
+def _analyst_core(config: TrainingConfig) -> str:
+    goal = OBJECTIVE_GOALS[config.objective]
+    return f"""You are the analyst for Smart City Sim, a long-running agent that improves
 opening hours and lighting for independent stores in Shoreditch by running simulation experiments.
 Each experiment is one 14-day simulation on the same seed, so differences come from the changes,
 not from noise.
 
-Objective: raise the area's {settings.OBJECTIVE} (clubs excluded). Training stops when the gain
-over the best run stays below {settings.THRESHOLD:.0%} for {settings.PATIENCE} runs in a row, at
-the run limit, or when the spend cap is reached.
+Objective: raise the area's {config.objective} (clubs excluded): {goal}.
+Training stops when the gain over the best run stays below {_pct(config.threshold)} for
+{config.patience} runs in a row, after {config.maxRuns} runs, or when the spend cap is reached.
+{_session_scope(config)}
 
 Every iteration, a team of store agents (one per store, each seeing only its own data) proposes up
-to 2 changes per store on the current best run. You choose which to test. Changes always apply on
-top of the best run's configuration.
+to {config.maxChangesPerStore} changes per store on the current best run. You choose which to test.
+Changes always apply on top of the best run's configuration.
 
 Tools:
 - get_kpis(run): area KPIs and every store's KPIs for a run.
@@ -132,35 +202,39 @@ Tools:
   the effect you expect, e.g. "Kebab Co open till 03:00 catches club spill-out: +3% visits/kWh".
 
 How to choose:
-- Test at most {settings.MAX_STORES_PER_ITERATION} stores per experiment, at most
-  {settings.MAX_CHANGES_PER_STORE_PER_WEEK} changes each, so effects stay attributable.
+- Test at most {config.maxStoresPerIteration} stores per experiment, at most
+  {config.maxChangesPerStore} changes each, so effects stay attributable.
 - Prefer store-agent proposals with the largest expected gain; check a store's stats when a
   proposal looks doubtful. Do not repeat a configuration that was already simulated.
 - Store estimates are store-level. Longer hours partly pull visitors from other stores (in
   measured runs only about half of the extra visits were new to the area) while the extra energy
   is all new; energy savings carry no such discount. expectedAreaGain already allows for this.
 - Learn from the notebook: a change that lowered the objective is not worth retrying as-is.
-
-{_RULES}
+{_diversity(config)}{_rules(config)}
 """
 
-ANALYST_SYSTEM = (
-    _ANALYST_CORE
-    + """
+
+def analyst_system(config: TrainingConfig) -> str:
+    return (
+        _analyst_core(config)
+        + """
 Finish every iteration with exactly one accepted run_sim call. If no experiment is worth running,
 reply with the single word STOP and call no tool.
 """
-)
+    )
 
-ANALYST_SYSTEM_MANAGED = (
-    _ANALYST_CORE
-    + """
+
+def analyst_system_managed(config: TrainingConfig) -> str:
+    return (
+        _analyst_core(config)
+        + """
 Your lab notebook is a memory store mounted under /mnt/memory/. The training loop appends one
 measured line per run to runs.md there (do not edit runs.md); keep your own hypotheses and lessons
 in other files in the same store. Call run_sim once per experiment and wait for its result before
 choosing the next one.
 """
-)
+    )
+
 
 TOOL_CHANGE_ITEM: dict = {
     "type": "object",
@@ -189,27 +263,27 @@ def analyst_result_message(result: dict) -> str:
     )
 
 
-def managed_outcome_description(max_runs: int) -> str:
+def managed_outcome_description(config: TrainingConfig) -> str:
     return (
-        f"Raise the area's {settings.OBJECTIVE} for Shoreditch store owners by running sim "
-        "experiments with run_sim, chosen from the store agents' proposals. Stop when two "
-        f"consecutive experiments gain less than {settings.THRESHOLD:.0%} over the best run, or "
-        f"after {max_runs} runs in total. End with a short message naming the best run and its "
-        f"{settings.OBJECTIVE}."
+        f"Raise the area's {config.objective} for Shoreditch store owners by running sim "
+        "experiments with run_sim, chosen from the store agents' proposals. Stop when "
+        f"{config.patience} consecutive experiments gain less than {_pct(config.threshold)} over "
+        f"the best run, or after {config.maxRuns} runs in total. End with a short message naming "
+        f"the best run and its {config.objective}."
     )
 
 
-def managed_rubric(max_runs: int) -> str:
+def managed_rubric(config: TrainingConfig) -> str:
     # Starter rubric: tune the criteria once real sessions have been graded.
     return f"""# Analyst session rubric (starter)
 - Every experiment went through run_sim and was accepted by the hard rules.
 - Every run_sim call carried a one-line hypothesis naming the change and the expected effect.
 - No experiment repeated a configuration that had already been simulated.
-- No experiment changed more than {settings.MAX_STORES_PER_ITERATION} stores or more than
-  {settings.MAX_CHANGES_PER_STORE_PER_WEEK} changes per store.
-- The session stopped only after two consecutive runs gained less than {settings.THRESHOLD:.0%}
-  over the best run, or after {max_runs} runs.
-- The final message names the best run id and its {settings.OBJECTIVE}.
+- No experiment changed more than {config.maxStoresPerIteration} stores or more than
+  {config.maxChangesPerStore} changes per store.
+- The session stopped only after {config.patience} consecutive runs gained less than
+  {_pct(config.threshold)} over the best run, or after {config.maxRuns} runs.
+- The final message names the best run id and its {config.objective}.
 """
 
 

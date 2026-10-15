@@ -3,7 +3,8 @@
 training.py owns the loop; the analyst only decides. Every backend implements AnalystBackend:
 
   heuristic  deterministic (offline): rank stores by the expected area gain of their proposals,
-             test the top settings.MAX_STORES_PER_ITERATION, skip configs already simulated
+             test the top TrainingConfig.maxStoresPerIteration with one slot kept for the best
+             hours change (see HeuristicAnalyst), skip configs already simulated
   messages   settings.ANALYST_MODEL in a Messages API tool-use loop (manual loop so every call is
              budget-checked, ledgered and logged): get_kpis, get_store_stats, propose_config,
              run_sim. Adaptive thinking, effort high, prompt caching on tools + system.
@@ -12,9 +13,11 @@ training.py owns the loop; the analyst only decides. Every backend implements An
              spend cap. Written from the claude-api skill docs and the installed SDK's types; it
              has never run against the live API here (no key).
 
-select_backend() picks one from settings.ANALYST_BACKEND ("auto" = messages when Claude
-credentials exist, else heuristic). LLM backends fall back to the heuristic for an iteration when
-the model does not commit to an experiment (logged).
+select_backend() picks one from TrainingConfig.analystBackend (default settings.ANALYST_BACKEND;
+"auto" = messages when Claude credentials exist, else heuristic). LLM backends fall back to the
+heuristic for an iteration when the model does not commit to an experiment (logged). Every
+backend works inside the session's TrainingConfig (AnalystContext.config): its objective, levers,
+participating stores and per-experiment limits.
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ import anthropic
 from backend import cache, llm, settings, store
 from backend.agents import prompts
 from backend.agents.analyst_tools import MANAGED_TOOLS, MESSAGES_TOOLS, AnalystTools, ToolResult
-from backend.agents.changes import affected_hours
+from backend.agents.changes import affected_hours, change_signature
 from backend.agents.experiment import (
     AnalystContext,
     Choice,
@@ -48,7 +51,7 @@ from backend.agents.wording import (
     signed_pct,
 )
 from backend.contract import MapData, Suggestion
-from backend.schemas import RunSummary
+from backend.schemas import RunSummary, TrainingConfig
 
 AGENT = "analyst"
 NOTEBOOK_WORDS = 12
@@ -167,8 +170,94 @@ def _selections(ranked: list[str], cap: int):
             yield [sid]
 
 
+def _hours_units(
+    ctx: AnalystContext, by_store: dict[str, list[Suggestion]]
+) -> list[list[Suggestion]]:
+    """Each hours proposal with its store's lighting proposals on the hours it opens or closes:
+    an extension's lit frontage belongs with it."""
+    units = []
+    for changes in by_store.values():
+        for change in changes:
+            config = ctx.base_configs.get(change.storeId)
+            if change.field == "lighting" or config is None:
+                continue
+            moved = set(affected_hours(change, config))
+            paired = [c for c in changes if c.field == "lighting" and moved & set(c.hours or [])]
+            units.append([change, *paired])
+    return units
+
+
+def hours_slot(
+    ctx: AnalystContext, files: RunFiles, by_store: dict[str, list[Suggestion]]
+) -> list[Suggestion]:
+    """The hours change every experiment carries next to the lighting changes ([] for none).
+
+    Applies when both levers are on, an experiment holds 2+ stores and there are lighting
+    proposals. The slot is the hours proposal (with its lit frontage) of highest positive
+    expected area gain that still passes the rules on its own, i.e. its store config is untried:
+    once one was simulated, the next hours idea takes the slot instead of diversity lapsing.
+    """
+    config = ctx.config
+    if not (config.levers.hours and config.levers.lighting) or config.maxStoresPerIteration < 2:
+        return []
+    if not any(c.field == "lighting" for changes in by_store.values() for c in changes):
+        return []
+    scored = sorted(
+        (
+            (expected_city_gain(unit, files, ctx.objective, ctx.map_data), unit)
+            for unit in _hours_units(ctx, by_store)
+        ),
+        key=lambda gu: (-gu[0], [change_signature(c) for c in gu[1]]),
+    )
+    for unit_gain, unit in scored:
+        if unit_gain <= 0:
+            break
+        if not check_changes(ctx.base_configs, unit, ctx.map_data, training=config).rejections:
+            return unit
+    return []
+
+
+def _candidates(
+    ranked: list[str],
+    by_store: dict[str, list[Suggestion]],
+    cap: int,
+    slot: list[Suggestion],
+) -> list[list[Suggestion]]:
+    """Change sets to try, best first. With an hours slot: each window of the ranking keeps its
+    top cap-1 stores and adds the slot (alone for its store) unless a selected store already
+    carries it; then the plain windows, so a cached diverse set never ends training early."""
+    windows = list(_selections(ranked, cap))
+    plain = [[c for sid in window for c in by_store[sid]] for window in windows]
+    diverse: list[list[Suggestion]] = []
+    if slot:
+        for window in windows or [[]]:
+            if slot[0].storeId in window:
+                diverse.append([c for sid in window for c in by_store[sid]])
+            else:
+                diverse.append([c for sid in window[: cap - 1] for c in by_store[sid]] + slot)
+    out: list[list[Suggestion]] = []
+    seen: set[tuple] = set()
+    for changes in diverse + plain:
+        key = tuple(change_signature(c) for c in changes)
+        if key not in seen:
+            seen.add(key)
+            out.append(changes)
+    return out
+
+
 class HeuristicAnalyst:
-    """Deterministic analyst: biggest expected area gain first, never a simulated config."""
+    """Deterministic analyst: biggest expected area gain first, never a simulated config.
+
+    Stores are ranked by the expected area gain of all their proposals together. Ranked that way,
+    lighting cuts (near-certain energy savings, so they top visitsPerKwh) fill every experiment,
+    and a store whose good hours idea comes with a weaker second proposal never ranks at all: the
+    plateau arrives before hours ideas such as "Dumbo Shoreditch close 22:30 -> 01:30" are ever
+    measured. So when both levers are on, one slot per experiment holds the best untried hours
+    change on its own (hours_slot, with its lit frontage), and the rest stays ranked by expected
+    gain. Each run then measures one hours change on one store next to the lighting changes, and
+    per-store results attribute the effect to it: the notebook learns about both levers, not just
+    the one that ranks first.
+    """
 
     name = "heuristic"
 
@@ -182,16 +271,17 @@ class HeuristicAnalyst:
             for sid, changes in by_store.items()
         }
         ranked = sorted((sid for sid in by_store if gains[sid] > 0), key=lambda s: (-gains[s], s))
-        for selection in _selections(ranked, settings.MAX_STORES_PER_ITERATION):
-            changes = [c for sid in selection for c in by_store[sid]]
-            result = check_changes(ctx.base_configs, changes, ctx.map_data)
+        slot = hours_slot(ctx, files, by_store)
+        for changes in _candidates(ranked, by_store, ctx.config.maxStoresPerIteration, slot):
+            result = check_changes(ctx.base_configs, changes, ctx.map_data, training=ctx.config)
             if result.rejections:
                 continue
             cached = cache.run_lookup(cache.run_key(result.configs, ctx.seed))
             if cached is not None:
+                stores = list(dict.fromkeys(c.storeId for c in changes))
                 llm.log_event(
                     ctx.best_run,
-                    {"agent": AGENT, "type": "skip_cached", "stores": selection, "run": cached},
+                    {"agent": AGENT, "type": "skip_cached", "stores": stores, "run": cached},
                 )
                 continue
             gain = expected_city_gain(result.accepted, files, ctx.objective, ctx.map_data)
@@ -246,7 +336,7 @@ class MessagesAnalyst:
     def choose(self, ctx: AnalystContext) -> Choice:
         client = llm.client()
         tools = AnalystTools(ctx)
-        system = llm.system_blocks(prompts.ANALYST_SYSTEM)
+        system = llm.system_blocks(prompts.analyst_system(ctx.config))
         brief = iteration_brief(ctx, RunFiles.load(ctx.best_run))
         messages: list[dict] = [
             {"role": "user", "content": prompts.analyst_iteration_prompt(brief)}
@@ -386,7 +476,9 @@ class ManagedAnalyst:
     (rubric = the training stop rule); the session budget caps its spend.
 
     Agent, environment and memory store are created once and their ids persisted in
-    runs/managed_analyst.json, with one Managed Agents session per training session.
+    runs/managed_analyst.json, with one Managed Agents session per training session. The agent's
+    system prompt carries the session limits (TrainingConfig), so a config with a different
+    prompt gets its own agent (agentSystemHash).
     """
 
     name = "managed"
@@ -410,19 +502,24 @@ class ManagedAnalyst:
     def _save(self, state: dict) -> None:
         store.write_json(managed_state_path(), state)
 
-    def ensure_resources(self) -> dict:
-        """Create the agent, its environment and the notebook memory store once; reuse the ids."""
+    def ensure_resources(self, config: TrainingConfig | None = None) -> dict:
+        """Create the agent, its environment and the notebook memory store once; reuse the ids.
+
+        A new agent replaces the stored one when `config` gives a different system prompt.
+        """
         state = self._load()
         changed = False
-        if not state.get("agentId"):
+        system = prompts.analyst_system_managed(config or TrainingConfig())
+        system_hash = cache.stable_hash(system)
+        if not state.get("agentId") or state.get("agentSystemHash") != system_hash:
             agent = self.client.beta.agents.create(
                 name=MANAGED_AGENT_NAME,
                 model={"id": settings.ANALYST_MODEL, "effort": "high"},
-                system=prompts.ANALYST_SYSTEM_MANAGED,
+                system=system,
                 tools=[AGENT_TOOLSET, *MANAGED_TOOLS],
                 description="Chooses sim experiments for Shoreditch store owners.",
             )
-            state.update(agentId=agent.id, agentVersion=agent.version)
+            state.update(agentId=agent.id, agentVersion=agent.version, agentSystemHash=system_hash)
             changed = True
         if not state.get("environmentId"):
             environment = self.client.beta.environments.create(
@@ -454,10 +551,32 @@ class ManagedAnalyst:
         return state
 
     def _session_entry(self, ctx: AnalystContext, state: dict) -> dict:
+        """The Managed Agents session for this training session. Its budget, outcome rubric and
+        agent are fixed when it is created, so a new one opens when the session cap, the
+        TrainingConfig or the agent changed since (e.g. a resume with a higher budget)."""
         sessions = state.setdefault("sessions", {})
-        if ctx.session in sessions:
-            return sessions[ctx.session]
-        remaining_usd = max(0.01, settings.SESSION_BUDGET_USD - llm.spent_usd(session=ctx.session))
+        terms = {
+            "budgetCapUsd": llm.session_budget_usd(ctx.session),
+            "configHash": cache.stable_hash(ctx.config),
+            "agentId": state["agentId"],
+        }
+        entry = sessions.get(ctx.session)
+        if entry is not None and all(entry.get(k) == v for k, v in terms.items()):
+            return entry
+        if entry is not None:
+            llm.log_event(
+                ctx.best_run,
+                {
+                    "agent": AGENT,
+                    "type": "managed_session_renewed",
+                    "previous": entry["sessionId"],
+                    **terms,
+                },
+            )
+            self._interrupt(entry["sessionId"])  # it would idle open, maybe on a pending run_sim
+        remaining_usd = max(
+            0.01, llm.session_budget_usd(ctx.session) - llm.spent_usd(session=ctx.session)
+        )
         session = self.client.beta.sessions.create(
             agent={"type": "agent", "id": state["agentId"], "version": state["agentVersion"]},
             environment_id=state["environmentId"],
@@ -479,7 +598,7 @@ class ManagedAnalyst:
             },
             metadata={"trainingSession": ctx.session},
         )
-        entry = {"sessionId": session.id, "started": False, "pendingRunSim": None}
+        entry = {"sessionId": session.id, "started": False, "pendingRunSim": None, **terms}
         sessions[ctx.session] = entry
         self._save(state)
         llm.log_event(
@@ -514,7 +633,7 @@ class ManagedAnalyst:
 
     def choose(self, ctx: AnalystContext) -> Choice:
         llm.check_budget(ctx.session)
-        state = self.ensure_resources()
+        state = self.ensure_resources(ctx.config)
         entry = self._session_entry(ctx, state)
         session_id = entry["sessionId"]
         self._current_session = session_id
@@ -547,8 +666,8 @@ class ManagedAnalyst:
                 },
                 {
                     "type": "user.define_outcome",
-                    "description": prompts.managed_outcome_description(ctx.max_runs),
-                    "rubric": {"type": "text", "content": prompts.managed_rubric(ctx.max_runs)},
+                    "description": prompts.managed_outcome_description(ctx.config),
+                    "rubric": {"type": "text", "content": prompts.managed_rubric(ctx.config)},
                     "max_iterations": 5,
                 },
             ],
@@ -750,16 +869,18 @@ class ManagedAnalyst:
         llm.log_event(None, {"agent": AGENT, "type": "managed_close", "reason": reason})
         if self._current_session is None:
             return
+        self._interrupt(self._current_session)
+
+    def _interrupt(self, session_id: str) -> None:
         try:
-            self.client.beta.sessions.events.send(
-                self._current_session, events=[{"type": "user.interrupt"}]
-            )
+            self.client.beta.sessions.events.send(session_id, events=[{"type": "user.interrupt"}])
         except anthropic.APIError as e:
             llm.log_event(None, {"agent": AGENT, "type": "managed_close_error", "error": str(e)})
 
 
 def select_backend(name: str | None = None) -> AnalystBackend:
-    """The configured analyst backend; LLM backends degrade to the heuristic when offline."""
+    """The named analyst backend (TrainingConfig.analystBackend; default settings.ANALYST_BACKEND).
+    LLM backends degrade to the heuristic when offline."""
     requested = name or settings.ANALYST_BACKEND
     chosen = requested
     if requested == "auto":

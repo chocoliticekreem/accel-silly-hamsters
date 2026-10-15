@@ -15,7 +15,7 @@ RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 CACHE_DIR = DATA_DIR / "cache"
 LLM_CACHE_DIR = CACHE_DIR / "llm"
-RUNS_DIR = ROOT / "runs"
+RUNS_DIR = Path(os.getenv("RUNS_DIR", ROOT / "runs"))
 
 # Simulation
 SIM_VERSION = "0.1.0"  # bump on any change that alters sim output; it is part of the run-cache key
@@ -25,7 +25,7 @@ TICK_MINUTES = 5
 # day inside a run. OWNER_ADAPTATION=0 gives exactly the pre-adaptation sim (same files, same keys).
 OWNER_ADAPTATION = os.getenv("OWNER_ADAPTATION", "1") != "0"
 
-# Training loop
+# Training loop: defaults for schemas.TrainingConfig, which runs/training_config.json overrides
 OBJECTIVE = os.getenv("OBJECTIVE", "visitsPerKwh")  # any key of contract.Kpis
 THRESHOLD = float(os.getenv("THRESHOLD", "0.02"))  # stop when gain < 2% ...
 PATIENCE = 2  # ... for this many consecutive runs
@@ -55,12 +55,13 @@ DEFAULT_PRICE_GBP_PER_KWH = 0.27
 # Force the offline (no-LLM) agent backends even when credentials exist: OFFLINE=1
 OFFLINE = os.getenv("OFFLINE", "") == "1"
 
+# The hosted demo replays pre-computed runs: requests that start or reconfigure work (training
+# start/stop and config writes, POST .../optimize) answer 403.
+READ_ONLY = os.getenv("VERCEL") == "1" or os.getenv("READ_ONLY") == "1"
+
 # Analyst backend: "auto" (messages when credentials exist, else heuristic), "heuristic",
 # "messages" (Messages API tool-use loop) or "managed" (Managed Agents session).
 ANALYST_BACKEND = os.getenv("ANALYST_BACKEND", "auto")
-
-# Hosted read-only demo: READ_ONLY=1 refuses requests that start work (POST .../optimize -> 403).
-READ_ONLY = os.getenv("READ_ONLY", "") == "1"
 
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"

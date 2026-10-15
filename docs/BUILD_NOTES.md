@@ -93,7 +93,9 @@ Tests live in `tests/test_<module>*.py`, one file set per owner.
   same store on 2+ different days); per store the same ratio for that store.
 - City: `peakKw` = max of the average-day demand curve (sum of stores by hour), `co2Kg` = Σ kWh_h ×
   carbon_h / 1000, `energyCostGbp` = Σ kWh_h × price_h.
-- Objective = `settings.OBJECTIVE` (default `visitsPerKwh`).
+- Objective = `TrainingConfig.objective` (default `settings.OBJECTIVE` = `visitsPerKwh`; also `visits`, or
+  `netValueGbp` = Σ non-club stores of visits × `SPEND_GBP_PER_VISIT[type]` × `GROSS_MARGIN` − kWh × mean
+  tariff, per week, `backend/economics.py`).
 - `expectedDelta` values are fractions relative to the store's current value (0.18 = +18%).
 - Report `impact.gbpPerWeek` = energy £ saved per week (positive = saving), best run vs baseline.
 
@@ -135,3 +137,48 @@ Run 0 is the hand-made sample from the contract; it disappears from `/api/runs` 
   `get_store_stats`, `propose_config`), managed (Managed Agents session).
 - Report: best run vs baseline per store, confidence from seed variance (re-evaluate both configs on extra
   seeds with `sim.runner.evaluate`) and calibration error, evidence = cited sources + replay, PDF.
+
+## Adjustable training (`TrainingConfig`)
+
+- One model in `backend/schemas.py`, saved at `runs/training_config.json` (missing file or field = settings
+  defaults): `objective`, `threshold`, `patience`, `maxRuns`, `maxStoresPerIteration`, `maxChangesPerStore`,
+  `seed`, `levers {hours, lighting}`, `storeIds` (null = every non-club store; the rest stay frozen),
+  `sessionBudgetUsd` (≤ `SPEND_CAP_USD`), `analystBackend`, `storeAgents`. Ranges and the API shapes are in
+  `backend/CONTRACT_CHANGES.md`.
+- Set it with `cli train-config set k=v` or `PUT /api/training/config`; per session with `cli train --flags`
+  or `POST /api/training/start {config}`. `analyst_state.json` records the config a session ran with. A
+  resume needs the same seed, objective and shop (runs scored on another objective do not compare); otherwise
+  a new session starts, still reusing caches unless `--fresh`. A resume under other levers, stores or limits
+  that stopped mid-iteration (`proposed`/`chosen`) goes back to the propose step, so nothing chosen under
+  the old scope runs.
+- One writer per `runs/`: a running session holds an `flock` on `runs/training.lock` (the kernel drops it
+  when the process ends, however it ends), so starting meanwhile from any process fails (`SessionBusy`, 409
+  in the API) instead of taking the session over. `analyst_state.json` names the owner (`host:pid`).
+- Scope is enforced in code, not prompts: `rules.check_changes(..., training=config)` rejects and logs a
+  change on a disabled lever, on a frozen store, past `maxStoresPerIteration` or past `maxChangesPerStore`.
+  Store agents only propose inside it, the analyst's tools validate against it, and the LLM prompts are
+  built from the same config so they name the limits the code enforces.
+- Stop: `training.request_stop()` (`POST /api/training/stop`) sets an in-process event and
+  `runs/training_stop.flag` (so a CLI session on the same `runs/` stops too); the loop checks between steps
+  and stops with `stoppedReason: "stopped"`.
+- Both levers get tested: ranked by expected gain alone, lighting cuts (near-certain energy savings) fill
+  every experiment, and a store whose good hours idea sits next to a weaker second proposal never ranks, so
+  the plateau arrives before ideas like "Dumbo Shoreditch close 22:30 → 01:30" are measured. With both
+  levers on and 2+ stores per experiment, the heuristic analyst keeps one slot for the best positive hours
+  change that is still untried on its own (with its lit frontage for the new hours); the rest stays ranked
+  by gain. Each run then measures one hours change on one store, attributable through that store's
+  results, so learning covers both levers.
+- After any stop the store agents propose on the best run, so the store card shows next week's
+  suggestions (after an error: best effort; after a budget stop: offline, no spend). A stop that is due
+  (threshold, max runs) wins over a stop request at the same boundary, and starting a finished session again
+  with the same config skips the wrap-up it already has (no repeat batch).
+- One-shop sessions are a config too: `train(scope_store=sid)` (`POST /api/stores/{sid}/optimize`) runs the
+  saved config with `storeIds: [sid]`, objective `storeProfitGbp` (the shop's profit change per week vs the
+  baseline, gain = change / its weekly margin) and the heuristic analyst, in the same loop. Only the choice
+  differs: the shop's proposals (1 to `maxChangesPerStore` of them) ranked by expected £/week, untried
+  first; no analyst LLM. The notebook stays area-level, reports cover that shop only and the shared baseline
+  keeps its area session's cost. A finished one-shop session is never resumed. `propose_all` with
+  `storeIds` replaces only those stores' suggestions on a run and keeps the others'.
+- Hosted demo: `settings.READ_ONLY` (`VERCEL=1` or `READ_ONLY=1`) answers the training writes and
+  `POST /api/stores/{id}/optimize` with 403. `RUNS_DIR` (env) points the runs folder elsewhere, e.g. for a
+  scratch training run.

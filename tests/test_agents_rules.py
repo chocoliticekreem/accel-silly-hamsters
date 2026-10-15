@@ -10,7 +10,7 @@ from backend import cache, settings
 from backend.agents import rules
 from backend.agents.changes import make_suggestion
 from backend.contract import LightingLevel, MapData
-from backend.schemas import StoreConfig
+from backend.schemas import Levers, StoreConfig, TrainingConfig
 
 OFF: list[LightingLevel] = ["off"]
 LOW: list[LightingLevel] = ["low"]
@@ -238,6 +238,70 @@ def test_rejections_carry_the_suggestion_and_are_logged(tmp_path):
     assert record["type"] == "rule_rejection"
     assert record["suggestion"]["from"] == "03:00"
     assert "clubs" in record["reason"]
+
+
+# --- a training session's scope (TrainingConfig) ---------------------------------------------
+
+
+def scoped(*suggestions, **config):
+    return rules.check_changes(
+        _base(), list(suggestions), _map(), training=TrainingConfig(**config)
+    )
+
+
+def test_a_change_on_a_disabled_lever_is_rejected():
+    result = scoped(
+        light("s1", [18, 19], "high", "off"),
+        hours_change("s2", "close", "23:00", "01:00"),
+        levers=Levers(hours=True, lighting=False),
+    )
+    assert [s.field for s in result.accepted] == ["close"]
+    assert "lighting lever is off" in result.rejections[0].reason
+    hours_off = scoped(
+        hours_change("s2", "open", "11:00", "10:00"), levers=Levers(hours=False, lighting=True)
+    )
+    assert "hours lever is off" in only_reason(hours_off)
+
+
+def test_a_store_outside_store_ids_is_frozen():
+    result = scoped(
+        hours_change("s1", "close", "18:00", "20:00"),
+        hours_change("s2", "close", "23:00", "01:00"),
+        storeIds=["s2"],
+    )
+    assert [s.storeId for s in result.accepted] == ["s2"]
+    assert "s1 is frozen" in result.rejections[0].reason
+    assert result.configs["s1"] == _base()["s1"]
+
+
+def test_the_stores_per_experiment_cap():
+    result = scoped(
+        hours_change("s1", "close", "18:00", "20:00"),
+        hours_change("s2", "close", "23:00", "01:00"),
+        light("s2", [22, 23], "high", "low"),
+        hours_change("s1", "open", "07:00", "08:00"),
+        maxStoresPerIteration=1,
+    )
+    assert [(s.storeId, s.field) for s in result.accepted] == [("s1", "close"), ("s1", "open")]
+    assert [r.reason for r in result.rejections] == ["at most 1 stores per experiment"] * 2
+
+
+def test_the_change_cap_comes_from_the_config():
+    result = scoped(
+        hours_change("s2", "close", "23:00", "01:00"),
+        light("s2", [22, 23], "high", "low"),
+        maxChangesPerStore=1,
+    )
+    assert len(result.accepted) == 1
+    assert "at most 1 changes per store per week" in result.rejections[0].reason
+
+
+def test_without_a_session_only_the_hard_rules_hold():
+    result = check(
+        light("s1", [18, 19], "high", "off"), hours_change("s3", "close", "01:00", "02:00")
+    )
+    assert len(result.accepted) == 2 and not result.rejections
+    assert rules.scope_violation(light("s1", [18], "high", "off"), TrainingConfig()) is None
 
 
 def test_apply_suggestion_normalises_times_and_sets_lighting():
