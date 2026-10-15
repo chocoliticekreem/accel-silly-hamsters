@@ -5,6 +5,11 @@ import { RUN_MINUTES } from "../api/contract";
 
 export type Speed = 1 | 10 | 100;
 export type Panel = null | "history" | "area" | "agents";
+/** "satellite" / "map" = free keyless aerial / OSM basemap draped as the ground (world/modules/MapGround.tsx);
+ *  "photoreal" = Google Photorealistic 3D Tiles (world/modules/Photoreal.tsx), needs VITE_GOOGLE_MAPS_API_KEY. */
+export type GraphicsMode = "stylised" | "satellite" | "map" | "photoreal";
+const GFX_MODES: readonly GraphicsMode[] = ["stylised", "satellite", "map", "photoreal"];
+const GFX_KEY = "scs.graphicsMode.v2"; // v2: default back to stylised
 
 /** Sim minutes per real second. 100× plays 14 days in one minute (spec). */
 export const RATE: Record<Speed, number> = { 100: RUN_MINUTES / 60, 10: RUN_MINUTES / 600, 1: RUN_MINUTES / 6000 };
@@ -21,6 +26,7 @@ interface SimState {
   toast: { id: number; text: string } | null;
   /** Guided demo step (index into DEMO_STEPS), or null when the demo is off. */
   demo: number | null;
+  graphicsMode: GraphicsMode;
 
   setRun: (run: number) => void;
   setT: (t: number) => void;
@@ -33,6 +39,7 @@ interface SimState {
   setCompare: (c: boolean) => void;
   showToast: (text: string) => void;
   setDemo: (step: number | null) => void;
+  setGraphicsMode: (m: GraphicsMode) => void;
   /** Jump to a run (and optionally a moment) and start playing: "click a point → replay that run". */
   replay: (run: number, t?: number) => void;
 }
@@ -48,6 +55,15 @@ const initial = fromUrl();
 export const RUN_FROM_URL = initial.run !== undefined;
 let toastSeq = 0;
 
+function readGraphicsMode(): GraphicsMode {
+  try {
+    const v = typeof window !== "undefined" ? localStorage.getItem(GFX_KEY) : null;
+    return GFX_MODES.find((m) => m === v) ?? "stylised";
+  } catch {
+    return "stylised";
+  }
+}
+
 export const useSim = create<SimState>((set, get) => ({
   run: initial.run ?? 1,
   // start on the first evening, so the opening shot shows lights
@@ -60,6 +76,7 @@ export const useSim = create<SimState>((set, get) => ({
   compare: false,
   toast: null,
   demo: null,
+  graphicsMode: readGraphicsMode(),
 
   setRun: (run) => set({ run }),
   setT: (t) => set({ t: Math.max(0, Math.min(RUN_MINUTES, t)) }),
@@ -76,5 +93,9 @@ export const useSim = create<SimState>((set, get) => ({
   setCompare: (compare) => set({ compare }),
   showToast: (text) => set({ toast: { id: ++toastSeq, text } }),
   setDemo: (demo) => set({ demo }),
+  setGraphicsMode: (graphicsMode) => {
+    try { localStorage.setItem(GFX_KEY, graphicsMode); } catch { /* private mode: not remembered */ }
+    set({ graphicsMode });
+  },
   replay: (run, t) => set({ run, t: t ?? 0, playing: true, panel: null }),
 }));

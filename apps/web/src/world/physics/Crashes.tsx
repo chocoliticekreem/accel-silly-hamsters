@@ -31,6 +31,7 @@ import {
 import { toScene } from "../../sim/geometry";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
+import { groundY } from "../ground";
 import { activeCrashes, crashQueue, emitCrash, externalSchedule, type CrashInfo, type CrashRequest, type CrashSpec } from "./crash";
 import { binsNear, resetBins, toppleBin } from "./Details";
 import { engine, G, groups, PHYS_RATE, type Collider, type RigidBody, removeBody } from "./engine";
@@ -46,7 +47,7 @@ const POOL_RADIUS = 160;
 const TOW_SEC = 1.6;
 /** Real seconds a scene stays at least, per speed (the sim window alone flashes by at 10×/100×). */
 const MIN_SCENE_SEC: Record<number, number> = { 1: 0, 10: 7, 100: 2.5 };
-const MASS: Record<string, number> = { bus: 11500, cab: 1850, car: 1400 };
+const MASS: Record<string, number> = { bus: 11500, hgv: 14000, van: 2300, ambulance: 3600, suv: 2100, cab: 1850, police: 1700, estate: 1600, saloon: 1500, hatch: 1200, moto: 250 };
 const WHEEL_GAP = 0.3;
 
 interface Wreck {
@@ -207,7 +208,7 @@ export default function Crashes({ junctions }: { junctions: Junction[] }) {
       let best: TrafficVehicle | null = null;
       let bd = Infinity;
       for (const v of trafficVehicles) {
-        if (v === not || !v.shown || v.override) continue;
+        if (v === not || !v.shown || v.override || v.kind === "moto") continue;
         const d = Math.hypot(v.x - px, v.z - pz) - (streetId && v.streetId === streetId ? 400 : 0);
         if (d < bd) {
           bd = d;
@@ -536,7 +537,7 @@ export default function Crashes({ junctions }: { junctions: Junction[] }) {
         for (const w of c.wrecks) {
           const t = w.body.translation();
           const r = w.body.rotation();
-          w.ov.position.set(t.x, t.y + (1 - fade) * 0.8, t.z);
+          w.ov.position.set(t.x, t.y + (1 - fade) * 0.8 + groundY(t.x, t.z), t.z);
           w.ov.quaternion.set(r.x, r.y, r.z, r.w);
           w.ov.scale = Math.max(0.001, fade);
           // hazard lights at the four corners, blinking together

@@ -41,6 +41,22 @@ export interface TrafficVehicle {
 
 let nextId = 1;
 
+/** [length, height, width] (m) for a Traffic vehicle kind (world/vehicleModels.ts), for its physics box. */
+export function vehicleSize(kind: string, length: number): [number, number, number] {
+  const hw: Record<string, [number, number]> = {
+    bus: [4.2, 2.55],
+    hgv: [3.6, 2.5],
+    van: [2.2, 2.0],
+    ambulance: [2.6, 2.1],
+    moto: [1.2, 0.8],
+    suv: [1.6, 1.9],
+    cab: [1.6, 1.8],
+  };
+  const [h, w] = hw[kind] ?? [1.35, 1.8];
+  // the box sits on WHEEL_GAP-high wheels in Crashes.tsx: total height = h + 0.3
+  return [length, h, w];
+}
+
 export function newTrafficVehicle(kind: string, size: [number, number, number], color: Color, streetId: string): TrafficVehicle {
   const [length, height, width] = size;
   return { id: nextId++, kind, length, height, width, color, streetId, x: 0, z: 0, heading: 0, speed: 0, shown: false, override: null, respawnAt: -1e9, hold: 1 };
