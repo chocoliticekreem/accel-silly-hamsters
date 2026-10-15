@@ -11,14 +11,18 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import threading
+import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 from backend import cache, settings
 from backend.schemas import CostSummary
 from backend.store import now_iso
 
+T = TypeVar("T")
 _lock = threading.Lock()
 _client = None
 
@@ -50,11 +54,13 @@ def available() -> bool:
 
 
 def client():
+    """The process's Anthropic client. Its own retries are off: call_with_retries is the one
+    retry policy, so a request is never retried by two layers."""
     global _client
     if _client is None:
         import anthropic
 
-        _client = anthropic.Anthropic()
+        _client = anthropic.Anthropic(max_retries=0, timeout=settings.LLM_TIMEOUT_SECONDS)
     return _client
 
 
@@ -199,6 +205,207 @@ class LLMError(RuntimeError):
 
 class BudgetExceeded(LLMError):
     """A spend cap was reached. Training catches this, checkpoints and stops ("budget")."""
+
+
+class LLMUnavailable(LLMError):
+    """A call failed for good: a fatal error, or retries ran out (attempts or total time).
+    Agents catch LLMError and degrade to their heuristic."""
+
+
+class CircuitOpen(LLMUnavailable):
+    """The breaker is open: no Claude call until the training loop's next step."""
+
+
+# --- recovery events and counts -------------------------------------------------------------
+
+# Event type -> AgentSession.recoveries key. Every error, retry, fallback and recovery is one
+# event in the agent log (GET /api/agents/log) and one count in the session.
+RECOVERY_COUNTS = {
+    "retry": "retries",
+    "fallback": "fallbacks",
+    "repair": "repairs",
+    "skip": "skipped",
+    "resume": "resumed",
+    "quarantine": "quarantined",
+    "restore": "restored",
+    "llm_error": "errors",
+    "breaker_open": "breakerOpens",
+    "batch_timeout": "batchTimeouts",
+    "lock_takeover": "lockTakeovers",
+}
+_recoveries: dict[str | None, dict[str, int]] = {}
+_step: str | None = None  # the training step in progress, for event context
+
+
+def set_step(step: str | None) -> None:
+    global _step
+    _step = step
+
+
+def reset_recoveries() -> None:
+    _recoveries.clear()
+
+
+def load_recoveries(session: str, counts: dict[str, int]) -> None:
+    """Continue a resumed session's counts from its checkpoint."""
+    _recoveries[session] = {**{k: 0 for k in RECOVERY_COUNTS.values()}, **counts}
+
+
+def recovery_counts(session: str | None) -> dict[str, int]:
+    return dict(_recoveries.get(session) or {k: 0 for k in RECOVERY_COUNTS.values()})
+
+
+def record_recovery(
+    event: str, *, agent: str, run: int | None = None, session: str | None = None, **fields: Any
+) -> None:
+    """Log one error/retry/fallback/recovery event (a RECOVERY_COUNTS type) and count it.
+    Fields: kind (what failed), attempt, wait (seconds), outcome, plus anything specific."""
+    counts = _recoveries.setdefault(session, {k: 0 for k in RECOVERY_COUNTS.values()})
+    key = RECOVERY_COUNTS[event]
+    counts[key] = counts.get(key, 0) + 1
+    log_event(run, {"agent": agent, "type": event, "step": _step, "session": session, **fields})
+
+
+# --- the one retry policy, and the circuit breaker --------------------------------------------
+
+_rng = random.Random()
+_sleep = time.sleep
+_breaker = {"failures": 0, "open": False}
+
+
+def classify(error: BaseException) -> str:
+    """ "retryable" (rate limit, overload, 5xx, 408/409, timeout, connection) or "fatal"."""
+    import anthropic
+
+    if isinstance(error, anthropic.APIConnectionError):  # includes APITimeoutError
+        return "retryable"
+    if isinstance(error, anthropic.APIStatusError):
+        code = error.status_code
+        return "retryable" if code in (408, 409, 429) or code >= 500 else "fatal"
+    return "fatal"
+
+
+def _error_kind(error: BaseException) -> str:
+    import anthropic
+
+    if isinstance(error, anthropic.APITimeoutError):
+        return "timeout"
+    if isinstance(error, anthropic.APIConnectionError):
+        return "connection"
+    if isinstance(error, anthropic.APIStatusError):
+        return f"http_{error.status_code}"
+    return type(error).__name__
+
+
+def retry_after_seconds(error: BaseException) -> float | None:
+    """The server's retry-after-ms / retry-after (seconds) header, when it sent one."""
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+    for name, scale in (("retry-after-ms", 1000.0), ("retry-after", 1.0)):
+        value = headers.get(name)
+        if value is None:
+            continue
+        try:
+            return max(0.0, float(value) / scale)
+        except ValueError:
+            continue
+    return None
+
+
+def backoff_wait(attempt: int) -> float:
+    """Exponential backoff with full jitter: uniform(0, min(max wait, base x 2^(attempt-1)))."""
+    ceiling = min(settings.RETRY_MAX_WAIT_SECONDS, settings.RETRY_BASE_SECONDS * 2 ** (attempt - 1))
+    return _rng.uniform(0.0, ceiling)
+
+
+def reset_breaker() -> None:
+    """Close the breaker (the training loop calls this at every step boundary)."""
+    _breaker.update(failures=0, open=False)
+
+
+def breaker_open() -> bool:
+    return bool(_breaker["open"])
+
+
+def _failed_attempt(fatal: bool, *, agent: str, run: int | None, session: str | None) -> None:
+    _breaker["failures"] = settings.BREAKER_THRESHOLD if fatal else _breaker["failures"] + 1
+    if not _breaker["open"] and _breaker["failures"] >= settings.BREAKER_THRESHOLD:
+        _breaker["open"] = True
+        record_recovery(
+            "breaker_open",
+            agent=agent,
+            run=run,
+            session=session,
+            failures=_breaker["failures"],
+            outcome="heuristic for the rest of the step",
+        )
+
+
+def call_with_retries(
+    fn: Callable[[], T],
+    *,
+    agent: str,
+    run: int | None = None,
+    session: str | None = None,
+    what: str = "messages.create",
+) -> T:
+    """Run one Claude API call under the retry policy and the circuit breaker.
+
+    Retryable errors are retried with backoff_wait (or the server's retry-after, capped at
+    RETRY_MAX_WAIT_SECONDS) up to RETRY_MAX_ATTEMPTS attempts and RETRY_TOTAL_SECONDS of waiting;
+    fatal errors are not. Raises LLMUnavailable when it gives up and CircuitOpen while the breaker
+    is open. Each retry and the final error is a recovery event in the agent log.
+    """
+    from backend import chaos
+
+    if _breaker["open"]:
+        raise CircuitOpen(f"{agent}: circuit open, Claude calls paused until the next step")
+    waited = 0.0
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            chaos.inject_llm()
+            result = fn()
+        except Exception as e:
+            fatal = classify(e) == "fatal"
+            _failed_attempt(fatal, agent=agent, run=run, session=session)
+            hint = retry_after_seconds(e)
+            wait = min(
+                settings.RETRY_MAX_WAIT_SECONDS, hint if hint is not None else backoff_wait(attempt)
+            )
+            reason = None
+            if fatal:
+                reason = "fatal"
+            elif _breaker["open"]:
+                reason = "circuit open"
+            elif attempt >= settings.RETRY_MAX_ATTEMPTS:
+                reason = f"gave up after {attempt} attempts"
+            elif waited + wait > settings.RETRY_TOTAL_SECONDS:
+                reason = f"retry time cap {settings.RETRY_TOTAL_SECONDS:.0f}s reached"
+            error = f"{_error_kind(e)}: {str(e)[:200]}"
+            record_recovery(
+                "retry" if reason is None else "llm_error",
+                agent=agent,
+                run=run,
+                session=session,
+                what=what,
+                kind=_error_kind(e),
+                attempt=attempt,
+                wait=0.0 if reason else round(wait, 3),
+                outcome=reason or "retrying",
+                error=error,
+            )
+            if reason is not None:
+                exc = CircuitOpen if _breaker["open"] and not fatal else LLMUnavailable
+                raise exc(f"{agent}: {reason}: {error}") from e
+            _sleep(wait)
+            waited += wait
+            continue
+        _breaker["failures"] = 0
+        return result
 
 
 def spent_usd(*, session: str | None = None) -> float:

@@ -49,6 +49,18 @@ SPEND_CAP_USD = float(os.getenv("SPEND_CAP_USD", "30"))  # all agents, all sessi
 SESSION_BUDGET_USD = float(os.getenv("SESSION_BUDGET_USD", "15"))  # one training session
 ANALYST_BUDGET_GBP = SESSION_BUDGET_USD * GBP_PER_USD  # the session cap, for GBP-based callers
 
+# Resilience (docs/AGENT_DESIGN.md, "Failure modes"). One retry policy for every Claude call
+# (llm.call_with_retries): exponential backoff with full jitter, retry-after honoured, capped in
+# attempts and in total time. The SDK's own retries are off so nothing retries twice.
+RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "5"))
+RETRY_BASE_SECONDS = 1.0
+RETRY_MAX_WAIT_SECONDS = 30.0
+RETRY_TOTAL_SECONDS = float(os.getenv("RETRY_TOTAL_SECONDS", "120"))
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
+# Circuit breaker: this many failed attempts in a row (a fatal error counts as all of them) and
+# every agent uses its heuristic for the rest of the training step.
+BREAKER_THRESHOLD = int(os.getenv("BREAKER_THRESHOLD", "6"))
+
 # Business-tariff electricity price used for £ impact when energy.json has no hourly price.
 DEFAULT_PRICE_GBP_PER_KWH = 0.27
 
