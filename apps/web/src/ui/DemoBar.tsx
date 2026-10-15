@@ -58,7 +58,8 @@ export function goToStep(i: number, plan: Plan) {
       break;
     case "report":
       useSim.setState({ playing: false });
-      navigate(storePath(plan.storeId, plan.best));
+      // the report the owner got before the change: its advice is still open to Approve (the best run has none left)
+      navigate(storePath(plan.storeId, plan.base));
       break;
     case "area":
       useSim.setState({ run: plan.best, playing: false, selectedStoreId: null, panel: "area" });
@@ -78,7 +79,7 @@ function caption(i: number, plan: Plan) {
     case "after":
       return `Run ${plan.best} · same night · ${plan.name} open`;
     case "report":
-      return `${plan.name} · weekly report · Approve`;
+      return `${plan.name} · run ${plan.base} report · Approve the advice`;
     case "area":
       return "High street · kWh, CO₂, £ · cost per store-week";
   }

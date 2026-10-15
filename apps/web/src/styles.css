@@ -1746,7 +1746,6 @@ button.chip:hover {
 .sp-certainty {
   font-size: 12px;
   color: var(--muted);
-  text-transform: capitalize;
 }
 .sp-advice-actions {
   display: flex;
@@ -2132,4 +2131,63 @@ button.chip:disabled {
   .sp-advice-actions {
     flex-wrap: wrap;
   }
+}
+
+/* phones: chips in one scrolling row on top, a compact HUD under them, shorter side cards */
+@media (max-width: 640px) {
+  .top-right {
+    left: 16px;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .top-right > .chip-analyst {
+    align-self: flex-end;
+    max-width: 100%;
+    overflow: hidden;
+  }
+  .tool-row {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tool-row > * {
+    flex: none;
+  }
+  .top-left {
+    top: 96px;
+    right: 16px;
+  }
+  .hud {
+    padding: 10px 12px 8px;
+  }
+  .hud-foot {
+    display: none;
+  }
+  .clock-time {
+    font-size: 22px;
+  }
+  .store-card,
+  .history {
+    max-height: 42vh;
+  }
+  .legend .chip-label {
+    display: none;
+  }
+  .playback {
+    gap: 8px;
+    padding: 8px;
+  }
+  .speeds button {
+    padding: 6px 6px;
+  }
+}
+@media (max-width: 640px) {
+  /* 14 day labels do not fit a phone-width track; the HUD clock carries the day */
+  .day-label {
+    display: none;
+  }
+}
+.store-page:has(.demo-bar) .sp-main {
+  padding-bottom: 110px;
 }
