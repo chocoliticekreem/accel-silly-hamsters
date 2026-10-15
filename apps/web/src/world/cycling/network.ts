@@ -5,6 +5,7 @@
 import type { CityMap, Street } from "../../api/contract";
 import { frontage } from "../../sim/geometry";
 import { buildStreetGraph, type StreetGraph } from "../../sim/streetGraph";
+import { fetchJsonTracked } from "../../state/loading";
 
 export interface CycleLane {
   name: string;
@@ -32,8 +33,8 @@ export const EMPTY_CYCLE: CycleData = { source: "", lanes: [], docks: [], parkin
 let pending: Promise<CycleData> | null = null;
 /** public/areas/cycle.json, fetched once (empty data if it can't be read: everything falls back to map.streets). */
 export function loadCycleData(): Promise<CycleData> {
-  pending ??= fetch(`${import.meta.env.BASE_URL ?? "/"}areas/cycle.json`)
-    .then((r) => (r.ok ? (r.json() as Promise<CycleData>) : EMPTY_CYCLE))
+  pending ??= fetchJsonTracked<CycleData>(`${import.meta.env.BASE_URL ?? "/"}areas/cycle.json`, "people", "cycle", { optional: true })
+    .then((d) => d ?? EMPTY_CYCLE)
     .catch(() => EMPTY_CYCLE);
   return pending;
 }
