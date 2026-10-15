@@ -334,6 +334,42 @@ export interface StoreInsights {
   note?: string;
 }
 
+// ---------- GET /api/stores/{storeId}/overview?run= (docs/STORE_PAGE.md) ----------
+// One call renders the owner's store page. Plain English; only this shop's numbers.
+
+export type OverviewStatus = "not_started" | "improving" | "best_found";
+export type Certainty = "likely" | "worth testing" | "uncertain";
+export type AdviceStatus = "new" | "applied" | "tested_better" | "tested_worse";
+
+export interface OverviewNumber {
+  value: number;
+  /** Fraction vs the baseline run (0.33 = +33%). */
+  change: number;
+}
+
+export interface StoreOverview {
+  storeId: string;
+  name: string;
+  type: StoreType;
+  run: number;
+  baselineRun: number;
+  bestRun: number | null;
+  status: OverviewStatus;
+  /** One sentence of advice, not a metric. */
+  headline: string;
+  numbers: {
+    customersPerWeek: OverviewNumber;
+    energyCostPerWeekGbp: OverviewNumber;
+    kwhPerWeek: OverviewNumber;
+    /** Margin on extra customers minus extra energy cost, vs the baseline. */
+    profitChangePerWeekGbp: number;
+  };
+  advice: { text: string; gbpPerWeek: number; certainty: Certainty; status: AdviceStatus; suggestion: Suggestion | null }[];
+  /** Baseline plus every run that changed this shop's settings, oldest first. */
+  history: { run: number; label: string; customersPerWeek: number; kwhPerWeek: number; profitChangePerWeekGbp: number; changes: string[]; best: boolean }[];
+  note?: string;
+}
+
 // ---------- The client interface (mock and http both implement it) ----------
 
 export interface Api {
@@ -354,4 +390,18 @@ export interface Api {
   health(): Promise<Health | null>;
   /** null for clubs, runs without store stats, or a backend without insights (404). */
   insights(storeId: string, run: number): Promise<StoreInsights | null>;
+  /** The owner's store page. run omitted = the shop's best run, else the latest. */
+  overview(storeId: string, run?: number): Promise<StoreOverview | null>;
+  /** POST /api/stores/{id}/optimize: a training session scoped to this shop. Throws ApiError (409 busy, 403 read-only). */
+  optimize(storeId: string, maxRuns?: number): Promise<AnalystStatus>;
+}
+
+/** An HTTP error with its status, so the UI can say "already running" (409) or "read-only demo" (403). */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
 }

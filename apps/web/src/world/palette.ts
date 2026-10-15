@@ -27,14 +27,14 @@ export const PERSONA_ALIASES: Record<string, string> = {
 export const personaColor = (p: string) => PERSONA_COLORS[p] ?? PERSONA_COLORS[PERSONA_ALIASES[p]] ?? PERSONA_FALLBACK;
 
 /** Soft pastel store bodies; awnings use the stronger accent. */
-export const STORE_COLORS: Record<StoreType, { body: string; awning: string; icon: string }> = {
-  cafe: { body: "#e9d8c4", awning: "#c9784a", icon: "☕" },
-  restaurant: { body: "#e7cfcf", awning: "#b5525a", icon: "🍽" },
-  takeaway: { body: "#efe0b8", awning: "#d99a2b", icon: "🥙" },
-  bar: { body: "#cfd6e8", awning: "#4f6bb0", icon: "🍺" },
-  shop: { body: "#d6e6dc", awning: "#4f9a78", icon: "🛍" },
-  offlicence: { body: "#e3d9ec", awning: "#7d5aa6", icon: "🍾" },
-  club: { body: "#3a3150", awning: "#e04fd0", icon: "🎧" },
+export const STORE_COLORS: Record<StoreType, { body: string; awning: string }> = {
+  cafe: { body: "#e9d8c4", awning: "#c9784a" },
+  restaurant: { body: "#e7cfcf", awning: "#b5525a" },
+  takeaway: { body: "#efe0b8", awning: "#d99a2b" },
+  bar: { body: "#cfd6e8", awning: "#4f6bb0" },
+  shop: { body: "#d6e6dc", awning: "#4f9a78" },
+  offlicence: { body: "#e3d9ec", awning: "#7d5aa6" },
+  club: { body: "#3a3150", awning: "#e04fd0" },
 };
 
 export const BUILDING_COLORS: Record<BuildingKind, string> = {

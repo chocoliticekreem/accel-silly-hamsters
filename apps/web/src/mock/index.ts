@@ -8,6 +8,7 @@ import energyData from "../../../../data/processed/energy.json";
 import { formatHHMM } from "../sim/time";
 import { configForRun, LICENCE, MOCK_RUN_COUNT, notebookLabel, type RunConfig } from "./configs";
 import { generateMap } from "./map";
+import { overviewFromParts } from "../api/overviewFallback";
 import { buildInsights } from "./insights";
 import { buildReport, makePdf, suggestionsBetween } from "./report";
 import { simulateRun, type RunResult } from "./simulate";
@@ -90,6 +91,7 @@ const later = <T>(fn: () => T, ms = 60): Promise<T> =>
 const pdfUrls = new Map<string, string>();
 
 export function mockApi(state: MockState = createMockState()): Api {
+  let self: Api;
   const { map } = state;
   const storeName = (id: string) => map.stores.find((s) => s.id === id)?.name ?? id;
   const areas = Object.fromEntries(
@@ -99,7 +101,7 @@ export function mockApi(state: MockState = createMockState()): Api {
     }),
   );
 
-  return {
+  self = {
     map: () => later(() => map),
     runs: async () => {
       // simulate runs one by one, yielding between them, so the first paint isn't blocked
@@ -195,6 +197,15 @@ export function mockApi(state: MockState = createMockState()): Api {
         const sugg = run >= best ? [] : suggestionsBetween(state.config(run), state.config(best), state.result(run).stores, state.result(best).stores, areas);
         return buildInsights(map, run, state.config(run), state.result(run), sugg, storeId);
       }),
+    overview: (storeId, run) => overviewFromParts(self, storeId, run),
+    optimize: () =>
+      later<AnalystStatus>(() => ({
+        state: "stopped",
+        startedAt: new Date(STARTED_AT).toISOString(),
+        iterations: MOCK_RUN_COUNT,
+        bestRun: state.bestRun(),
+        stoppedReason: "threshold",
+      })),
     health: () => later(() => ({ ok: true, simVersion: "mock", mapSource: "sample" as const, realRuns: MOCK_RUN_COUNT })),
     decision: (req) =>
       later(() => {
@@ -202,6 +213,7 @@ export function mockApi(state: MockState = createMockState()): Api {
         return { ok: true };
       }),
   };
+  return self;
 }
 
 function pct(n: number) {
