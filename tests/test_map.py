@@ -19,7 +19,7 @@ import pytest
 
 from backend import cache, settings, timeutil
 from backend.contract import Bounds, MapData, StoreType, Street, dump
-from backend.pipeline import common, map_fallback, osm_map
+from backend.pipeline import common, demand, map_fallback, osm_map
 from backend.pipeline.osm_map import OsmData, Projection, WalkGraph
 
 B = osm_map.BOUNDS
@@ -237,6 +237,11 @@ def test_closes_before_midnight() -> None:
 def test_building_height() -> None:
     assert osm_map.building_height({"height": "12.5 m"}, "office") == 12.5
     assert osm_map.building_height({"building:levels": "4"}, "office") == 12.8
+    assert osm_map.building_height({"building:levels": "4", "roof:levels": "1"}, "office") == 16.0
+    # A tower mapped as a low outline plus a tall building:part keeps the part's height.
+    assert osm_map.building_height({"building:levels": "2"}, "office", part_height=86.4) == 86.4
+    assert osm_map.building_height({}, "office", part_height=172.8) == 172.8
+    assert osm_map.building_height({"height": "400"}, "office") == osm_map.MAX_HEIGHT_M
     assert (
         osm_map.building_height({}, "residential") == map_fallback.DEFAULT_HEIGHT_M["residential"]
     )
@@ -495,7 +500,13 @@ def test_entry_points(map_data: MapData) -> None:
     stations = [e for e in map_data.entryPoints if e.kind == "station"]
     assert [e.id for e in stations] == [f"st{i}" for i in range(1, len(stations) + 1)]
     assert stations[0].name == map_fallback.STATION_NAME
-    assert len({e.name for e in stations}) == len(stations)
+    # One entry per station, except one per street entrance for ENTRANCE_STATIONS (Old Street),
+    # whose entries are consecutive.
+    names = [e.name for e in stations]
+    for name in set(names):
+        positions = [i for i, n in enumerate(names) if n == name]
+        assert positions == list(range(positions[0], positions[0] + len(positions))), name
+        assert len(positions) == 1 or name in osm_map.ENTRANCE_STATIONS, name
     vertices = points_of(map_data.streets)
     for e in map_data.entryPoints:
         assert (e.x, e.z) in vertices, f"{e.id} is not a street vertex"
@@ -666,7 +677,13 @@ def test_processed_map_is_the_osm_build() -> None:
     assert mean_point("Redchurch Street")[1] > 80
     assert mean_point("Quaker Street")[1] < -80
     stations = {e.name: e for e in data.entryPoints if e.kind == "station"}
-    assert list(stations) == [map_fallback.STATION_NAME, "Liverpool Street"]
+    assert list(stations) == [
+        map_fallback.STATION_NAME,
+        "Liverpool Street",
+        "Moorgate",  # just inside the south-west corner since the map reaches Old Street
+        "Old Street",
+    ]
+    assert all(name in demand.RAIL_STATIONS for name in stations), "demand knows every station"
     liverpool_street = stations["Liverpool Street"]
     assert liverpool_street.x < -300 and liverpool_street.z < -300, "near the south-west corner"
     clubs = {s.name for s in data.stores if s.type == "club"}
@@ -681,3 +698,58 @@ def test_fallback_is_labelled_as_hand_written() -> None:
     assert is_fallback(data)
     assert all("not openstreetmap" in s.label.lower() for s in data.sources)
     assert all(s.osmId is None for s in data.stores)
+
+
+# --- landmarks and Old Street ---------------------------------------------------------------
+
+
+def osm_processed_map() -> MapData:
+    data = processed_map()
+    if is_fallback(data):
+        pytest.skip("data/processed/map.json is the hand-written fallback")
+    return data
+
+
+def test_landmarks_are_real_places_inside_the_bounds() -> None:
+    """Encode Hub, art'otel, Boxpark and the stations, where they really are (metres from
+    Shoreditch High Street station, which is still the origin), inside the bounds."""
+    data = osm_processed_map()
+    landmarks = {lm.id: lm for lm in data.landmarks or []}
+    expected = {
+        "shoreditch-high-street": ("station", 0, 0),
+        "old-street": ("station", -910, 265),
+        "encode-hub": ("venue", -645, 480),
+        "artotel-london-hoxton": ("hotel", -600, 340),
+        "boxpark-shoreditch": ("market", -125, 25),
+    }
+    assert set(expected) <= set(landmarks)
+    buildings = {b.id: b for b in data.buildings}
+    b = data.bounds
+    for landmark_id, (kind, x, z) in expected.items():
+        lm = landmarks[landmark_id]
+        assert lm.kind == kind, landmark_id
+        assert math.dist((lm.x, lm.z), (x, z)) < 60, (landmark_id, lm.x, lm.z)
+        assert b.minX < lm.x < b.maxX and b.minZ < lm.z < b.maxZ, landmark_id
+        if lm.buildingId is not None:
+            building = buildings[lm.buildingId]
+            assert (building.x, building.z, building.h) == (lm.x, lm.z, lm.h), landmark_id
+            assert building.storeId is None, f"{landmark_id} must not be a store"
+    assert landmarks["encode-hub"].name == "Encode Hub"
+    assert landmarks["old-street"].buildingId is None  # underground
+    assert landmarks["artotel-london-hoxton"].h > 80  # the 92 m tower
+    origin = buildings[landmarks["shoreditch-high-street"].buildingId or ""]
+    assert origin.kind == "station" and abs(origin.x) < 60 and abs(origin.z) < 30
+
+
+def test_old_street_roundabout_is_inside_with_its_streets_and_entrances() -> None:
+    data = osm_processed_map()
+    roundabout = (-880.0, 255.0)
+    assert data.bounds.minX <= roundabout[0] - 150, "room west of Old Street roundabout"
+    near = {s.name for s in data.streets if any(math.dist(p, roundabout) < 120 for p in s.points)}
+    assert {"Old Street", "City Road"} <= near
+    names = {s.name for s in data.streets}
+    assert {"East Road", "Great Eastern Street", "Old Street Roundabout"} <= names
+    entrances = [e for e in data.entryPoints if e.kind == "station" and e.name == "Old Street"]
+    assert len(entrances) >= 2, "Old Street's street entrances"
+    assert all(math.dist((e.x, e.z), roundabout) < 150 for e in entrances)
+    assert sum(math.dist((b.x, b.z), roundabout) < 200 for b in data.buildings) >= 40

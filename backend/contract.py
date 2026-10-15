@@ -17,6 +17,7 @@ LightingLevel = Literal["off", "low", "high"]
 BuildingKind = Literal["store", "club", "office", "residential", "station"]
 StoreType = Literal["cafe", "restaurant", "takeaway", "bar", "shop", "offlicence", "club"]
 EntryKind = Literal["street", "station"]
+LandmarkKind = Literal["venue", "hotel", "station", "market", "landmark"]
 Confidence = Literal["low", "medium", "high"]
 
 DAYS = 14
@@ -86,6 +87,19 @@ class EntryPoint(Model):
     z: float
 
 
+class Landmark(Model):
+    """A named real place the frontend labels or renders specially (additive)."""
+
+    id: str
+    name: str
+    kind: LandmarkKind
+    buildingId: str | None = None  # the map building that is this place; null = no building
+    x: float
+    z: float
+    h: float  # height in metres to hang a label at (the building's height; 0 = street level)
+    note: str | None = Optional()
+
+
 class MapData(Model):
     bounds: Bounds
     streets: list[Street]
@@ -94,6 +108,8 @@ class MapData(Model):
     entryPoints: list[EntryPoint]
     # Additive: citations for where the map came from.
     sources: list[Source] = Field(default_factory=list)
+    # Additive: named real places (venue, hotel, stations, market); omitted when unset.
+    landmarks: list[Landmark] | None = Optional()
 
 
 # --- GET /api/runs --------------------------------------------------------------------------
