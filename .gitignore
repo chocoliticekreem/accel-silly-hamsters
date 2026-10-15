@@ -22,3 +22,5 @@ runs/*
 
 # local browser automation output
 .playwright-mcp/
+data/processed/.hashes.json
+.vercel
