@@ -2,7 +2,28 @@
 // with the current step lit, the session's vitals (backend, runtime, spend, patience, resume step), and one card
 // per experiment: how many proposals came in, the analyst's hypothesis and expected gain, and what actually happened.
 // Polls while a session is running. Data: GET /api/agents/session + /api/agents/log.
-import { Bot, Brain, Cpu, FlaskConical, Gauge, RotateCcw, Store as StoreIcon, X } from "lucide-react";
+import {
+  ArchiveRestore,
+  Bot,
+  Brain,
+  Cpu,
+  FlaskConical,
+  Gauge,
+  LifeBuoy,
+  Lock,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  ShieldAlert,
+  SkipForward,
+  Store as StoreIcon,
+  Timer,
+  TriangleAlert,
+  Wrench,
+  X,
+  ZapOff,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { AgentEvent, AgentSession } from "../api/contract";
 import { invalidate, useAgentLog, useAgentSession } from "../state/data";
@@ -61,7 +82,7 @@ function Loop({ session, stores }: { session: AgentSession; stores?: number }) {
   const nodes = [
     { icon: StoreIcon, label: "Store agents", sub: stores ? `${stores} shops` : "one per shop" },
     { icon: Brain, label: "Analyst", sub: session.backend === "heuristic" ? "heuristic" : "Claude" },
-    { icon: Cpu, label: "Simulator", sub: "14 days · ~2 s" },
+    { icon: Cpu, label: "Simulator", sub: "14 days · ~30 s" },
     { icon: Gauge, label: "Score", sub: "vs best run" },
   ];
   return (
@@ -77,6 +98,76 @@ function Loop({ session, stores }: { session: AgentSession; stores?: number }) {
         );
       })}
     </div>
+  );
+}
+
+// Errors and recoveries (docs/AGENT_DESIGN.md): the session's counts and the matching log events.
+const RECOVERY_LABEL: [key: string, label: string][] = [
+  ["retries", "retries"],
+  ["fallbacks", "fallbacks"],
+  ["repairs", "repairs"],
+  ["skipped", "skipped"],
+  ["resumed", "resumed"],
+  ["quarantined", "quarantined"],
+  ["restored", "restored"],
+  ["errors", "gave up"],
+  ["breakerOpens", "breaker"],
+  ["batchTimeouts", "batch timeouts"],
+  ["lockTakeovers", "takeovers"],
+  ["reconciled", "reconciled"],
+];
+const RECOVERY_EVENT: Record<string, { icon: LucideIcon; label: string }> = {
+  retry: { icon: RefreshCw, label: "Retried" },
+  fallback: { icon: LifeBuoy, label: "Fell back" },
+  repair: { icon: Wrench, label: "Repair re-ask" },
+  skip: { icon: SkipForward, label: "Shop skipped" },
+  quarantine: { icon: ShieldAlert, label: "Run quarantined" },
+  restore: { icon: ArchiveRestore, label: "File restored" },
+  llm_error: { icon: TriangleAlert, label: "Claude call failed" },
+  breaker_open: { icon: ZapOff, label: "Circuit open" },
+  batch_timeout: { icon: Timer, label: "Batch timed out" },
+  lock_takeover: { icon: Lock, label: "Lock taken over" },
+  reconcile: { icon: RotateCcw, label: "Ghost session closed" },
+  resume: { icon: Play, label: "Resumed" },
+};
+
+function Recoveries({ session, events }: { session: AgentSession; events: AgentEvent[] }) {
+  const counts = RECOVERY_LABEL.filter(([k]) => (session.recoveries?.[k] ?? 0) > 0);
+  const recent = events
+    .filter((e) => e.type in RECOVERY_EVENT && e.type !== "retry")
+    .sort((a, b) => a.at.localeCompare(b.at))
+    .slice(-6)
+    .reverse();
+  if (counts.length === 0 && recent.length === 0) return null;
+  return (
+    <>
+      <div className="ag-recoveries" aria-label="Recoveries">
+        <LifeBuoy size={12} />
+        {counts.map(([k, label]) => (
+          <span key={k} className="status" title={`${k} this session`}>
+            <b>{session.recoveries?.[k]}</b> {label}
+          </span>
+        ))}
+      </div>
+      {recent.length > 0 && (
+        <ul className="ag-recovery-log">
+          {recent.map((e, i) => {
+            const { icon: I, label } = RECOVERY_EVENT[e.type];
+            const kind = typeof e.data.kind === "string" ? e.data.kind : "";
+            const outcome = typeof e.data.outcome === "string" ? e.data.outcome : "";
+            return (
+              <li key={`${e.at}-${i}`} className={e.type === "llm_error" || e.type === "quarantine" ? "warn" : ""}>
+                <I size={12} />
+                <span>
+                  <b>{label}</b> {kind && <span className="mono">{kind}</span>} <span className="muted">{e.agent}</span>
+                  {outcome && <span className="muted"> → {outcome}</span>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </>
   );
 }
 
@@ -140,6 +231,7 @@ export function AgentsPanel() {
               </>
             )}
           </div>
+          <Recoveries session={session} events={log} />
           {session.error && <div className="calib-warn">{session.error}</div>}
 
           <h3 className="section-title">
