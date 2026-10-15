@@ -760,7 +760,8 @@ function boxpark(w: number, d: number): FloorPlan[] {
 
 /** Interior footprint for a host footprint: never smaller than a readable cutaway, never a whole block. */
 export function interiorSize(key: InteriorKey, width: number, depth: number): [number, number] {
-  const c = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+  // never wider or deeper than the building itself (Encode Hub is a 6 m-wide terrace): only cap the big ones
+  const c = (v: number, _a: number, b: number) => Math.min(b, v);
   if (key === "artotel") return [c(width, 24, 34), c(depth, 18, 24)];
   if (key === "boxpark") return [c(width, 30, 48), c(depth, 14, 18)];
   if (key === "xoyo") return [c(width, 20, 30), c(depth, 15, 22)];
