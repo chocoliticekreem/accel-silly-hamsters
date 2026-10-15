@@ -1,4 +1,4 @@
-// Mock simulation: persona agents live 14 days on the street grid, choosing open, lit stores.
+// Mock simulation: persona agents live 14 days on the map's real streets (mock/walk.ts), choosing open, lit stores.
 // Decisions are seeded per (day, agent), so two runs differ only because store configs differ (fixed seed rule).
 // KPIs are computed from the generated visits, so what you see in 3D matches the numbers in the HUD.
 // Owners adapt day by day (mock/owners.ts): opening, lighting and energy follow each owner's evolving schedule.
@@ -80,6 +80,8 @@ interface Ctx {
   /** Where station arrivals appear today (the nearest street entry while the station is closed). */
   station: Loc;
   realStation: Loc;
+  /** The real map (1.7 km across, ~200 shops) rather than the schematic one: see dayAgents. */
+  big: boolean;
   altStation: Loc;
   tweaks: SimTweaks;
 }
@@ -147,7 +149,15 @@ function context(map: CityMap, cfg: RunConfig, street: StreetEvent[], run: numbe
     const stations = map.entryPoints.filter((e) => e.kind === "station");
     // wander spots: street corners near the shops (where window-shopping happens), spread over the whole map
     const doors = stores.map((s) => s.loc);
-    const nearShops = net.nodes.filter(([x, z]) => doors.some((d) => Math.abs(d.x - x) < 120 && Math.abs(d.z - z) < 120)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const along: [number, number][] = [];
+    for (const st of map.streets)
+      for (let i = 1; i < st.points.length; i++) {
+        const [ax, az] = st.points[i - 1];
+        const [bx, bz] = st.points[i];
+        const n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 25));
+        for (let k = 0; k < n; k++) along.push([ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n]);
+      }
+    const nearShops = along.filter(([x, z]) => doors.some((d) => Math.abs(d.x - x) < 120 && Math.abs(d.z - z) < 120)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     base = {
       map,
       stores,
@@ -158,6 +168,7 @@ function context(map: CityMap, cfg: RunConfig, street: StreetEvent[], run: numbe
       entries: [...map.entryPoints.filter((e) => e.kind === "street"), ...stations.slice(1)].map((e) => net.place(e.x, e.z)),
       spots: spread(nearShops, SPOTS).map(([x, z]) => net.place(x, z)),
       realStation: net.place(stations[0]?.x ?? 0, stations[0]?.z ?? 0),
+      big: stores.length > 60,
     };
     ctxCache.set(map, base);
   }
@@ -250,10 +261,9 @@ function walkTo(a: Agent, to: Loc) {
   a.at = to;
 }
 
-/** Window-shopping: wander to a street corner near the shops, nearer ones likelier. */
+/** Window-shopping: wander to a street corner near the shops. */
 function stroll(ctx: Ctx, a: Agent, r: Rng) {
-  const w = ctx.spots.map((s) => Math.exp(-Math.hypot(s.x - a.at.x, s.z - a.at.z) / 250));
-  walkTo(a, ctx.spots[Math.max(0, weighted(r, w))]);
+  walkTo(a, pick(r, ctx.spots));
 }
 
 function wait(a: Agent, minutes: number) {
@@ -457,7 +467,9 @@ function dayAgents(ctx: Ctx, regs: Regular[], day: number, seed: number): AgentD
       const byStation = r() < 0.5;
       if (stationClosed && byStation && !keep(id, "station", 0.4)) continue;
       if (!keep(id, "rain", rain)) continue;
-      const from = byStation ? ctx.station : pick(r, ctx.entries);
+      // on the real map the edge entries are up to a kilometre from most shops: half the street arrivals step out
+      // near the shops instead (buses, side streets, the flats above them)
+      const from = byStation ? ctx.station : ctx.big && r() < 0.5 ? pick(r, ctx.spots) : pick(r, ctx.entries);
       const a = startAgent(id, persona, false, from, at(day, between(r, hours[0], hours[1])), r);
       fn(a, r);
       out.push(finish(a));
@@ -475,10 +487,14 @@ function dayAgents(ctx: Ctx, regs: Regular[], day: number, seed: number): AgentD
     if (r() < 0.4) visitOne(ctx, a, { prefs: { bar: 2 }, outside: 0.6 }, r);
     walkTo(a, r() < 0.6 ? ctx.station : pick(r, ctx.entries));
   }, [18, 21]);
-  oneOff("night-owl", Math.round(110 * night), (a, r) => nightOut(ctx, a, day, r), [21.5, 23.8]);
+  // the night-out crowd scales with the clubs it fills (2 on the schematic map, 6 on the real one)
+  const clubs = ctx.stores.filter((s) => s.type === "club").length;
+  oneOff("night-owl", Math.round(110 * night * Math.max(1, clubs / 2)), (a, r) => nightOut(ctx, a, day, r), [21.5, 23.8]);
 
   // passers-by: the through-traffic of a busy high street. Most never stop; a lit, open shop can catch a few.
-  const PASSER_SCALE = 4;
+  // the real map's walks are long (1.7 km across, real street corners): half as many there keeps a run's keyframes
+  // (and the browser's memory) in check
+  const PASSER_SCALE = ctx.big ? 2 : 4;
   const through = (n: number, hours: [number, number]) =>
     oneOff("passer-by", Math.round(n * PASSER_SCALE), (a, r) => {
       if (r() < 0.6) stroll(ctx, a, r);

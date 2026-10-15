@@ -372,7 +372,7 @@ export function buildWalkNet(streets: Street[]): WalkNet {
     const walk: P[] = [[a.x, a.z]];
     if (pts.length >= 2) walk.push(...offsetLine(pts, widths, side));
     walk.push([b.x, b.z]);
-    const out = simplify(walk);
+    const out = douglasPeucker(simplify(walk), 1.2);
     routeCache.set(key, out);
     return out;
   };
@@ -426,11 +426,42 @@ function offsetLine(pts: P[], widths: number[], side: number): P[] {
   return out;
 }
 
+/** Douglas–Peucker: drop corners within `tol` m of the line through their neighbours (fewer keyframes, same street). */
+function douglasPeucker(pts: P[], tol: number): P[] {
+  if (pts.length <= 2) return pts;
+  const keep = new Uint8Array(pts.length);
+  keep[0] = keep[pts.length - 1] = 1;
+  const stack: [number, number][] = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [i, j] = stack.pop()!;
+    const [ax, az] = pts[i];
+    const [bx, bz] = pts[j];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const len = Math.hypot(dx, dz) || 1;
+    let worst = -1;
+    let wd = tol;
+    for (let k = i + 1; k < j; k++) {
+      const d = Math.abs((pts[k][0] - ax) * dz - (pts[k][1] - az) * dx) / len;
+      if (d > wd) (wd = d), (worst = k);
+    }
+    if (worst > 0) {
+      keep[worst] = 1;
+      stack.push([i, worst], [worst, j]);
+    }
+  }
+  return pts.filter((_, k) => keep[k]);
+}
+
 /** Drop repeats and points where the direction barely changes (keeps keyframes few). */
 function simplify(pts: P[]): P[] {
   const out: P[] = [];
-  for (const p of pts) {
-    if (out.length && Math.hypot(out[out.length - 1][0] - p[0], out[out.length - 1][1] - p[1]) < 0.5) continue;
+  for (const [i, p] of pts.entries()) {
+    if (out.length && Math.hypot(out[out.length - 1][0] - p[0], out[out.length - 1][1] - p[1]) < 0.5) {
+      // the destination itself always stays (it replaces a corner that close to it)
+      if (i === pts.length - 1 && out.length > 1) out[out.length - 1] = p;
+      continue;
+    }
     if (out.length >= 2) {
       const [ax, az] = out[out.length - 2];
       const [bx, bz] = out[out.length - 1];
