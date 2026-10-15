@@ -90,7 +90,11 @@ const later = <T>(fn: () => T, ms = 60): Promise<T> =>
 
 const pdfUrls = new Map<string, string>();
 
-export function mockApi(state: MockState = createMockState()): Api {
+let shared: MockState | undefined;
+/** The one mock state the app's mockApi and the economy mock (mock/economy.ts) share. */
+export const sharedMockState = () => (shared ??= createMockState());
+
+export function mockApi(state: MockState = sharedMockState()): Api {
   let self: Api;
   const { map } = state;
   const storeName = (id: string) => map.stores.find((s) => s.id === id)?.name ?? id;
