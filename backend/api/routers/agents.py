@@ -1,9 +1,9 @@
-"""GET /api/agents/session and GET /api/agents/log: the agents' work, for the frontend's Agents view.
+"""GET /api/agents/session and GET /api/agents/log: the agents' work, for the Agents view.
 
 Read-only views over files the training loop already writes:
   runs/analyst_state.json        the analyst checkpoint (step, best run, patience, spend)
   runs/llm_log.jsonl,
-  runs/{run}/llm_log.jsonl       the audit log: hand-offs, proposals, hypotheses, experiments, results
+  runs/{run}/llm_log.jsonl       audit log: hand-offs, proposals, hypotheses, experiments, results
 
 The log is filtered to the events that tell the story of a session and projected to scalar fields:
 no prompts or responses, no per-store id lists (counts only), strings capped. Area-level view.
@@ -43,7 +43,17 @@ STORY_EVENTS = {
     "error",
 }
 # Fields never sent: model inputs/outputs and anything that lists individual stores.
-DROP = {"prompt", "response", "messages", "system", "input", "output", "heuristicStores", "stores_list", "trace"}
+DROP = {
+    "prompt",
+    "response",
+    "messages",
+    "system",
+    "input",
+    "output",
+    "heuristicStores",
+    "stores_list",
+    "trace",
+}
 MAX_STR = 240
 
 
@@ -96,7 +106,9 @@ def get_session():
 
 @router.get("/api/agents/log", response_model=list[AgentEvent])
 def get_log(run: int | None = Query(None, ge=0), limit: int = Query(300, ge=1, le=2000)):
-    """The session's story, oldest first: every run's log plus the session-level log. ?run= scopes to one run."""
+    """The session's story, oldest first: every run's log plus the session-level log.
+
+    ?run= scopes it to one run."""
     runs_dir = settings.RUNS_DIR
     events: list[AgentEvent] = []
     if run is None:

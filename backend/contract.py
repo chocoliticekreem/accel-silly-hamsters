@@ -390,7 +390,7 @@ class AgentSession(Model):
 
 
 class AgentEvent(Model):
-    """One step of the agents' story: a hand-off, proposals, a hypothesis, an experiment, a result..."""
+    """One step of the agents' story: hand-off, proposals, hypothesis, experiment or result."""
 
     at: str
     agent: str  # analyst | store_owner | store_agents | training | ...
