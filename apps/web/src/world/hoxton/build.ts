@@ -815,7 +815,7 @@ export function buildHoxton(map: CityMap, data: HoxtonData): HoxtonBuilt {
       for (const side of [-1, 1]) {
         const nx = -uz * side;
         const nz = ux * side;
-        for (let d = 3 + r() * 5; d < len - 3; d += art ? 9 + r() * 8 : 7.5 + r() * 3) {
+        for (let d = 3 + r() * 5; d < len - 3; d += art ? 8 + r() * 6 : 6.5 + r() * 2.5) {
           const cx = ax + ux * d;
           const cz = az + uz * d;
           if (!inArea(cx, cz)) continue;
@@ -830,7 +830,7 @@ export function buildHoxton(map: CityMap, data: HoxtonData): HoxtonBuilt {
             murals++;
             continue;
           }
-          if (!high || r() < 0.25) continue;
+          if (!high || r() < 0.1) continue;
           const w = Math.min(f.half * 2 - 0.6, 3.6 + r() * 2.4);
           if (w < 2.6 || !facadeFree(f.x, f.z, f.ox, f.oz, w / 2 + 0.3)) continue;
           placed.push({ x: f.x, z: f.z, ox: f.ox, oz: f.oz, half: w / 2 + 0.3 });
@@ -862,14 +862,14 @@ export function buildHoxton(map: CityMap, data: HoxtonData): HoxtonBuilt {
       const tz = q.ox;
       const [u0, v0, u1, v1] = uvOf(i);
       const c = (s: number, t: number): [number, number, number] => [q.x + tx * s * (q.w / 2), q.y + t * (q.h / 2), -(q.z + tz * s * (q.w / 2))];
-      // viewed from outside, left = -tangent... local +x = (-oz, ox) is the viewer's left; flip u so text reads
-      const bl = c(1, -1);
-      const br = c(-1, -1);
-      const tr = c(-1, 1);
-      const tl = c(1, 1);
-      pos.push(...bl, ...br, ...tr, ...bl, ...tr, ...tl);
+      // seen from the street (along -o), c(-1, *) is on the viewer's left: text runs from c(-1) to c(1)
+      const a = c(-1, -1);
+      const b = c(1, -1);
+      const cc = c(1, 1);
+      const d = c(-1, 1);
+      pos.push(...a, ...b, ...cc, ...a, ...cc, ...d);
       for (let k = 0; k < 6; k++) nor.push(q.ox, 0, -q.oz);
-      uv.push(u0, v0, u1, v0, u1, v1, u0, v0, u1, v1, u0, v1);
+      uv.push(u0, v0, u1, v0, u1, v1, u0, v0, u1, v1, u0, v1); // a b c, a c d
     });
     const g = new BufferGeometry();
     g.setAttribute("position", new BufferAttribute(new Float32Array(pos), 3));
@@ -952,6 +952,7 @@ export function buildHoxton(map: CityMap, data: HoxtonData): HoxtonBuilt {
 
   const kitGeos = kit.bake({ ao: 2.5 });
   stats.ms = Math.round(performance.now() - t0);
+  if (import.meta.env.DEV) (globalThis as unknown as { __hoxton: unknown }).__hoxton = { murals: muralQuads.map((q) => [Math.round(q.x), Math.round(q.z), q.ox, q.oz]), signs: signQuads.map((q) => [Math.round(q.x), Math.round(q.z), q.ox, q.oz]) };
   return { kit: kitGeos, market, ground: flat.geometry(), buildings, signs, murals: muralsGeo, atlas, runs, spots, stats };
 }
 
