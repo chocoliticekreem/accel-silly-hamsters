@@ -9,6 +9,8 @@ import type { Place } from "./places";
 export function goPlace(p: Place) {
   useTravel.getState().go(p.key);
   flyTo(p.x, p.z, p.dist, p.y);
+  // a place with a sim store behind it (Encode Hub's café, art'otel's restaurant, XOYO) opens its card with energy and visits
+  if (p.storeId && useSim.getState().selectedStoreId !== p.storeId) useSim.getState().selectStore(p.storeId);
 }
 
 /** Open a landmark's multi-floor interior (the Landmarks module frames the floor), or a club's cutaway. */
