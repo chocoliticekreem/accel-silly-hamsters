@@ -58,6 +58,7 @@ import {
   type SiteLayout,
 } from "../../sim/construction";
 import { polyline, newPoint, type Polyline } from "../../sim/polyline";
+import { createCraneLoad, type CraneLoad } from "../physics/craneLoad";
 import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
@@ -352,6 +353,8 @@ interface CraneState {
   hookY: number;
   synced: boolean;
   pend: ReturnType<typeof newPendulum>;
+  /** Rapier hook + load rig (world/physics/craneLoad.ts); its swing replaces `pend` while physics runs it. */
+  load: CraneLoad | null;
   px: number;
   pz: number;
   vx: number;
@@ -437,6 +440,7 @@ function Site({ site }: { site: SiteLayout }) {
       hookY: c.spec.h - 5,
       synced: false,
       pend: newPendulum(),
+      load: null,
       px: 0,
       pz: 0,
       vx: 0,
@@ -481,6 +485,15 @@ function Site({ site }: { site: SiteLayout }) {
     },
     [world],
   );
+
+  // physics hoist rigs: the hook block on a rope joint, a 1.5 t load on a sling (falls back to `pend` without physics)
+  useEffect(() => {
+    const loads = world.craneState.map((st) => (st.load = createCraneLoad({ ropeLength: 10, mass: 1500, size: [2.4, 1, 1.2], sling: SLING })));
+    return () => {
+      loads.forEach((l) => l.dispose());
+      world.craneState.forEach((st) => (st.load = null));
+    };
+  }, [world]);
 
   const lorry = useRef<{ leg: "gone" | "in" | "parked" | "out"; s: number; kind: LoadKind; gateOpen: number }>({ leg: "gone", s: 0, kind: "beams", gateOpen: 0 });
   const pt = useMemo(() => newPoint(), []);
@@ -742,8 +755,13 @@ function Site({ site }: { site: SiteLayout }) {
         [st.px, st.pz, st.vx, st.vz] = [tx, tz, vx, vz];
       }
       b.trolley.put(tx, spec.h + 0.05, tz, st.slew);
-      const hx = tx + st.pend.x;
-      const hz = tz + st.pend.z;
+      const rig = st.load;
+      if (rig) {
+        rig.setAnchor(tx, ty, tz);
+        rig.setRopeLength(ty - (st.hookY + 1.5));
+      }
+      const hx = rig?.physical ? rig.hook.x : tx + st.pend.x;
+      const hz = rig?.physical ? rig.hook.z : tz + st.pend.z;
       b.hook.put(hx, st.hookY, hz, st.slew);
       // two falls of hoist rope from the trolley sheaves to the hook block
       for (const o of [-0.22, 0.22]) {

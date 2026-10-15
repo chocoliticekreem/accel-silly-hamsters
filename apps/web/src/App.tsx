@@ -11,7 +11,8 @@ import { Bot } from "lucide-react";
 import { AnalystChip } from "./ui/AnalystChip";
 import { CompareView } from "./ui/CompareView";
 import { DemoBar, DemoChip } from "./ui/DemoBar";
-import { GraphicsChip } from "./ui/GraphicsChip";
+import { GraphicsChip, MapAttribution } from "./ui/GraphicsChip";
+import { GoToBar } from "./ui/GoToBar";
 import { HistoryPanel } from "./ui/HistoryPanel";
 import { Clock, Hud } from "./ui/Hud";
 import { Icon } from "./ui/icons";
@@ -58,6 +59,7 @@ export default function App() {
       <div className="stage">{compare ? <CompareView /> : <World map={map} run={run} stores={stores} />}</div>
 
       <div className="overlay">
+        <GoToBar />
         <div className="top-left">
           {compare ? (
             <section className="hud panel" aria-label="Shared clock">
@@ -104,6 +106,7 @@ export default function App() {
         </div>
         <DemoBar />
         <Toast />
+        <MapAttribution />
       </div>
     </main>
   );

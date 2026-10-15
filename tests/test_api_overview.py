@@ -344,7 +344,8 @@ def test_optimize_starts_a_scoped_session(client: TestClient, fake_train: list[d
     assert body["state"] == "running" and body["iterations"] == 0
     assert fake_train == [{"max_runs": 4, "scope_store": "s1"}]
     assert store.load_analyst_state().scopeStore == "s1"
-    assert "scopeStore" not in client.get("/api/agents/session").json()  # area view stays anon
+    session = client.get("/api/agents/session").json()  # the area view stays anonymous
+    assert "scopeStore" not in session and "config" not in session
     # still "running" (the fake never stops it): a second start is refused
     assert client.post("/api/stores/s2/optimize").status_code == 409
     assert len(fake_train) == 1

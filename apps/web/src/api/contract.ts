@@ -77,6 +77,22 @@ export interface EntryPoint {
   z: number;
 }
 
+/** Additive: a named place the 3D city renders specially (a hotel tower, the hackathon venue, a market). */
+export interface Landmark {
+  id: string;
+  name: string;
+  /** e.g. "hotel", "venue", "market", "station"; free text, unknown kinds get a generic marker. */
+  kind: string;
+  /** When the landmark is one of the map's buildings (drawn by the landmark renderer instead). */
+  buildingId?: string;
+  /** Contract coords (x east, z north, metres); may lie outside the map bounds. */
+  x: number;
+  z: number;
+  /** Height in metres. */
+  h: number;
+  note?: string;
+}
+
 export interface CityMap {
   bounds: Bounds;
   streets: Street[];
@@ -85,6 +101,8 @@ export interface CityMap {
   entryPoints: EntryPoint[];
   /** Additive: citations for where the map came from. */
   sources?: Source[];
+  /** Additive: landmarks to render specially (the frontend has fallbacks when absent). */
+  landmarks?: Landmark[];
 }
 
 // ---------- GET /api/runs ----------
@@ -205,7 +223,7 @@ export interface AnalystStatus {
   iterations: number;
   bestRun: number | null;
   /** budget = spend cap reached (hard stop); error = the session crashed and can resume. */
-  stoppedReason: "threshold" | "max_runs" | "budget" | "error" | null;
+  stoppedReason: "threshold" | "max_runs" | "budget" | "error" | "stopped" | null;
   /** The session's untouched starting run (compare mode's left side). */
   baselineRun?: number | null;
 }
@@ -414,7 +432,7 @@ export interface AgentSession {
   lowGainStreak: number;
   /** Last completed step, for resume: start | baseline | proposed | chosen | ran | scored | ... */
   step: string;
-  stoppedReason?: "threshold" | "max_runs" | "budget" | "error" | null;
+  stoppedReason?: "threshold" | "max_runs" | "budget" | "error" | "stopped" | null;
   spentGbp: number;
   error?: string | null;
 }

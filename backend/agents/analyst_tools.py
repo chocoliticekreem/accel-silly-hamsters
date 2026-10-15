@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from backend import cache, settings
+from backend import cache
 from backend.agents import prompts, rundata
 from backend.agents.changes import change_signature, make_suggestion
 from backend.agents.experiment import AnalystContext, Choice, expected_city_gain
@@ -145,8 +145,8 @@ class AnalystTools:
             _json(
                 {
                     "run": run,
-                    "objective": summary.objective,
-                    "objectiveValue": summary.objectiveValue,
+                    "objective": self.ctx.objective,  # the session's, not the sim's summary
+                    "objectiveValue": rundata.objective_value(run, self.ctx.objective),
                     "kpis": summary.kpis.model_dump(mode="json"),
                     "peakKw": summary.peakKw,
                     "co2Kg": summary.co2Kg,
@@ -201,17 +201,15 @@ class AnalystTools:
 
     def _validate(self, changes: list[dict]) -> tuple[RuleResult, dict]:
         suggestions = self.to_suggestions(changes)
-        result = check_changes(self.ctx.base_configs, suggestions, self.ctx.map_data)
+        # The session's scope rides along: levers, frozen stores and the stores-per-experiment cap
+        # come back as rejections like any other rule.
+        result = check_changes(
+            self.ctx.base_configs, suggestions, self.ctx.map_data, training=self.ctx.config
+        )
         log_rejections(self.ctx.best_run, result.rejections, agent=AGENT)
-        stores = {s.storeId for s in result.accepted}
         problems = [f"{change_label(r.suggestion)}: {r.reason}" for r in result.rejections]
         if not suggestions:
             problems.append("no changes given")
-        if len(stores) > settings.MAX_STORES_PER_ITERATION:
-            problems.append(
-                f"{len(stores)} stores changed; at most {settings.MAX_STORES_PER_ITERATION} per "
-                "experiment"
-            )
         cached = None
         if result.accepted and not result.rejections:
             cached = cache.run_lookup(cache.run_key(result.configs, self.ctx.seed))

@@ -10,12 +10,14 @@ import { GraphicsMenu } from "./GraphicsMenu";
 import { ModuleBoundary } from "./ModuleBoundary";
 import { PRESETS, useQuality } from "./quality";
 import { newLive, WorldContext, type WorldCtx } from "./context";
+import { PhysicsLayer } from "./physics/PhysicsLayer";
 import Agents from "./modules/Agents";
 import Buildings from "./modules/Buildings";
 import CameraRig from "./modules/CameraRig";
 import Glow from "./modules/Glow";
 import Ground from "./modules/Ground";
 import Heatmap from "./modules/Heatmap";
+import HeroLandmarks from "./modules/HeroLandmarks";
 import Infill from "./modules/Infill";
 import Construction from "./modules/Construction";
 import Sky from "./modules/Sky";
@@ -26,24 +28,34 @@ import Skyline from "./modules/Skyline";
 import StreetDressing from "./modules/StreetDressing";
 import StreetEvents from "./modules/StreetEvents";
 import Streets from "./modules/Streets";
+import Surroundings from "./modules/Surroundings";
+import Overground from "./modules/Overground";
+import OldStreet from "./modules/OldStreet";
 import Traffic from "./modules/Traffic";
 import ClubLife from "./modules/ClubLife";
 import Incidents from "./modules/Incidents";
 import Interiors from "./modules/Interiors";
 import Police from "./modules/Police";
-import Photoreal, { usePhotorealHides } from "./modules/Photoreal";
+import Photoreal from "./modules/Photoreal";
+import MapGround from "./modules/MapGround";
+import { useModuleHides } from "./graphics";
 
 export const MODULES: Record<string, ComponentType> = {
   Sky,
   Photoreal,
+  MapGround,
   Ground,
+  Surroundings,
   Heatmap,
   Skyline,
   Streets,
   Buildings,
+  Overground,
+  OldStreet,
   Infill,
   Construction,
   Stores,
+  HeroLandmarks,
   StreetLights,
   StreetDressing,
   StreetEvents,
@@ -81,7 +93,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
   const dpr = Math.min(PRESETS[level].dpr, window.devicePixelRatio || 1);
   const [stats] = useState(() => new URLSearchParams(window.location.search).has("stats"));
   const [enabled] = useState(enabledModules);
-  const photorealHides = usePhotorealHides();
+  const modeHides = useModuleHides();
   const live = useMemo(() => {
     const l = newLive();
     onLive?.(l);
@@ -105,8 +117,9 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
       <WorldContext.Provider value={ctx}>
         {/* physically based sky + aerial perspective share this (Sky drives it from the sim clock) */}
         <AtmosphereRoot>
+        <PhysicsLayer enabled={interactive && cameraGroup === "main"}>
         {Object.entries(MODULES)
-          .filter(([name]) => enabled.includes(name) && !photorealHides.has(name))
+          .filter(([name]) => enabled.includes(name) && !modeHides.has(name))
           .map(([name, M]) => (
             <ModuleBoundary key={name} name={name}>
               <Suspense fallback={null}>
@@ -114,6 +127,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
               </Suspense>
             </ModuleBoundary>
           ))}
+        </PhysicsLayer>
         </AtmosphereRoot>
       </WorldContext.Provider>
     </Canvas>

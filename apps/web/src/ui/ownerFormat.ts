@@ -85,9 +85,14 @@ function place(e: StreetEvent) {
   return i >= 0 ? e.label.slice(i + 2) : e.label;
 }
 
+/** The one line a day's rush hours collapse into: the same streets jam every morning and evening, it isn't news. */
+export const RUSH_HOUR_TEXT = "Rush-hour traffic on the main roads";
+
 /**
  * The city feed at sim minute `t`: owner decisions and street events from the last `windowMin` minutes,
- * newest first. Street events of the same kind starting together are merged ("Heavy traffic · Old St, Shoreditch High St").
+ * newest first. Street events of the same kind starting together are merged ("Club night · Little Fires, The Edge").
+ * Routine repeats collapse: all of a day's heavy traffic is one "Rush-hour traffic on the main roads" line, and a
+ * street event that repeats (same kind, same places) is listed once, at its latest occurrence.
  */
 export function feedItems(
   owner: readonly OwnerEvent[],
@@ -106,13 +111,38 @@ export function feedItems(
   for (const e of street) {
     // recent starts, plus anything still going on (multi-day roadworks)
     if (e.fromT > t || (e.fromT <= t - windowMin && t >= e.toT)) continue;
-    const k = `${e.kind}:${e.fromT}`;
+    // a day's rush hours (morning and evening, every main road) are one group
+    const k = e.kind === "heavy_traffic" ? `${e.kind}:day${e.day}` : `${e.kind}:${e.fromT}`;
     groups.set(k, [...(groups.get(k) ?? []), e]);
   }
+  // newest occurrence of each repeating line wins
+  const latest = new Map<string, Extract<FeedItem, { kind: "street" }>>();
   for (const [k, events] of groups) {
-    const places = [...new Set(events.map(place))].join(", ");
-    out.push({ key: `s:${k}`, kind: "street", t: events[0].fromT, events, text: `${STREET_TEXT[events[0].kind]} · ${places}`, live: events.some((e) => t < e.toT) });
+    const kind = events[0].kind;
+    const text = kind === "heavy_traffic" ? RUSH_HOUR_TEXT : `${STREET_TEXT[kind]} · ${[...new Set(events.map(place))].join(", ")}`;
+    // a rush-hour line is stamped with the day's latest jam that has started
+    const at = kind === "heavy_traffic" ? Math.max(...events.map((e) => e.fromT)) : events[0].fromT;
+    const item = { key: `s:${k}`, kind: "street" as const, t: at, events, text, live: events.some((e) => t < e.toT) };
+    const prev = latest.get(text);
+    if (!prev || item.t > prev.t) latest.set(text, item);
   }
+  out.push(...latest.values());
   // newest first; at the same minute, owners reacting sit above the street event
-  return out.sort((a, b) => b.t - a.t || (a.kind === b.kind ? 0 : a.kind === "owner" ? -1 : 1));
+  return out.sort(byNewest);
+}
+
+const byNewest = (a: FeedItem, b: FeedItem) => b.t - a.t || (a.kind === b.kind ? 0 : a.kind === "owner" ? -1 : 1);
+
+/**
+ * The rows that fit `limit`: owner decisions first (they are what the feed is for); street events fill what is
+ * left, but take at most a third of the rows (at least one) while owners are waiting. Newest first.
+ */
+export function feedRows(items: readonly FeedItem[], limit: number): FeedItem[] {
+  const owners = items.filter((i) => i.kind === "owner");
+  const streets = items.filter((i) => i.kind === "street");
+  const share = Math.max(1, Math.floor(limit / 3));
+  const streetRoom = Math.max(limit - owners.length, Math.min(share, streets.length));
+  const s = streets.slice(0, Math.min(streetRoom, limit));
+  const o = owners.slice(0, limit - s.length);
+  return [...o, ...s].sort(byNewest);
 }

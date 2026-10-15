@@ -8,6 +8,7 @@ import { Vector3 } from "three";
 import { toScene } from "../../sim/geometry";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
+import { camFromUrl, flyRequest } from "../flyTo";
 
 type Controls = ComponentRef<typeof OrbitControls>;
 
@@ -19,9 +20,12 @@ interface Shared {
 const groups = new Map<string, Shared>();
 let rigSeq = 0;
 
-// From the north-east looking south-west: Shoreditch in front, the City of London skyline behind it.
-const HOME_POS = new Vector3(190, 105, -230);
-const HOME_TARGET = new Vector3(-10, 0, 20);
+// From the north-east looking south-west over Hoxton, Shoreditch and Old Street (the playable focus), with the
+// Overground viaduct curving through and the City of London skyline behind.
+const HOME_POS = new Vector3(150, 330, -700);
+const HOME_TARGET = new Vector3(-380, 0, -260);
+const SMALL_HOME_POS = new Vector3(190, 105, -230);
+const SMALL_HOME_TARGET = new Vector3(-10, 0, 20);
 const FOCUS_DIST = 150;
 /** Angle from straight down when focusing a store (radians); ~32°. */
 const FOCUS_POLAR = 0.55;
@@ -32,9 +36,16 @@ export default function CameraRig() {
   const [controls, setControls] = useState<Controls | null>(null);
   const id = useMemo(() => ++rigSeq, []);
   const shared = useMemo(() => {
-    if (!groups.has(cameraGroup)) groups.set(cameraGroup, { leader: null, position: HOME_POS.clone(), target: HOME_TARGET.clone() });
+    if (!groups.has(cameraGroup)) {
+      const url = camFromUrl();
+      // the focus shot needs the 1.5 km real map; the small mock map keeps the close-up of its centre
+      const b = map.bounds;
+      const focus = b.minX <= -380 && b.maxZ >= 260;
+      const home = focus ? { p: HOME_POS, t: HOME_TARGET } : { p: SMALL_HOME_POS, t: SMALL_HOME_TARGET };
+      groups.set(cameraGroup, { leader: null, position: url ? new Vector3(...url.position) : home.p.clone(), target: url ? new Vector3(...url.target) : home.t.clone() });
+    }
     return groups.get(cameraGroup)!;
-  }, [cameraGroup]);
+  }, [cameraGroup, map]);
   const fly = useRef<{ target: Vector3; position: Vector3; k: number } | null>(null);
   const selected = useSim((s) => s.selectedStoreId);
 
@@ -62,8 +73,22 @@ export default function CameraRig() {
     shared.leader = id;
   }, [selected, controls, map, camera, id, shared]);
 
+  const flySeq = useRef(0);
   useFrame((_, delta) => {
     if (!controls) return;
+    // fly to a landmark (world/flyTo): keep the compass direction, come in at a readable angle
+    const req = flyRequest.current;
+    if (req && req.seq !== flySeq.current && (shared.leader === null || shared.leader === id)) {
+      flySeq.current = req.seq;
+      const [x, z] = toScene(req.x, req.z);
+      const target = new Vector3(x, req.y ?? 0, z);
+      const off = camera.position.clone().sub(controls.target);
+      const azimuth = Math.atan2(off.x, off.z);
+      const polar = 0.95;
+      const dir = new Vector3(Math.sin(polar) * Math.sin(azimuth), Math.cos(polar), Math.sin(polar) * Math.cos(azimuth));
+      fly.current = { target, position: target.clone().add(dir.multiplyScalar(req.dist)), k: 0 };
+      shared.leader = id;
+    }
     const f = fly.current;
     if (f) {
       f.k = Math.min(1, f.k + delta * 1.6);
@@ -90,7 +115,7 @@ export default function CameraRig() {
       enableDamping
       dampingFactor={0.08}
       minDistance={30}
-      maxDistance={1100}
+      maxDistance={1500}
       maxPolarAngle={Math.PI * 0.44}
       onStart={() => {
         shared.leader = id;

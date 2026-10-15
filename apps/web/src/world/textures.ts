@@ -1,5 +1,8 @@
-// Procedural canvas textures (no image assets): a window grid for facades and a soft radial glow.
-import { CanvasTexture, RepeatWrapping, SRGBColorSpace, Vector2, type Texture } from "three";
+// Procedural canvas textures (no image assets): facades with real-looking walls and recessed windows, and a soft
+// radial glow. Brick buildings (a frame colour given) get stock-brick courses with mortar, gauged-brick lintels,
+// stone sills and painted sash frames; frameless buildings (offices) get concrete panels with spandrels and
+// mullions. Each facade also has a bump map (mortar and window reveals sit back) and an emissive lit-window mask.
+import { CanvasTexture, RepeatWrapping, SRGBColorSpace, type Texture } from "three";
 import { rng } from "../mock/rng";
 
 /** One tile = COLS × ROWS windows. Facades repeat it by building size (≈4 m per window, 3.5 m per floor). */
@@ -8,156 +11,149 @@ export const TILE_ROWS = 8;
 export const WINDOW_W = 4;
 export const FLOOR_H = 3.5;
 
-const px = 32;
-/** Canvas pixels per layout pixel (layout stays in 32-px window cells; textures are drawn at 2× for crisp frames). */
-const RES = 2;
+/** Pixels per window cell (one cell = 4 m × 3.5 m of facade). */
+const px = 64;
 
-export interface FacadeTextures {
-  map: Texture;
-  emissive: Texture;
-  /** Tangent-space normals: recessed glass, raised sills, a little wall texture. */
-  normal: Texture;
-  /** Roughness in G (wall rough, glass glossy), metalness in B (glass reflects the sky): use as both maps. */
-  orm: Texture;
+// window opening inside a cell, in pixels
+const WX = 15;
+const WY = 12;
+const WW = px - 30;
+const WH = px - 22;
+
+function shade(hex: string, k: number) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (c: number) => Math.max(0, Math.min(255, Math.round(c * k)));
+  return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
 }
 
-/** Material params that make a facade's glass reflect the environment and its windows read as inset. */
-export function facadeMaterialParams(t: FacadeTextures) {
-  return { normalMap: t.normal, normalScale: new Vector2(0.9, 0.9), roughnessMap: t.orm, metalnessMap: t.orm, roughness: 1, metalness: 1 };
-}
-
-/** Wall + glass map, an emissive mask where ~40% of windows are lit (variant = different lit pattern), normal + ORM. */
-export function windowTextures(wall: string, variant: number, frame?: string): FacadeTextures {
+/** Wall + glass map, a bump map and an emissive mask where ~40% of windows are lit (variant = lit pattern). */
+export function windowTextures(wall: string, variant: number, frame?: string): { map: Texture; emissive: Texture; bump: Texture } {
   const r = rng(1000 + variant);
-  const canvas = (draw: (g: CanvasRenderingContext2D) => void) => {
+  const W = TILE_COLS * px;
+  const H = TILE_ROWS * px;
+  const mk = (draw: (g: CanvasRenderingContext2D) => void, color = true) => {
     const c = document.createElement("canvas");
-    c.width = TILE_COLS * px * RES;
-    c.height = TILE_ROWS * px * RES;
+    c.width = W;
+    c.height = H;
     const g = c.getContext("2d")!;
-    g.scale(RES, RES);
     draw(g);
-    return c;
-  };
-  const tex = (c: HTMLCanvasElement, srgb = true) => {
     const t = new CanvasTexture(c);
     t.wrapS = t.wrapT = RepeatWrapping;
-    if (srgb) t.colorSpace = SRGBColorSpace;
+    if (color) t.colorSpace = SRGBColorSpace;
     t.anisotropy = 8;
     return t;
   };
-  const mk = (draw: (g: CanvasRenderingContext2D) => void) => tex(canvas(draw));
-  // window cell geometry (layout px): pane, frame (sash/mullion), sill below, lintel above
-  const pane = (i: number, j: number) => [i * px + 7, j * px + 8, px - 14, px - 13] as const;
-  const frameRect = (i: number, j: number) => [i * px + 5, j * px + 6, px - 10, px - 9] as const;
-  const sill = (i: number, j: number) => [i * px + 4, j * px + px - 5, px - 8, 2] as const;
-  const lintel = (i: number, j: number) => [i * px + 5, j * px + 4, px - 10, 2] as const;
-  const each = (f: (i: number, j: number) => void) => {
-    for (let i = 0; i < TILE_COLS; i++) for (let j = 0; j < TILE_ROWS; j++) f(i, j);
+  const brick = !!frame;
+  const lit = Array.from({ length: TILE_COLS * TILE_ROWS }, () => r() < 0.4);
+  const warm = lit.map(() => r() < 0.25);
+  // some windows have blinds half down: they read as lived-in
+  const blind = lit.map(() => r() < 0.3);
+  const each = (fn: (x: number, y: number, k: number) => void) => {
+    for (let i = 0; i < TILE_COLS; i++) for (let j = 0; j < TILE_ROWS; j++) fn(i * px, j * px, i * TILE_ROWS + j);
   };
-  const grain = (g: CanvasRenderingContext2D, alpha: number) => {
-    // brick/render speckle so walls aren't flat colour
-    const n = TILE_COLS * TILE_ROWS * 40;
-    for (let k = 0; k < n; k++) {
-      g.fillStyle = r() < 0.5 ? `rgba(0,0,0,${alpha * r()})` : `rgba(255,255,255,${alpha * 0.7 * r()})`;
-      g.fillRect(r() * TILE_COLS * px, r() * TILE_ROWS * px, 1.5 + r() * 2, 0.8);
+
+  // bricks: 64 px per 3.5 m floor -> ~14 courses per cell (a little chunky so it reads at distance)
+  const drawBrick = (g: CanvasRenderingContext2D, height: boolean) => {
+    const course = 4.5;
+    const len = 10;
+    g.fillStyle = height ? "#606060" : shade(wall, 1.18); // mortar
+    g.fillRect(0, 0, W, H);
+    for (let y = 0, row = 0; y < H; y += course, row++) {
+      const off = row % 2 ? len / 2 : 0;
+      for (let x = -off; x < W; x += len) {
+        const k = 0.86 + r() * 0.24 + (r() < 0.05 ? -0.15 : 0);
+        const v = 170 + Math.round((k - 0.86) * 120);
+        g.fillStyle = height ? `rgb(${v},${v},${v})` : shade(wall, k);
+        g.fillRect(x + 0.6, y + 0.6, len - 1.2, course - 1.2);
+      }
     }
   };
-  const heightMap = canvas((g) => {
-    g.fillStyle = "rgb(150,150,150)";
-    g.fillRect(0, 0, TILE_COLS * px, TILE_ROWS * px);
-    grain(g, 0.25);
-    each((i, j) => {
-      g.fillStyle = "rgb(210,210,210)";
-      g.fillRect(...sill(i, j));
-      g.fillRect(...lintel(i, j));
-      g.fillStyle = "rgb(95,95,95)";
-      g.fillRect(...frameRect(i, j));
-      g.fillStyle = "rgb(40,40,40)";
-      g.fillRect(...pane(i, j));
-    });
-  });
-  const ormCanvas = canvas((g) => {
-    // R unused (1), G roughness, B metalness
-    g.fillStyle = "rgb(255,232,0)";
-    g.fillRect(0, 0, TILE_COLS * px, TILE_ROWS * px);
-    each((i, j) => {
-      g.fillStyle = "rgb(255,150,0)";
-      g.fillRect(...frameRect(i, j));
-      g.fillStyle = "rgb(255,28,150)";
-      g.fillRect(...pane(i, j));
-    });
-  });
-  const cells = (g: CanvasRenderingContext2D, color: (i: number, j: number) => string | null) => {
-    for (let i = 0; i < TILE_COLS; i++)
-      for (let j = 0; j < TILE_ROWS; j++) {
-        const fill = color(i, j);
-        if (!fill) continue;
-        g.fillStyle = fill;
-        g.fillRect(i * px + 7, j * px + 8, px - 14, px - 13);
-      }
+  const drawPanels = (g: CanvasRenderingContext2D, height: boolean) => {
+    g.fillStyle = height ? "#9a9a9a" : wall;
+    g.fillRect(0, 0, W, H);
+    // spandrel band per floor and a panel joint grid
+    for (let j = 0; j < TILE_ROWS; j++) {
+      g.fillStyle = height ? "#b0b0b0" : shade(wall, 0.9);
+      g.fillRect(0, j * px + WY + WH + 2, W, px - WH - WY - 2);
+      g.fillStyle = height ? "#505050" : shade(wall, 0.78);
+      g.fillRect(0, j * px, W, 1.5);
+    }
+    for (let i = 0; i < TILE_COLS; i++) {
+      g.fillStyle = height ? "#505050" : shade(wall, 0.8);
+      g.fillRect(i * px, 0, 1.5, H);
+    }
   };
-  const lit = Array.from({ length: TILE_COLS * TILE_ROWS }, () => r() < 0.4);
+
   const map = mk((g) => {
-    g.fillStyle = wall;
-    g.fillRect(0, 0, TILE_COLS * px, TILE_ROWS * px);
-    grain(g, 0.12);
-    each((i, j) => {
-      // stone sill and lintel, then the frame (white sash on terraces, dark metal on offices)
-      g.fillStyle = "rgba(235,228,214,0.85)";
-      g.fillRect(...sill(i, j));
-      g.fillStyle = "rgba(0,0,0,0.18)";
-      g.fillRect(...lintel(i, j));
-      g.fillStyle = frame ?? "#3b4250";
-      g.fillRect(...frameRect(i, j));
-      // glass: darker at the bottom (interior), a sky sheen at the top; the env map adds real reflections
-      const [x, y, w, h] = pane(i, j);
-      const grad = g.createLinearGradient(0, y, 0, y + h);
-      grad.addColorStop(0, "#7e8ea6");
-      grad.addColorStop(1, "#3d4758");
+    if (brick) drawBrick(g, false);
+    else drawPanels(g, false);
+    each((x, y, k) => {
+      if (brick) {
+        // gauged-brick lintel and a stone sill
+        g.fillStyle = shade(wall, 0.82);
+        g.fillRect(x + WX - 3, y + WY - 6, WW + 6, 6);
+        g.fillStyle = "#d9d3c4";
+        g.fillRect(x + WX - 4, y + WY + WH, WW + 8, 4);
+      }
+      // reveal: the window sits back from the wall, so a dark band on the top and left
+      g.fillStyle = "rgba(0,0,0,0.45)";
+      g.fillRect(x + WX - 2, y + WY - 2, WW + 4, WH + 2);
+      // frame
+      g.fillStyle = frame ?? shade(wall, 0.55);
+      g.fillRect(x + WX, y + WY, WW, WH);
+      // glass: sky reflection fading down
+      const grad = g.createLinearGradient(0, y + WY, 0, y + WY + WH);
+      grad.addColorStop(0, "#9fb3c8");
+      grad.addColorStop(0.45, "#5d6e84");
+      grad.addColorStop(1, "#3a4556");
       g.fillStyle = grad;
-      g.fillRect(x, y, w, h);
-      if (frame) {
-        // glazing bar across the sash
-        g.fillStyle = frame;
-        g.fillRect(x, y + h * 0.48, w, 1);
+      const f = brick ? 3 : 2;
+      if (brick) {
+        // two-over-two sash: four panes
+        const hw = (WW - f * 3) / 2;
+        const hh = (WH - f * 3) / 2;
+        for (const a of [0, 1]) for (const b of [0, 1]) g.fillRect(x + WX + f + a * (hw + f), y + WY + f + b * (hh + f), hw, hh);
+      } else {
+        g.fillRect(x + WX + f, y + WY + f, WW - f * 2, WH - f * 2);
+        g.fillStyle = shade(wall, 0.55);
+        g.fillRect(x + WX + WW / 2 - 1, y + WY, 2, WH); // mullion
+      }
+      if (blind[k]) {
+        g.fillStyle = r() < 0.5 ? "#e8e1cf" : "#cfc6b0";
+        g.fillRect(x + WX + f, y + WY + f, WW - f * 2, (WH - f * 2) * (0.25 + r() * 0.35));
       }
     });
   });
+
+  const bump = mk((g) => {
+    if (brick) drawBrick(g, true);
+    else drawPanels(g, true);
+    each((x, y) => {
+      g.fillStyle = "#202020"; // window reveal sits back
+      g.fillRect(x + WX - 2, y + WY - 2, WW + 4, WH + 2);
+      g.fillStyle = "#383838";
+      g.fillRect(x + WX, y + WY, WW, WH);
+      if (brick) {
+        g.fillStyle = "#e0e0e0"; // sill stands proud
+        g.fillRect(x + WX - 4, y + WY + WH, WW + 8, 4);
+      }
+    });
+  }, false);
+
   const emissive = mk((g) => {
     g.fillStyle = "#000";
-    g.fillRect(0, 0, TILE_COLS * px, TILE_ROWS * px);
-    cells(g, (i, j) => (lit[i * TILE_ROWS + j] ? (r() < 0.25 ? "#ffe6b0" : "#ffc857") : null));
+    g.fillRect(0, 0, W, H);
+    each((x, y, k) => {
+      if (!lit[k]) return;
+      g.fillStyle = warm[k] ? "#ffe6b0" : "#ffc857";
+      g.fillRect(x + WX + 2, y + WY + 2, WW - 4, WH - 4);
+      if (blind[k]) {
+        g.fillStyle = "rgba(0,0,0,0.55)";
+        g.fillRect(x + WX + 2, y + WY + 2, WW - 4, (WH - 4) * 0.4);
+      }
+    });
   });
-  return { map, emissive, normal: tex(normalFromHeight(heightMap, 2.2), false), orm: tex(ormCanvas, false) };
-}
-
-/** Sobel normal map (tangent space, OpenGL convention) from a greyscale height canvas. */
-function normalFromHeight(src: HTMLCanvasElement, strength: number): HTMLCanvasElement {
-  const w = src.width;
-  const h = src.height;
-  const hd = src.getContext("2d")!.getImageData(0, 0, w, h).data;
-  const out = document.createElement("canvas");
-  out.width = w;
-  out.height = h;
-  const og = out.getContext("2d")!;
-  const img = og.createImageData(w, h);
-  const H = (x: number, y: number) => hd[(((y + h) % h) * w + ((x + w) % w)) * 4] / 255;
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      const dx = (H(x + 1, y - 1) + 2 * H(x + 1, y) + H(x + 1, y + 1) - H(x - 1, y - 1) - 2 * H(x - 1, y) - H(x - 1, y + 1)) * strength;
-      const dy = (H(x - 1, y + 1) + 2 * H(x, y + 1) + H(x + 1, y + 1) - H(x - 1, y - 1) - 2 * H(x, y - 1) - H(x + 1, y - 1)) * strength;
-      // canvas y runs down, texture v runs up: flip dy for OpenGL-style normals
-      const nx = -dx;
-      const ny = dy;
-      const inv = 1 / Math.hypot(nx, ny, 1);
-      const k = (y * w + x) * 4;
-      img.data[k] = (nx * inv * 0.5 + 0.5) * 255;
-      img.data[k + 1] = (ny * inv * 0.5 + 0.5) * 255;
-      img.data[k + 2] = (inv * 0.5 + 0.5) * 255;
-      img.data[k + 3] = 255;
-    }
-  og.putImageData(img, 0, 0);
-  return out;
+  return { map, emissive, bump };
 }
 
 let glow: Texture | null = null;

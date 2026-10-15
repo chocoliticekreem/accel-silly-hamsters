@@ -111,8 +111,8 @@ export default function Sky() {
 
   useMemo(() => {
     scene.background = new Color("#121a2e");
-    // light haze for the far skyline (the atmosphere's aerial perspective does the rest on higher settings)
-    scene.fog = new Fog("#121a2e", 900, 4000);
+    // London runs on to the horizon (Surroundings): haze it from ~0.5 km so the far city melts into the sky
+    scene.fog = new Fog("#121a2e", 520, 3000);
   }, [scene]);
 
   const pmrem = useMemo(() => new PMREMGenerator(gl), [gl]);
