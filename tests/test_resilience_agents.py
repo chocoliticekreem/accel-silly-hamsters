@@ -269,6 +269,31 @@ def test_a_batch_api_outage_degrades_every_store_to_the_heuristic(world, monkeyp
     }
 
 
+def test_a_batch_only_carries_the_shops_the_budget_can_cover(world, monkeypatch):
+    """Worst case $1 a shop with $2.50 left: two shops ask Claude, two get the heuristic, and
+    the spend can never pass the cap."""
+    monkeypatch.setattr(settings, "SESSION_BUDGET_USD", 2.5)
+    monkeypatch.setattr(llm, "estimate_usd", lambda request, batch=False: 1.0)
+    batches = FakeBatches({"s2": S2_OUTPUT})
+    messages = install_store_client(monkeypatch, batches)
+    proposals = store_owner.propose_all(world.run, session="sess")
+    assert len(batches.created) == 2 and messages.calls == []
+    budget = [e for e in log(world.run) if e["type"] == "fallback" and e["kind"] == "budget"]
+    assert len(budget) == 2 and all(e["to"] == "heuristic" for e in budget)
+    asked = {r["custom_id"].split("-", 1)[1] for r in batches.created}
+    assert {p.storeId for p in proposals} - asked  # the others still got (heuristic) advice
+
+
+def test_with_no_budget_left_for_one_shop_the_round_stops_on_the_budget(world, monkeypatch):
+    monkeypatch.setattr(settings, "SESSION_BUDGET_USD", 0.5)
+    monkeypatch.setattr(llm, "estimate_usd", lambda request, batch=False: 1.0)
+    batches = FakeBatches({})
+    install_store_client(monkeypatch, batches)
+    with pytest.raises(llm.BudgetExceeded):
+        store_owner.propose_all(world.run, session="sess")
+    assert batches.created == []
+
+
 class Killed(BaseException):
     """Stands in for SIGKILL: nothing after it runs."""
 

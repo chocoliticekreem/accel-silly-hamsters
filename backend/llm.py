@@ -494,6 +494,14 @@ def estimate_usd(request: dict, *, batch: bool = False) -> float:
     return usage.cost_usd(model, batch=batch)
 
 
+def remaining_usd(session: str | None = None) -> float:
+    """What can still be spent before the global cap or this session's cap, whichever is first."""
+    left = settings.SPEND_CAP_USD - spent_usd()
+    if session is not None:
+        left = min(left, session_budget_usd(session) - spent_usd(session=session))
+    return max(0.0, left)
+
+
 def preflight(session: str | None, request: dict, *, batch: bool = False) -> None:
     """check_budget with this request's worst-case cost: call before sending it."""
     check_budget(session, estimate_usd(request, batch=batch))

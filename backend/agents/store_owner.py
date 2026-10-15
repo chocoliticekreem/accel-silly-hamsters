@@ -635,6 +635,12 @@ class _Round:
     heuristic: dict[str, str]  # store id -> why it falls back to the heuristic
 
 
+def _failure_kind(error: Exception) -> str:
+    if isinstance(error, llm.BudgetExceeded):
+        return "budget"
+    return "circuit_open" if isinstance(error, llm.CircuitOpen) else "llm_unavailable"
+
+
 def _recover(event: str, rnd: _Round, sid: str, **fields) -> None:
     llm.record_recovery(event, agent=AGENT, run=rnd.run, session=rnd.session, storeId=sid, **fields)
 
@@ -694,11 +700,9 @@ def _accept(rnd: _Round, sid: str, message) -> None:
     try:
         repaired = _ask_one(rnd, repair, sid)
         suggestions, error = validate_output(sid, _text(repaired))
-    except llm.BudgetExceeded:
-        raise
     except llm.LLMError as e:  # the repair never reached the model: like any outage, heuristic
         rnd.heuristic[sid] = f"repair failed: {e}"
-        kind = "circuit_open" if isinstance(e, llm.CircuitOpen) else "llm_unavailable"
+        kind = _failure_kind(e)
         _recover("fallback", rnd, sid, to="heuristic", kind=kind, outcome="heuristic")
         return
     if error is None:
@@ -741,6 +745,28 @@ def _submit_or_reattach(rnd: _Round, client, requests: list[dict]) -> str:
         {"agent": AGENT, "type": "batch_created", "batchId": batch.id, "requests": len(requests)},
     )
     return batch.id
+
+
+def _affordable(rnd: _Round, requests: list[dict], ids: dict[str, str]) -> list[dict]:
+    """The requests whose worst-case cost fits what is left of the budget, in map order; the
+    rest get the heuristic (a "budget" fallback), so a batch can never spend past a cap. With
+    room for none, BudgetExceeded: the session stops on its budget."""
+    left = llm.remaining_usd(rnd.session)
+    fit: list[dict] = []
+    total = 0.0
+    for request in requests:
+        cost = llm.estimate_usd(request["params"], batch=True)
+        if total + cost > left:
+            break
+        fit.append(request)
+        total += cost
+    if not fit and requests:
+        llm.check_budget(rnd.session, llm.estimate_usd(requests[0]["params"], batch=True))
+    for request in requests[len(fit) :]:
+        sid = ids[request["custom_id"]]
+        rnd.heuristic[sid] = "budget"
+        _recover("fallback", rnd, sid, to="heuristic", kind="budget", outcome="heuristic")
+    return fit
 
 
 def _wait_for_batch(rnd: _Round, client, batch_id: str) -> bool:
@@ -832,7 +858,8 @@ def _propose_with_batch(
                 "params": params,
             },
         )
-    results, why_missing = _batch_results(rnd, client, requests)
+    requests = _affordable(rnd, requests, ids)
+    results, why_missing = _batch_results(rnd, client, requests) if requests else ([], "")
     answered: dict[str, object] = {}
     missing: dict[str, str] = {}  # store id -> why it has no batch answer
     for result in results:
@@ -862,7 +889,7 @@ def _propose_with_batch(
         )
         answered[sid] = message
     for sid in briefs:
-        if sid not in answered:
+        if sid not in answered and sid not in rnd.heuristic:
             missing.setdefault(sid, why_missing)
     for sid in briefs:
         if sid not in missing:
@@ -875,11 +902,9 @@ def _propose_with_batch(
         _recover("fallback", rnd, sid, to="request", kind=why, outcome="asking per request")
         try:
             answered[sid] = _ask_one(rnd, rnd.params[sid], sid)
-        except llm.BudgetExceeded:
-            raise
-        except llm.LLMError as e:
+        except llm.LLMError as e:  # includes BudgetExceeded: this shop gets the heuristic
             rnd.heuristic[sid] = f"{why}; request failed: {e}"
-            kind = "circuit_open" if isinstance(e, llm.CircuitOpen) else "llm_unavailable"
+            kind = _failure_kind(e)
             _recover("fallback", rnd, sid, to="heuristic", kind=kind, outcome="heuristic")
     for sid in briefs:
         if sid in answered:
