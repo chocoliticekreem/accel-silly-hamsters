@@ -14,6 +14,7 @@ import { BoxGeometry, ExtrudeGeometry, Shape, Vector2 } from "three";
 import { rng, type Rng } from "../../mock/rng";
 import { Kit, type HeroModel } from "./kit";
 import { label } from "./materials";
+import { ARTOTEL_PODIUM } from "./landmarkData";
 import { drawCycleDock, drawPlaneTree, drawRoundelPost } from "./street";
 
 const pick = <T,>(r: Rng, a: T[]) => a[Math.floor(r() * a.length)];
@@ -102,14 +103,16 @@ function xoyoLetters(k: Kit, cx: number, cy: number, z: number) {
   for (const dy of [-0.6, 0.6]) k.box("metal", 4 * W + 3 * gap + 0.6, 0.06, 0.12, cx, cy + dy, z + 0.08, "#2a2c30");
 }
 
-export function xoyo(): HeroModel {
+/** XOYO built to a plot: `w` along Cowper St, `d` deep (defaults 24 × 18). */
+export function xoyo(o: { w?: number; d?: number } = {}): HeroModel {
   const k = new Kit();
   const r = rng(32);
-  const W = 24, D = 18, H = 15.6, fz = D / 2;
+  const W = o.w ?? 24, D = o.d ?? 18, H = 15.6, fz = D / 2;
+  const sx = W / 24;
   const BRICK = "#4a3c36";
   k.slab("brick", -W / 2, W / 2, 0, H, -D / 2, D / 2, BRICK);
   // pilasters between the six bays, proud brick
-  for (let i = 0; i <= 6; i++) k.slab("brick", -W / 2 + i * 4 - 0.3, -W / 2 + i * 4 + 0.3, 4.6, H - 0.6, fz, fz + 0.18, "#3f332e");
+  for (let i = 0; i <= 6; i++) k.slab("brick", -W / 2 + (i * W) / 6 - 0.3, -W / 2 + (i * W) / 6 + 0.3, 4.6, H - 0.6, fz, fz + 0.18, "#3f332e");
   // black-painted ground floor + string course + cornice
   k.slab("solid", -W / 2 - 0.04, W / 2 + 0.04, 0, 4.4, fz - 0.1, fz + 0.14, "#111113");
   k.slab("solid", -W / 2 - 0.12, W / 2 + 0.12, 4.4, 4.68, fz - 0.1, fz + 0.3, "#1c1c1f");
@@ -117,11 +120,11 @@ export function xoyo(): HeroModel {
   k.slab("brick", -W / 2, W / 2, H - 0.3, H + 0.5, fz - 0.4, fz + 0.05, BRICK);
   k.slab("solid", -W / 2 - 0.05, W / 2 + 0.05, H + 0.5, H + 0.65, fz - 0.45, fz + 0.12, "#6f6a64"); // coping
   // upper windows: tall industrial, 3 floors x 6 bays; the sign takes the middle of the first floor
-  const bayX = [-10, -6, -2, 2, 6, 10];
+  const bayX = [-10, -6, -2, 2, 6, 10].map((x) => x * sx);
   for (const [fi, y] of [5.3, 8.7, 12.0].entries())
     for (const x of bayX) {
-      if (fi === 0 && Math.abs(x) < 7) continue;
-      windowAt(k, r, x, y, 2.5, 2.55, fz, { frame: "#2b2e33", cols: 4, rows: 3, sill: "#5d5852", lintel: "#2a2420", glass: ["#161c22", "#1c242c", "#3a3426", "#4d4230"] });
+      if (fi === 0 && Math.abs(x) < 7 * sx) continue;
+      windowAt(k, r, x, y, 2.5 * Math.min(1, sx), 2.55, fz, { frame: "#2b2e33", cols: 4, rows: 3, sill: "#5d5852", lintel: "#2a2420", glass: ["#161c22", "#1c242c", "#3a3426", "#4d4230"] });
     }
   xoyoLetters(k, 0, 6.5, fz + 0.18);
   // entrance: recessed void, steel double doors, lit soffit, canopy
@@ -136,20 +139,20 @@ export function xoyo(): HeroModel {
   k.slab("glow", -2.5, 2.5, 3.22, 3.34, fz + 0.17, fz + 0.24, "#ff3ea5"); // pink strip over the doors
   // side bays: blacked-out windows with posters, a roller shutter, wall lamps
   let pi = 0;
-  for (const x of [-10, -6, 6]) {
+  for (const x of [-10, -6, 6].map((v) => v * sx)) {
     k.slab("solid", x - 1.5, x + 1.5, 0.6, 3.6, fz + 0.14, fz + 0.18, "#1b1d21");
     for (const dx of [-0.75, 0.75]) poster(k, `xoyo-${pi}`, x + dx, 2.0, fz + 0.2, 1.2, 1.7, 100 + pi++);
   }
-  k.slab("metal", 8.4, 11.6, 0.0, 3.7, fz + 0.12, fz + 0.2, "#5f646a");
-  for (let y = 0.15; y < 3.7; y += 0.18) k.box("metal", 3.2, 0.04, 0.04, 10, y, fz + 0.22, "#4b4f55");
-  for (const x of [-8, -4, 4, 8]) {
+  k.slab("metal", 10 * sx - 1.6, 10 * sx + 1.6, 0.0, 3.7, fz + 0.12, fz + 0.2, "#5f646a");
+  for (let y = 0.15; y < 3.7; y += 0.18) k.box("metal", 3.2, 0.04, 0.04, 10 * sx, y, fz + 0.22, "#4b4f55");
+  for (const x of [-8, -4, 4, 8].map((v) => v * sx)) {
     k.box("metal", 0.12, 0.3, 0.3, x, 3.9, fz + 0.3, "#202226");
     k.box("glow", 0.22, 0.1, 0.22, x, 3.72, fz + 0.38, "#ffd59a");
   }
   k.box("solid", 0.25, 0.18, 0.4, -3.2, 4.1, fz + 0.35, "#e8e8e8"); // CCTV
   // queue barriers on the pavement: chrome posts + black belts, two lanes
   for (const zz of [fz + 1.6, fz + 2.6]) {
-    const xs = [-11, -9.4, -7.8, -6.2, -4.6, -3.0];
+    const xs = [-11, -9.4, -7.8, -6.2, -4.6, -3.0].map((v) => v * Math.min(1, sx));
     for (const x of xs) {
       k.cyl("metal", 0.17, 0.17, 0.04, 14, [x, 0.02, zz], "#c9ced4");
       k.cyl("metal", 0.03, 0.03, 0.98, 8, [x, 0.5, zz], "#c9ced4");
@@ -160,21 +163,12 @@ export function xoyo(): HeroModel {
   k.box("solid", 1.0, 0.04, 0.01, -2.5, 0.92, fz + 2.1, "#141416");
   // side walls get a few windows too (visible from the street at an angle)
   k.at(W / 2, 0, 0, Math.PI / 2, () => {
-    for (const y of [5.3, 8.7, 12.0]) for (const x of [-5, 0, 5]) windowAt(k, r, x, y, 2.2, 2.4, 0.0, { frame: "#2b2e33", cols: 3, rows: 3, sill: "#5d5852" });
+    for (const y of [5.3, 8.7, 12.0]) for (const x of [-D * 0.28, 0, D * 0.28]) windowAt(k, r, x, y, 2.2, 2.4, 0.0, { frame: "#2b2e33", cols: 3, rows: 3, sill: "#5d5852" });
   });
   return k.model("landmark-xoyo", { ao: 3 });
 }
 
 // ------------------------------------------------------------------------------------------------- art'otel
-
-/** OSM way 1561019538 (27 levels): tower centre in contract coords (x east, z north). */
-export const ARTOTEL_CENTRE = { x: -615.0, z: 336.2 };
-/** OSM way 1561019539 (3 levels): the podium wing, contract offsets (east, north) from the tower centre. */
-const ARTOTEL_PODIUM: [number, number][] = [
-  [7.3, 24.3], [24.2, 28.2], [24.9, 26.2], [33.7, 28.1], [36.4, 15.2], [28.7, 14.4], [19.0, 12.9], [20.4, 8.2],
-  [21.0, 4.0], [21.6, -1.9], [39.7, -0.8], [40.1, -13.9], [17.9, -14.9], [19.4, -10.0], [12.6, -7.1], [13.8, -3.0],
-  [13.4, 2.3], [12.5, 7.4], [11.1, 11.4], [9.2, 14.2], [15.1, 17.5],
-];
 
 /** A box twisted about its own vertical axis (the tower's twisted aluminium fins). */
 function twistedFin(w: number, h: number, d: number, twist: number) {
@@ -327,10 +321,11 @@ export function artotel(): HeroModel {
 
 // ---------------------------------------------------------------------------------------------- Encode Hub
 
-export function encodeHub(): HeroModel {
+/** Encode Hub built to its plot: `w` frontage on Pitfield St, `d` deep (OSM: ≈ 6 × 13.5 m; defaults 15 × 14). */
+export function encodeHub(o: { w?: number; d?: number } = {}): HeroModel {
   const k = new Kit();
   const r = rng(41);
-  const W = 15, D = 14, fz = D / 2;
+  const W = o.w ?? 15, D = o.d ?? 14, fz = D / 2;
   const BRICK = "#8d5a43";
   const STONE = "#d9d1bf";
   k.slab("brick", -W / 2, W / 2, 3.4, 13.4, -D / 2, D / 2, BRICK);
@@ -349,22 +344,31 @@ export function encodeHub(): HeroModel {
   roof.closePath();
   k.extrude("solid", roof, W - 0.6, [-W / 2 + 0.3, 13.4, 0], "#4b4f58", [0, Math.PI / 2, 0]);
   for (const x of [-W / 2 + 0.6, W / 2 - 0.6]) {
-    k.slab("brick", x - 0.5, x + 0.5, 13.4, 17.6, -1.2, 1.2, "#7f4f3a");
-    k.slab("solid", x - 0.6, x + 0.6, 17.6, 17.8, -1.3, 1.3, STONE);
-    for (const z of [-0.6, 0, 0.6]) k.cyl("solid", 0.13, 0.15, 0.6, 8, [x, 18.1, z], "#b5603e");
+    k.slab("brick", x - 0.5, x + 0.5, 13.4, 17.6, -D / 2 + 1, -D / 2 + 3.4, "#7f4f3a");
+    k.slab("solid", x - 0.6, x + 0.6, 17.6, 17.8, -D / 2 + 0.9, -D / 2 + 3.5, STONE);
+    for (const z of [-0.6, 0, 0.6]) k.cyl("solid", 0.13, 0.15, 0.6, 8, [x, 18.1, -D / 2 + 2.2 + z], "#b5603e");
   }
   // upper floors: four bays of white sash windows, arched on the top floor
-  const bays = [-5.25, -1.75, 1.75, 5.25];
+  const nb = Math.max(2, Math.round((W - 1) / 3.5));
+  const bays = Array.from({ length: nb }, (_, i) => -W / 2 + 0.6 + ((i + 0.5) * (W - 1.2)) / nb);
+  const ww = Math.min(1.45, (W - 1.2) / nb - 0.5);
   for (const x of bays) {
-    windowAt(k, r, x, 4.9, 1.45, 2.25, fz, { lintel: "#6b3a2a", arch: true });
-    windowAt(k, r, x, 7.95, 1.45, 2.05, fz, { lintel: "#6b3a2a", arch: true });
-    windowAt(k, r, x, 10.9, 1.35, 1.75, fz, { lintel: "#6b3a2a", arch: true });
+    windowAt(k, r, x, 4.9, ww, 2.25, fz, { lintel: "#6b3a2a", arch: true });
+    windowAt(k, r, x, 7.95, ww, 2.05, fz, { lintel: "#6b3a2a", arch: true });
+    windowAt(k, r, x, 10.9, ww * 0.93, 1.75, fz, { lintel: "#6b3a2a", arch: true });
   }
+  // side elevations: a column of sash windows toward the back on both sides, brick piers at the rear corners
+  for (const side of [1, -1])
+    k.at((side * W) / 2, 0, 0, (side * Math.PI) / 2, () => {
+      for (const zx of [D * 0.12, -D * 0.25])
+        for (const y of [4.9, 7.95, 10.9]) windowAt(k, r, side * zx, y, 1.1, 1.8, 0, { lintel: "#6b3a2a" });
+    });
+  k.slab("solid", -W / 2, W / 2, 13.0, 13.2, -D / 2 - 0.1, -D / 2, STONE);
   // ground floor: black-framed shopfront glazing, entrance with fanlight, stall riser
   const FR = "#15171a";
   k.slab("solid", -W / 2 + 0.25, W / 2 - 0.25, 0, 0.6, fz - 0.2, fz + 0.06, "#1d2026");
   k.slab("glass", -W / 2 + 0.3, W / 2 - 2.5, 0.6, 3.3, fz - 0.15, fz - 0.1, "#55503d");
-  for (let x = -W / 2 + 0.3; x <= W / 2 - 2.4; x += 2.1) k.box("solid", 0.1, 2.7, 0.12, x, 1.95, fz - 0.07, FR);
+  for (let x = -W / 2 + 0.3; x <= W / 2 - 2.4; x += Math.max(1.2, (W - 2.7) / Math.max(1, Math.round((W - 2.7) / 2.1)))) k.box("solid", 0.1, 2.7, 0.12, x, 1.95, fz - 0.07, FR);
   k.slab("solid", -W / 2 + 0.25, W / 2 - 0.25, 3.3, 3.4, fz - 0.15, fz + 0.04, FR);
   // door (right)
   k.slab("solid", W / 2 - 2.35, W / 2 - 0.3, 0, 3.3, fz - 0.3, fz - 0.2, "#0b0c0e");
@@ -398,13 +402,13 @@ export function encodeHub(): HeroModel {
       }, true, [0, (s * Math.PI) / 2, 0]);
   });
   // street bits: bike stands, planters, a blue plaque
-  for (const x of [-5.5, -4.2, -2.9]) k.torus("metal", 0.42, 0.035, 6, 14, [x, 0.42, fz + 1.4], "#3a3f45", [0, Math.PI / 2, 0], Math.PI);
-  for (const x of [-W / 2 + 1, 2]) {
+  for (const x of [-1.3, 0, 1.3].map((v) => v - W * 0.15)) k.torus("metal", 0.42, 0.035, 6, 14, [x, 0.42, fz + 1.4], "#3a3f45", [0, Math.PI / 2, 0], Math.PI);
+  for (const x of [-W / 2 + 1, W / 2 - 3.4].filter((v, i, a) => i === 0 || v - a[0] > 2)) {
     k.rbox("solid", 1.4, 0.6, 0.6, x, 0.3, fz + 0.6, "#2b2f35", 0.06);
     k.blob("solid", 0.45, 1, [x - 0.3, 0.85, fz + 0.6], "#4f8a3c");
     k.blob("solid", 0.4, 1, [x + 0.35, 0.8, fz + 0.6], "#5d9a45");
   }
-  k.cylZ("paint", 0.32, 0.05, 20, [3.5, 6.2, fz + 0.03], "#1f4fa3");
+  k.cylZ("paint", 0.32, 0.05, 20, [W * 0.23, 6.4, fz + 0.03], "#1f4fa3");
   return k.model("landmark-encode", { ao: 2.5 });
 }
 
@@ -448,20 +452,33 @@ const SHOPS = [
   ["PIZZA", "#f4f1ea", "#1f7a3a"],
 ];
 
-export function boxpark(): HeroModel {
+/** Container rows for a Boxpark plot `depth` deep (2–3; HeroLandmarks stretches z to fill the rest). */
+export const boxparkRows = (depth: number) => Math.min(3, Math.max(2, Math.round(depth / CD)));
+export const BOXPARK_ROW = CD;
+
+/** Boxpark built to its plot: containers fill `len` along the street and `depth` rows deep (defaults 60.6 × 4.9). */
+export function boxpark(o: { len?: number; depth?: number } = {}): HeroModel {
   const k = new Kit();
   const r = rng(2011);
-  const N = 10;
+  const N = Math.max(2, Math.round((o.len ?? 60.6) / CL));
+  const ROWS = boxparkRows(o.depth ?? 2 * CD);
   const x0 = -((N * CL) / 2) + CL / 2;
-  const zF = CD / 2, zB = -CD / 2;
+  const zF = (ROWS * CD) / 2 - CD / 2, zB = zF - CD;
+  const CD2 = zF + CD / 2; // front face z
   for (let i = 0; i < N; i++) {
     const x = x0 + i * CL;
     const end = i === 0 ? -1 : i === N - 1 ? 1 : 0;
     // ground floor: front row = shops (glazed long face), back row = ribbed back
     container(k, x, 0, zF, { doorEnd: end as 0 | 1 | -1 });
-    container(k, x, 0, zB, { ribsBack: true, doorEnd: end as 0 | 1 | -1 });
+    container(k, x, 0, zB, { ribsBack: ROWS === 2, doorEnd: end as 0 | 1 | -1 });
     // upper floor on the back row: restaurants with windows onto the terrace
-    container(k, x, CH, zB, { ribsBack: true, doorEnd: end as 0 | 1 | -1 });
+    container(k, x, CH, zB, { ribsBack: ROWS === 2, doorEnd: end as 0 | 1 | -1 });
+    // deeper plots: more rows behind, two storeys, the last one ribbed at the back
+    for (let row = 2; row < ROWS; row++) {
+      const zr = zF - row * CD;
+      container(k, x, 0, zr, { ribsBack: row === ROWS - 1, doorEnd: end as 0 | 1 | -1 });
+      container(k, x, CH, zr, { ribsBack: row === ROWS - 1, doorEnd: end as 0 | 1 | -1, color: (i + row) % 3 === 0 ? "#1f2124" : undefined });
+    }
     // shopfront: frame, glass, door, lit interior colour
     const [name, bg, fg] = SHOPS[i % SHOPS.length];
     k.slab("solid", x - 2.7, x + 2.7, 0.15, 2.45, zF + CD / 2 - 0.02, zF + CD / 2 + 0.03, "#0c0c0d");
@@ -479,21 +496,21 @@ export function boxpark(): HeroModel {
   }
   // terrace deck over the front row: fascia, railing, string lights, tables + umbrellas
   const xa = x0 - CL / 2, xb = x0 + (N - 0.5) * CL;
-  k.slab("solid", xa, xb, CH, CH + 0.12, 0, CD + 0.1, "#3a3127");
-  k.slab("solid", xa, xb, CH + 0.02, CH + 0.56, CD + 0.08, CD + 0.12, "#0c0c0d");
-  for (let x = xa; x <= xb + 0.01; x += 1.5) k.box("metal", 0.05, 1.05, 0.05, x, CH + 0.12 + 0.52, CD + 0.05, "#2a2c30");
-  k.slab("metal", xa, xb, CH + 1.12, CH + 1.18, CD + 0.0, CD + 0.1, "#2a2c30");
-  k.slab("glass", xa, xb, CH + 0.15, CH + 1.1, CD + 0.03, CD + 0.06, "#8ea3ad");
+  k.slab("solid", xa, xb, CH, CH + 0.12, CD2 - CD, CD2 + 0.1, "#3a3127");
+  k.slab("solid", xa, xb, CH + 0.02, CH + 0.56, CD2 + 0.08, CD2 + 0.12, "#0c0c0d");
+  for (let x = xa; x <= xb + 0.01; x += 1.5) k.box("metal", 0.05, 1.05, 0.05, x, CH + 0.12 + 0.52, CD2 + 0.05, "#2a2c30");
+  k.slab("metal", xa, xb, CH + 1.12, CH + 1.18, CD2 + 0.0, CD2 + 0.1, "#2a2c30");
+  k.slab("glass", xa, xb, CH + 0.15, CH + 1.1, CD2 + 0.03, CD2 + 0.06, "#8ea3ad");
   for (let x = xa + 0.5; x < xb; x += 0.9) {
     const sag = 0.28 * Math.sin(((x - xa) / 4.5) * Math.PI) ** 2;
-    k.sphere("glow", 0.07, 6, 4, [x, CH + 3.3 - sag, CD - 0.2], "#ffd99a");
+    k.sphere("glow", 0.07, 6, 4, [x, CH + 3.3 - sag, CD2 - 0.2], "#ffd99a");
   }
   for (let i = 0; i < N; i += 2) {
     const x = x0 + i * CL + 1.2;
-    k.cyl("solid", 0.45, 0.45, 0.05, 12, [x, CH + 0.85, 1.2], "#d8d2c4");
-    k.cyl("metal", 0.03, 0.03, 0.75, 6, [x, CH + 0.48, 1.2], "#2a2c30");
-    k.cyl("metal", 0.025, 0.025, 1.6, 6, [x, CH + 1.5, 1.2], "#2a2c30");
-    k.cone("solid", 1.3, 0.5, 10, [x, CH + 2.4, 1.2], pick(r, ["#e9e4d7", "#b3221c", "#141414"]));
+    k.cyl("solid", 0.45, 0.45, 0.05, 12, [x, CH + 0.85, zF], "#d8d2c4");
+    k.cyl("metal", 0.03, 0.03, 0.75, 6, [x, CH + 0.48, zF], "#2a2c30");
+    k.cyl("metal", 0.025, 0.025, 1.6, 6, [x, CH + 1.5, zF], "#2a2c30");
+    k.cone("solid", 1.3, 0.5, 10, [x, CH + 2.4, zF], pick(r, ["#e9e4d7", "#b3221c", "#141414"]));
   }
   // big BOXPARK sign on the upper containers, facing the street
   k.slab("solid", -7.2, 7.2, CH + 2.3, CH + 2.58, zB + CD / 2 - 0.01, zB + CD / 2 + 0.06, "#0c0c0d");
@@ -507,12 +524,12 @@ export function boxpark(): HeroModel {
     for (const x of [-6.5, 0, 6.5]) k.box("metal", 0.12, 0.6, 0.12, x, 2 * CH + 0.3, zB + 0.35, "#2a2c30");
   });
   // steel stair from the street up to the terrace at the +x end
-  const sx = xb + 1.0;
-  for (let i = 0; i < 15; i++) k.box("metal", 1.2, 0.05, 0.3, sx, 0.17 * (i + 1), CD + 1.8 - i * 0.28, "#3a3d42");
-  k.bar("metal", [sx - 0.62, 0.0, CD + 2.0], [sx - 0.62, CH, CD + 1.8 - 15 * 0.28], 0.1, "#2a2c30");
-  k.bar("metal", [sx + 0.62, 0.0, CD + 2.0], [sx + 0.62, CH, CD + 1.8 - 15 * 0.28], 0.1, "#2a2c30");
-  k.bar("metal", [sx + 0.62, 1.0, CD + 2.0], [sx + 0.62, CH + 1.0, CD + 1.8 - 15 * 0.28], 0.04, "#2a2c30");
-  k.box("metal", 1.4, 0.1, 2.0, sx, CH, -0.2, "#3a3d42");
+  const sx = xb + 0.7;
+  // (runs along the end wall, inside the plot)
+  for (let i = 0; i < 15; i++) k.box("metal", 1.2, 0.05, 0.3, sx, 0.17 * (i + 1), CD2 - 0.2 - i * 0.28, "#3a3d42");
+  k.bar("metal", [sx - 0.62, 0.0, CD2], [sx - 0.62, CH, CD2 - 0.2 - 15 * 0.28], 0.1, "#2a2c30");
+  k.bar("metal", [sx + 0.62, 0.0, CD2], [sx + 0.62, CH, CD2 - 0.2 - 15 * 0.28], 0.1, "#2a2c30");
+  k.bar("metal", [sx + 0.62, 1.0, CD2], [sx + 0.62, CH + 1.0, CD2 - 0.2 - 15 * 0.28], 0.04, "#2a2c30");
   return k.model("landmark-boxpark", { ao: 2.5 });
 }
 
