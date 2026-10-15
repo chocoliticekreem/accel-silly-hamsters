@@ -27,8 +27,8 @@ import { createPeople, SKIN_TONES, TROUSERS } from "../people";
 export default function Hoxton() {
   const { map } = useWorld();
   const [data, setData] = useState<HoxtonData | null>(null);
-  // the small mock map doesn't reach Hoxton
-  const inMap = map.bounds.minX <= -700 && map.bounds.maxZ >= 500;
+  // drawn on every map, the small mock one too: the real city leaves Hoxton's footprint to this module
+  const inMap = true;
   useEffect(() => {
     if (!inMap) return;
     let live = true;

@@ -22,7 +22,6 @@ import { Sparkline } from "./Sparkline";
 
 const money = (n: number) => `${n < 0 ? "−" : ""}£${fmtInt(Math.abs(n))}`;
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-const NOT_REAL = "Simulated, not a real person.";
 
 export function PersonCard() {
   const personId = useEconomy((s) => s.personId);
@@ -130,7 +129,6 @@ function OwnerCard({ personId }: { personId: string }) {
           <Store size={14} /> Open {shop?.name ?? "the shop"}'s page
         </button>
       )}
-      <footer className="pc-note">{NOT_REAL}</footer>
     </aside>
   );
 }
@@ -236,7 +234,6 @@ function CitizenCardView({ personId }: { personId: string }) {
         </section>
       )}
       {diary.loading && !d && <div className="muted pc-story">Reading their diary…</div>}
-      <footer className="pc-note">{d?.note ?? NOT_REAL}</footer>
     </aside>
   );
 }

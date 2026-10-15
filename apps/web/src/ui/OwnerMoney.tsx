@@ -90,7 +90,6 @@ export function OwnerMoney({ storeId, run }: { storeId: string; run: number }) {
           </b>
         </div>
       </div>
-      <div className="sp-note-inline muted">Simulated from this run's customers, opening hours and electricity use. Not real accounts.</div>
     </section>
   );
 }

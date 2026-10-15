@@ -43,7 +43,7 @@ export function SafetyCardExtras({ storeId }: { storeId: string }) {
           <Gavel size={14} aria-hidden />
           <span>
             {note.text}
-            <span className="muted">{note.detail} · synthetic</span>
+            <span className="muted">{note.detail}</span>
           </span>
         </div>
       )}
