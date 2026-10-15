@@ -12,6 +12,8 @@ export interface PreparedAgent {
   zs: Float32Array;
   visitsIn: Float64Array;
   visitsOut: Float64Array;
+  /** Store id of each visit (same index as visitsIn/visitsOut). */
+  visitStores: string[];
   t0: number;
   t1: number;
   /** Cached segment index for the last sample. */
@@ -60,6 +62,7 @@ export function prepareAgents(agents: AgentDay[], opts: { jitter?: number } = {}
         zs,
         visitsIn: Float64Array.from(a.visits.map((v) => v.tIn)),
         visitsOut: Float64Array.from(a.visits.map((v) => v.tOut)),
+        visitStores: a.visits.map((v) => v.storeId),
         t0: ts[0],
         t1: ts[n - 1],
         seg: 0,
