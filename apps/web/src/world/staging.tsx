@@ -8,6 +8,7 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { create } from "zustand";
+import { REAL_HIDES } from "./graphics";
 import { useRealCity } from "./realcity/data";
 import { seal, useLoading, allComplete, type StageId } from "../state/loading";
 
@@ -93,10 +94,23 @@ export function useStagedModules(names: string[]): { mounted: ReadonlySet<string
       for (let k = 0; k < t && k < TIER_STAGES.length; k++) TIER_STAGES[k].forEach(seal);
       setTier((x) => Math.max(x, t - 1));
     };
+    // the procedural stand-ins (box city, flat ground) are hidden as soon as the real city draws: while it is on its
+    // way they wait at the back, and only mount if it turns out to be missing (or is very slow)
+    const realComing = names.some((n) => n.startsWith("Real"));
+    const t0 = performance.now();
+    const standIn = (n: string) => realComing && REAL_HIDES.has(n) && useRealCity.getState().status !== "missing" && performance.now() - t0 < 12000;
+    const later: string[] = [];
     const step = () => {
+      while (queue.length && standIn(queue[0])) later.push(queue.shift()!);
       if (!queue.length) {
         finishTiersBelow(3);
-        return;
+        // drawn: World hides them anyway (and drops them from `names`)
+        if (!later.length || useRealCity.getState().drawn) return;
+        if (standIn(later[0])) {
+          cancel = afterFrame(step);
+          return;
+        }
+        queue.push(later.shift()!);
       }
       const next = queue[0];
       const t = tierOf(next);
