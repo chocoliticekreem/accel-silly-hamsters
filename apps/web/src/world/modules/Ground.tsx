@@ -21,7 +21,8 @@ export default function Ground() {
     const out: { matrix: Object3D["matrix"] }[] = [];
     for (let i = 0; i < TREES; i++) {
       const a = (i / TREES) * Math.PI * 2;
-      const r = Math.max(w, d) / 2 + 28 + ((i * 37) % 23);
+      // beyond the Infill module's ring of blocks (which reaches ~90 m past the bounds, corners included)
+      const r = (Math.max(w, d) / 2) * Math.SQRT2 + 110 + ((i * 37) % 23);
       const x = cx + Math.cos(a) * r * (1 + 0.05 * Math.sin(i));
       const z = cz + Math.sin(a) * r;
       const s = 0.8 + ((i * 53) % 10) / 15;
