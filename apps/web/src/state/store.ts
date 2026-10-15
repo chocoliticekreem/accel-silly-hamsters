@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { RUN_MINUTES } from "../api/contract";
 
 export type Speed = 1 | 10 | 100;
-export type Panel = null | "history" | "report";
+export type Panel = null | "history" | "report" | "area";
 
 /** Sim minutes per real second. 100× plays 14 days in one minute (spec). */
 export const RATE: Record<Speed, number> = { 100: RUN_MINUTES / 60, 10: RUN_MINUTES / 600, 1: RUN_MINUTES / 6000 };
@@ -41,6 +41,8 @@ function fromUrl() {
 }
 
 const initial = fromUrl();
+/** True when the URL picked the run (?run=), so the app must not snap to another one. */
+export const RUN_FROM_URL = initial.run !== undefined;
 let toastSeq = 0;
 
 export const useSim = create<SimState>((set, get) => ({

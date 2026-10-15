@@ -10,6 +10,14 @@ export function httpApi(base: string): Api {
     return res.json() as Promise<T>;
   }
 
+  /** GET that treats 404 as "not available" (optional endpoints, runs without a file). */
+  async function getOptional<T>(path: string): Promise<T | null> {
+    const res = await fetch(`${root}${path}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
+    return res.json() as Promise<T>;
+  }
+
   async function post<T>(path: string, body: unknown): Promise<T> {
     const res = await fetch(`${root}${path}`, {
       method: "POST",
@@ -29,13 +37,10 @@ export function httpApi(base: string): Api {
     apply: (req) => post("/api/apply", req),
     analyst: () => get("/api/analyst"),
     report: (storeId, run) => get(`/api/stores/${encodeURIComponent(storeId)}/report?run=${run}`),
-    decision: (req) => post("/api/decision", req),
-    calibration: async () => {
-      const res = await fetch(`${root}/api/calibration`);
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`GET /api/calibration → ${res.status}`);
-      return res.json();
-    },
+    decision: ({ run, ...body }) => post(`/api/decision${run === undefined ? "" : `?run=${run}`}`, body),
+    calibration: () => getOptional("/api/calibration"),
+    summary: (run) => getOptional(`/api/runs/${run}/summary`),
+    health: () => getOptional("/api/health"),
   };
 }
 

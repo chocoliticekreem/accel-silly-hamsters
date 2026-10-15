@@ -1,8 +1,10 @@
 // mockApi(): the full backend contract served from memory. Same interface as http.ts.
 // Runs are simulated lazily and cached; everything is deterministic (seed 42).
-import type { AnalystStatus, Api, Calibration, CalibrationVenue, CityMap, DecisionRequest, RunSummary } from "../api/contract";
+import type { AnalystStatus, Api, Calibration, RunAreaSummary, CalibrationVenue, CityMap, DecisionRequest, RunSummary } from "../api/contract";
 // The backend pipeline's calibration targets (placeholder shapes until Popular Times is measured).
 import calibrationData from "../../../../data/processed/calibration.json";
+// The pipeline's live London carbon and price profile, so mock area totals use real numbers.
+import energyData from "../../../../data/processed/energy.json";
 import { formatHHMM } from "../sim/time";
 import { configForRun, LICENCE, MOCK_RUN_COUNT, notebookLabel, type RunConfig } from "./configs";
 import { generateMap } from "./map";
@@ -114,7 +116,8 @@ export function mockApi(state: MockState = createMockState()): Api {
         const best = state.bestRun();
         return run >= best ? [] : suggestionsBetween(state.config(run), state.config(best), state.result(run).stores, state.result(best).stores, areas);
       }),
-    apply: (req) => later(() => ({ queuedRun: Math.max(req.run, MOCK_RUN_COUNT) + 1 })),
+    // like the backend's run cache: the config was already tried, so the "queued" run is an existing, finished one
+    apply: (req) => later(() => ({ queuedRun: Math.min(req.run + 1, MOCK_RUN_COUNT) })),
     analyst: () =>
       later<AnalystStatus>(() => ({
         state: "stopped",
@@ -162,6 +165,30 @@ export function mockApi(state: MockState = createMockState()): Api {
         });
         return { venues, fallback: calibrationData.fallback, notes: calibrationData.notes };
       }),
+    summary: (run) =>
+      later<RunAreaSummary>(() => {
+        const r = state.result(run);
+        const peakKw = Math.max(...r.demandByHourKw);
+        const days = 14;
+        const co2Kg = r.demandByHourKw.reduce((sum, kw, h) => sum + kw * energyData.carbonGPerKwh[h], 0) * days / 1000;
+        const energyCostGbp = r.demandByHourKw.reduce((sum, kw, h) => sum + kw * energyData.priceGbpPerKwh[h], 0) * days;
+        return {
+          run,
+          seed: MOCK_SEED,
+          kpis: r.kpis,
+          objective: "visitsPerKwh",
+          objectiveValue: r.kpis.visitsPerKwh,
+          peakKw: Math.round(peakKw * 100) / 100,
+          peakHour: r.demandByHourKw.indexOf(peakKw),
+          co2Kg: Math.round(co2Kg * 10) / 10,
+          energyCostGbp: Math.round(energyCostGbp * 100) / 100,
+          demandByHourKw: r.demandByHourKw,
+          footfallByHour: r.footfallByHour,
+          agents: r.agents,
+          durationSec: 0,
+        };
+      }),
+    health: () => later(() => ({ ok: true, simVersion: "mock", mapSource: "sample" as const, realRuns: MOCK_RUN_COUNT })),
     decision: (req) =>
       later(() => {
         state.decisions.push(req);

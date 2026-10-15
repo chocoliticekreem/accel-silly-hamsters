@@ -40,7 +40,7 @@ export function Hud() {
           <i />
         </span>
         <span>
-          Run <b>{run}</b> / {total || "—"}
+          Run <b>{run}</b>{total > 0 && <> / {total}</>}
         </span>
         {best === run && <span className="tag tag-lamp">best</span>}
       </div>

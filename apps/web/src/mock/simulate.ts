@@ -448,17 +448,25 @@ export interface RunResult {
   days: DayData[];
   stores: RunStores;
   kpis: RunKpis;
+  /** Area demand (kW) by hour of day, shops only (clubs are anchors). */
+  demandByHourKw: number[];
+  /** People in the area by hour of day, averaged over the 14 days. */
+  footfallByHour: number[];
+  agents: { returning: number; oneOff: number; total: number };
+}
+
+/** kWh drawn in each hour of a day (= average kW over that hour). */
+function storeKwhByHour(ctx: Ctx, s: StorePlace): number[] {
+  const c = ctx.cfg[s.id];
+  return Array.from({ length: 24 }, (_, h) => {
+    // half-hour resolution, so 30-minute hour changes cost what they should
+    const openShare = (Number(isOpenAt(c.open, c.close, h * 60 + 15)) + Number(isOpenAt(c.open, c.close, h * 60 + 45))) / 2;
+    return s.area * (OPEN_KWH[s.type] * openShare + LIGHT_KWH[c.lighting[h]]);
+  });
 }
 
 function storeKwhPerDay(ctx: Ctx, s: StorePlace) {
-  const c = ctx.cfg[s.id];
-  let kwh = 0;
-  for (let h = 0; h < 24; h++) {
-    // half-hour resolution, so 30-minute hour changes cost what they should
-    const openShare = (Number(isOpenAt(c.open, c.close, h * 60 + 15)) + Number(isOpenAt(c.open, c.close, h * 60 + 45))) / 2;
-    kwh += s.area * (OPEN_KWH[s.type] * openShare + LIGHT_KWH[c.lighting[h]]);
-  }
-  return kwh;
+  return storeKwhByHour(ctx, s).reduce((a, b) => a + b, 0);
 }
 
 export function simulateRun(map: CityMap, cfg: RunConfig, seed: number): RunResult {
@@ -517,7 +525,26 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number): RunResu
     visitsPerKwh: round2(totalVisits / totalKwh),
     returnRate: round2(pairs.length ? pairs.filter((x) => x.size > 1).length / pairs.length : 0),
   };
-  return { days, stores, kpis };
+  const demandByHourKw = Array(24).fill(0);
+  for (const s of ctx.stores) if (s.type !== "club") storeKwhByHour(ctx, s).forEach((k, h) => (demandByHourKw[h] += k));
+  const footfall = Array(24).fill(0);
+  const returningIds = new Set<string>();
+  const oneOffIds = new Set<string>();
+  for (const d of days)
+    for (const a of d.agents) {
+      (a.returning ? returningIds : oneOffIds).add(a.id.split("~")[0]);
+      const t0 = a.path[0][0];
+      const t1 = a.path[a.path.length - 1][0];
+      for (let hh = Math.floor(t0 / 60); hh <= Math.floor(t1 / 60); hh++) footfall[hh % 24] += 1;
+    }
+  return {
+    days,
+    stores,
+    kpis,
+    demandByHourKw: demandByHourKw.map(round2),
+    footfallByHour: footfall.map((n) => round(n / DAYS_PER_RUN)),
+    agents: { returning: returningIds.size, oneOff: oneOffIds.size, total: returningIds.size + oneOffIds.size },
+  };
 }
 
 function round(n: number) {

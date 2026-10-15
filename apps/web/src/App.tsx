@@ -1,8 +1,10 @@
 // App shell: the 3D city fills the screen; everything else is a thin overlay on top.
 import { USING_MOCK } from "./api/client";
 import { useClock, useHotkeys } from "./state/clock";
-import { useMap, useRunStores } from "./state/data";
-import { useSim } from "./state/store";
+import { useEffect } from "react";
+import { useAnalyst, useHealth, useMap, useRuns, useRunStores } from "./state/data";
+import { RUN_FROM_URL, useSim } from "./state/store";
+import { AreaPanel } from "./ui/AreaPanel";
 import { AnalystChip } from "./ui/AnalystChip";
 import { CompareView } from "./ui/CompareView";
 import { HistoryPanel } from "./ui/HistoryPanel";
@@ -24,6 +26,20 @@ export default function App() {
   const panel = useSim((s) => s.panel);
   const compare = useSim((s) => s.compare);
   const { openPanel, setCompare } = useSim.getState();
+  const runs = useRuns().data;
+  const analyst = useAnalyst().data;
+  const health = useHealth().data;
+
+  // Start on a run that exists: the analyst's best, else the latest finished one (the real backend may only have run 0).
+  useEffect(() => {
+    if (RUN_FROM_URL || !runs?.length) return;
+    const s = useSim.getState();
+    if (runs.some((r) => r.run === s.run && r.status === "done")) return;
+    const done = runs.filter((r) => r.status === "done");
+    const pick = analyst?.bestRun ?? done.at(-1)?.run ?? runs.at(-1)!.run;
+    s.setRun(pick);
+  }, [runs, analyst]);
+  const dataTag = USING_MOCK ? "mock data" : health && (health.mapSource !== "processed" || health.realRuns === 0) ? "sample data" : null;
 
   if (error) return <div className="splash">Map unavailable · {error.message}</div>;
   if (!map) return <div className="splash">Shoreditch · loading</div>;
@@ -41,12 +57,16 @@ export default function App() {
               <Icon name="chart" size={14} /> History
             </button>
             <button className={`chip ${compare ? "on" : ""}`} onClick={() => setCompare(!compare)}>
-              <Icon name="split" size={14} /> {compare ? "Exit compare" : "Run 1 vs best"}
+              <Icon name="split" size={14} /> {compare ? "Exit compare" : "Before vs after"}
             </button>
-            {USING_MOCK && <span className="chip chip-mock">mock data</span>}
+            <button className={`chip ${panel === "area" ? "on" : ""}`} onClick={() => openPanel(panel === "area" ? null : "area")}>
+              <Icon name="bolt" size={14} /> Area
+            </button>
+            {dataTag && <span className="chip chip-mock" title={health ? `map: ${health.mapSource} · real runs: ${health.realRuns}` : undefined}>{dataTag}</span>}
           </div>
         </div>
         {panel === "history" && <HistoryPanel />}
+        {panel === "area" && <AreaPanel />}
         {!compare && <StoreCard />}
         {panel === "report" && <OwnerReport />}
         <div className="bottom">

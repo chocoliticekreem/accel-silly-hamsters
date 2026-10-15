@@ -27,7 +27,7 @@ export function OwnerReport() {
     const key = `${id}:${run}:${i}`;
     setPending(key);
     try {
-      await api.decision({ storeId: id, suggestionIndex: i, decision });
+      await api.decision({ run, storeId: id, suggestionIndex: i, decision });
       setDecisions((d) => ({ ...d, [key]: decision }));
     } catch {
       useSim.getState().showToast("Couldn't save decision");
