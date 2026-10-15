@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { api, API_URL } from "../api/client";
 import { absoluteUrl } from "../api/http";
-import { useMap, useReport } from "../state/data";
+import { useAnalyst, useMap, useReport } from "../state/data";
 import { useSim } from "../state/store";
 import { STORE_COLORS } from "../world/palette";
 import { Delta } from "./Delta";
@@ -14,7 +14,9 @@ type Decision = "approve" | "reject";
 
 export function OwnerReport() {
   const id = useSim((s) => s.selectedStoreId);
-  const run = useSim((s) => s.run);
+  const viewRun = useSim((s) => s.run);
+  // the owner's weekly report is written for the analyst's best run; fall back to the run on screen
+  const run = useAnalyst().data?.bestRun ?? viewRun;
   const map = useMap().data;
   const { data: report, error } = useReport(id, run);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
@@ -38,13 +40,21 @@ export function OwnerReport() {
 
   /** Evidence links that point back into the sim (?run=…) replay in place instead of navigating. */
   const openEvidence = (url: string) => {
+    const s = useSim.getState();
+    // backend replay evidence: /api/runs/{run}/days/{day} → replay that day from 18:00 (the evening and night)
+    const api = url.match(/\/api\/runs\/(\d+)\/days\/(\d+)/);
+    if (api) {
+      s.selectStore(id);
+      s.replay(Number(api[1]), (Number(api[2]) - 1) * 1440 + 18 * 60);
+      return true;
+    }
     if (!url.startsWith("?")) return false;
     const q = new URLSearchParams(url);
-    const s = useSim.getState();
     s.selectStore(q.get("store") ?? id);
     s.replay(Number(q.get("run") ?? run), Number(q.get("t") ?? 0));
     return true;
   };
+  const inApp = (url: string) => url.startsWith("?") || /\/api\/runs\/\d+\/days\/\d+/.test(url);
 
   return (
     <div className="modal-backdrop" onClick={close}>
@@ -52,7 +62,7 @@ export function OwnerReport() {
         <header className="card-head" style={{ ["--accent" as string]: STORE_COLORS[store.type].awning }}>
           <span className="type-badge">{STORE_COLORS[store.type].icon}</span>
           <div>
-            <div className="eyebrow">Weekly report</div>
+            <div className="eyebrow">Weekly report · run {run}</div>
             <h2>{store.name}</h2>
           </div>
           <button className="icon-btn" onClick={close} aria-label="Close">
@@ -134,11 +144,11 @@ export function OwnerReport() {
                   title={e.fetchedAt ? `fetched ${e.fetchedAt.slice(0, 10)}` : undefined}
                   className="evidence-chip"
                   href={e.url}
-                  target={e.url.startsWith("?") ? undefined : "_blank"}
+                  target={inApp(e.url) ? undefined : "_blank"}
                   rel="noreferrer"
                   onClick={(ev) => openEvidence(e.url) && ev.preventDefault()}
                 >
-                  <Icon name={e.url.startsWith("?") ? "replay" : "link"} size={13} /> {e.label}
+                  <Icon name={inApp(e.url) ? "replay" : "link"} size={13} /> {e.label}
                 </a>
               ))}
             </div>
