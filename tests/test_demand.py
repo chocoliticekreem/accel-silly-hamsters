@@ -221,7 +221,8 @@ def test_daily_totals_fit_the_sim_budget(tfl: FakeTfl) -> None:
     rail = _expected_rail()
     assert weekday == pytest.approx(demand.SIM_WEEKDAY_ARRIVALS, abs=0.5)
     assert weekend == pytest.approx(weekday * sum(rail["weekend"]) / sum(rail["weekday"]), abs=0.5)
-    assert 2000 <= weekday <= 4000 and 1000 <= weekend <= 4000  # BUILD_NOTES, 1.5 km map
+    # ~200 stores on the 1.5 km map, inside the sim's band of general arrivals
+    assert 6000 <= weekday <= 8000 and 3000 <= weekend <= 8000
 
 
 def test_station_entry_follows_numbat_exits_on_calendar_days(tfl: FakeTfl) -> None:
@@ -320,7 +321,8 @@ def test_club_nights_take_map_hours_else_default_and_scale_capacity(tfl: FakeTfl
     assert (c1.open, c1.close, c1.days) == ("23:00", "04:00", ["thu", "fri", "sat"])
     assert (c2.open, c2.close) == demand.CLUB_DEFAULT_HOURS
     into_area = sum(_expected_rail()["weekday"]) * SHS_INTO_AREA
-    agents_per_person = demand.SIM_WEEKDAY_ARRIVALS * demand.STATION_SHARE / into_area
+    # club crowds keep the CLUB_SCALE_ARRIVALS scale, whatever the general arrivals are
+    agents_per_person = demand.CLUB_SCALE_ARRIVALS * demand.STATION_SHARE / into_area
     assert c1.capacity == round(400 / 0.5 * demand.CLUB_PEAK_FILL * agents_per_person)
     assert c2.capacity == round(30 * 20 / 0.5 * demand.CLUB_PEAK_FILL * agents_per_person)
 

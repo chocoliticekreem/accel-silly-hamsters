@@ -24,11 +24,12 @@ from backend.schemas import DemandFile, Persona
 TICK = 5
 TICKS_PER_HOUR = 60 // TICK
 
-# demand.json carries sim-scale arrival rates (BUILD_NOTES: 2,000-4,000 a weekday on the 1.5 km
-# map); the renderer and the day-file budget (< 3 MB) take at most ~4,000 general arrivals a day.
+# demand.json carries sim-scale arrival rates (7,400 a weekday on the 1.5 km map with ~200
+# stores, up from 3,500 for the first ~68, so each store keeps its visits per day). The cap grew
+# with it (4,000 -> 8,000 general arrivals a day; day files ~2x, under 6 MB each).
 # The sim keeps demand's shape (entry x hour x weekday/weekend) and scales its level into this
 # band of general arrivals per day (club-goers come on top).
-GENERAL_ARRIVALS_PER_DAY = (550.0, 4000.0)
+GENERAL_ARRIVALS_PER_DAY = (550.0, 8000.0)
 # Club-goers per club night = ClubNight.capacity x this. demand.json writes capacity in sim
 # agents already, so 1.0; raise it only to exaggerate the spill-out crowd for a demo.
 CLUB_ATTENDANCE_SCALE = 1.0
