@@ -2,6 +2,7 @@
 // Add a module: create world/modules/<Name>.tsx (default export, reads useWorld() + useSim), then list it in MODULES.
 // Debug: ?only=Sky,Ground,Streets or ?skip=Glow,Agents switch modules off.
 import { Canvas } from "@react-three/fiber";
+import { Atmosphere } from "@takram/three-atmosphere/r3f";
 import { PerformanceMonitor, Stats } from "@react-three/drei";
 import { Suspense, useMemo, useState, type ComponentType } from "react";
 import type { CityMap, RunStores } from "../api/contract";
@@ -81,12 +82,14 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
       shadows="percentage"
       dpr={dpr}
       camera={{ position: [190, 105, -230], fov: 42, near: 1, far: 4000 }}
-      gl={{ antialias: true, powerPreference: "high-performance", stencil: false }}
+      gl={{ antialias: false, powerPreference: "high-performance", stencil: false }}
     >
       {/* auto quality: step down when the frame rate sags, back up when there's headroom */}
       <PerformanceMonitor bounds={() => [42, 58]} flipflops={4} onDecline={() => useQuality.getState().step(-1)} onIncline={() => useQuality.getState().step(1)} />
       {stats && <Stats />}
       <WorldContext.Provider value={ctx}>
+        {/* physically based sky + aerial perspective share this (Sky drives it from the sim clock) */}
+        <Atmosphere correctAltitude>
         {Object.entries(MODULES)
           .filter(([name]) => enabled.includes(name))
           .map(([name, M]) => (
@@ -96,6 +99,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
               </Suspense>
             </ModuleBoundary>
           ))}
+        </Atmosphere>
       </WorldContext.Provider>
     </Canvas>
     {interactive && cameraGroup === "main" && <GraphicsMenu />}

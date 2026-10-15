@@ -1,15 +1,18 @@
 // Module: Glow. The post stack, scaled by the Graphics quality level:
-// N8AO ambient occlusion → god rays from the sun disc → HDR bloom (windows, lamps, neon, headlights, the sun) →
-// optional tilt-shift (miniature look) → ACES filmic tone mapping → vignette → a whisper of film grain.
-// Everything renders into half-float buffers, so emissive > 1 stays HDR until the tone mapper.
+// N8AO ambient occlusion → aerial perspective (takram atmosphere: real haze/inscatter by distance) → god rays from
+// the sun disc → HDR mipmap bloom (windows, lamps, neon, headlights, the sun) → optional tilt-shift (miniature look)
+// → AgX tone mapping (+ a touch of saturation back) → light vignette → a whisper of film grain → SMAA on Low
+// (no MSAA there). Everything renders into half-float buffers, so emissive > 1 stays HDR until the tone mapper.
 import { useFrame, useThree } from "@react-three/fiber";
-import { Bloom, EffectComposer, GodRays, N8AO, Noise, TiltShift2, ToneMapping, Vignette } from "@react-three/postprocessing";
-import { BlendFunction, KernelSize, ToneMappingMode, type BloomEffect, type GodRaysEffect } from "postprocessing";
+import { Bloom, EffectComposer, GodRays, HueSaturation, N8AO, Noise, SMAA, TiltShift2, ToneMapping, Vignette } from "@react-three/postprocessing";
+import { AerialPerspective } from "@takram/three-atmosphere/r3f";
+import { BlendFunction, KernelSize, ToneMappingMode, type BloomEffect, type Effect, type GodRaysEffect } from "postprocessing";
 import { useEffect, useRef, useState } from "react";
-import type { Mesh } from "three";
-import { sunDirection, nightLevel } from "../../sim/sky";
+import type { Mesh, Vector3 } from "three";
+import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
+import { gainAerial } from "../atmosphere";
 import { PRESETS, useQuality } from "../quality";
 
 export default function Glow() {
@@ -21,7 +24,6 @@ export default function Glow() {
   const bloom = useRef<BloomEffect>(null);
   const rays = useRef<GodRaysEffect>(null);
   const [sun, setSun] = useState<Mesh | null>(null);
-  const dir = useRef<[number, number, number]>([0, 1, 0]);
 
   // Sky publishes its sun disc on the scene; pick it up once it exists
   useFrame(() => {
@@ -30,43 +32,38 @@ export default function Glow() {
   });
 
   useEffect(() => {
-    gl.toneMappingExposure = 1.05;
+    gl.toneMappingExposure = 1.15;
   }, [gl]);
 
   useFrame(() => {
-    const hour = hourOf(useSim.getState().t);
-    const night = nightLevel(hour);
+    const night = nightLevel(hourOf(useSim.getState().t));
     const b = bloom.current;
     if (b) {
-      b.intensity = 0.45 + 0.75 * night;
+      b.intensity = 0.5 + 0.8 * night;
       b.luminanceMaterial.threshold = 0.95 - 0.35 * night;
     }
     const r = rays.current;
-    if (r) {
-      sunDirection(hour, dir.current);
-      const low = 1 - Math.min(1, Math.max(0, dir.current[1]) / 0.5);
+    const dir = scene.userData.sunDir as Vector3 | undefined;
+    if (r && dir) {
+      const low = 1 - Math.min(1, Math.max(0, dir.y) / 0.5);
       r.godRaysMaterial.weight = 0.25 + 0.55 * low;
-      r.godRaysMaterial.exposure = 0.35 + 0.35 * low;
+      r.godRaysMaterial.exposure = 0.35 + 0.4 * low;
     }
   });
 
+  const on = <T,>(cond: boolean, el: T) => (cond ? el : <></>);
   return (
     <EffectComposer multisampling={p.multisampling} key={level}>
-      {p.ao !== "off" ? (
-        <N8AO halfRes={p.ao === "half"} quality={p.ao === "full" ? "medium" : "performance"} aoRadius={5} distanceFalloff={1.2} intensity={2.2} color="#1b1a26" />
-      ) : (
-        <></>
-      )}
-      {p.godRays && sun ? (
-        <GodRays ref={rays} sun={sun} samples={p.ao === "full" ? 48 : 32} density={0.94} decay={0.92} weight={0.45} exposure={0.45} clampMax={1} blur kernelSize={KernelSize.SMALL} />
-      ) : (
-        <></>
-      )}
+      {on(p.ao !== "off", <N8AO halfRes={p.ao === "half"} quality={p.ao === "full" ? "medium" : "performance"} aoRadius={5} distanceFalloff={1.2} intensity={2.2} color="#1b1a26" />)}
+      {on(p.aerial, <AerialPerspective ref={(e: Effect | null) => { if (e) gainAerial(e); }} />)}
+      {on(p.godRays && !!sun, <GodRays ref={rays} sun={sun!} samples={p.ao === "full" ? 48 : 32} density={0.94} decay={0.92} weight={0.45} exposure={0.45} clampMax={1} blur kernelSize={KernelSize.SMALL} />)}
       <Bloom ref={bloom} mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.25} intensity={0.6} radius={0.75} levels={level === "low" ? 5 : 7} />
-      {tilt && level !== "low" ? <TiltShift2 blur={0.09} taper={0.55} start={[0, 0.48]} end={[1, 0.48]} samples={level === "high" ? 8 : 6} /> : <></>}
-      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-      <Vignette eskil={false} offset={0.3} darkness={0.5} />
+      {on(tilt && level !== "low", <TiltShift2 blur={0.09} taper={0.55} start={[0, 0.48]} end={[1, 0.48]} samples={level === "high" ? 8 : 6} />)}
+      <ToneMapping mode={ToneMappingMode.AGX} />
+      <HueSaturation saturation={0.18} />
+      <Vignette eskil={false} offset={0.3} darkness={0.45} />
       <Noise premultiply blendFunction={BlendFunction.SOFT_LIGHT} opacity={0.18} />
+      {on(p.multisampling === 0, <SMAA />)}
     </EffectComposer>
   );
 }

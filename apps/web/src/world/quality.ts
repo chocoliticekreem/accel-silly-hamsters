@@ -21,12 +21,14 @@ export interface QualityPreset {
   peopleLod: number;
   /** Rooftop clutter, lamp reflections and other small extras. */
   extras: boolean;
+  /** takram aerial perspective (physically based haze by distance). */
+  aerial: boolean;
 }
 
 export const PRESETS: Record<Quality, QualityPreset> = {
-  high: { dpr: 2, shadowMap: 4096, shadowRadius: 3, ao: "full", godRays: true, multisampling: 4, envSize: 128, peopleLod: 220, extras: true },
-  medium: { dpr: 1.25, shadowMap: 2048, shadowRadius: 2.5, ao: "half", godRays: true, multisampling: 2, envSize: 64, peopleLod: 130, extras: true },
-  low: { dpr: 1, shadowMap: 1024, shadowRadius: 1.5, ao: "off", godRays: false, multisampling: 0, envSize: 32, peopleLod: 60, extras: false },
+  high: { dpr: 2, shadowMap: 4096, shadowRadius: 3, ao: "full", godRays: true, multisampling: 4, envSize: 128, peopleLod: 220, extras: true, aerial: true },
+  medium: { dpr: 1.25, shadowMap: 2048, shadowRadius: 2.5, ao: "half", godRays: true, multisampling: 2, envSize: 64, peopleLod: 130, extras: true, aerial: true },
+  low: { dpr: 1, shadowMap: 1024, shadowRadius: 1.5, ao: "off", godRays: false, multisampling: 0, envSize: 32, peopleLod: 60, extras: false, aerial: false },
 };
 
 const KEY = "smartcity.gfx";
@@ -93,4 +95,7 @@ export const useQuality = create<QualityState>((set, get) => ({
   },
 }));
 
-export const usePreset = () => PRESETS[useQuality((s) => s.level)];
+// dev only: lets benchmarks flip levels in one page load (window.__gfx.getState().setLevel("medium"))
+if (import.meta.env.DEV && typeof window !== "undefined") (window as unknown as { __gfx: typeof useQuality }).__gfx = useQuality;
+
+export const usePreset =() => PRESETS[useQuality((s) => s.level)];
