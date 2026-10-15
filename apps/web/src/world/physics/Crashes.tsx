@@ -208,7 +208,7 @@ export default function Crashes({ junctions }: { junctions: Junction[] }) {
       let best: TrafficVehicle | null = null;
       let bd = Infinity;
       for (const v of trafficVehicles) {
-        if (v === not || !v.shown || v.override || v.kind === "moto") continue;
+        if (v === not || !v.shown || v.override || v.kind === "moto" || v.kind === "bike") continue;
         const d = Math.hypot(v.x - px, v.z - pz) - (streetId && v.streetId === streetId ? 400 : 0);
         if (d < bd) {
           bd = d;
