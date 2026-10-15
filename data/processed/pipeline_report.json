@@ -1,0 +1,285 @@
+{
+  "at": "2026-10-15T09:49:55Z",
+  "steps": [
+    {
+      "step": "map",
+      "file": "map.json",
+      "fallback": false,
+      "sources": [
+        {
+          "label": "OpenStreetMap data \u00a9 OpenStreetMap contributors, ODbL 1.0 (via Overpass API)",
+          "url": "https://overpass-api.de/api/interpreter",
+          "fetchedAt": "2026-10-15T09:28:31Z"
+        },
+        {
+          "label": "OpenStreetMap copyright and licence (ODbL 1.0)",
+          "url": "https://www.openstreetmap.org/copyright"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "step": "personas",
+      "file": "personas.json",
+      "fallback": true,
+      "sources": [
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        },
+        {
+          "label": "TfL open data: station entries/exits and night services",
+          "url": "https://tfl.gov.uk/info-for/open-data-users/"
+        },
+        {
+          "label": "Time Out London: the 20 best things to do in Shoreditch",
+          "url": "https://www.timeout.com/london/things-to-do/shoreditch-area-guide",
+          "fetchedAt": "2026-10-15T08:55:47Z"
+        },
+        {
+          "label": "Time Out London: the best bars in Shoreditch",
+          "url": "https://www.timeout.com/london/bars-pubs/shoreditch-bars",
+          "fetchedAt": "2026-10-15T08:55:49Z"
+        },
+        {
+          "label": "Time Out London: 10 best clubs and nightlife venues in Shoreditch",
+          "url": "https://www.timeout.com/london/clubs-nightlife/shoreditch-clubs",
+          "fetchedAt": "2026-10-15T08:55:51Z"
+        }
+      ],
+      "notes": [
+        "fallback: no LLM synthesis ran (no Claude API credentials), so every archetype and number is hand-written in backend/pipeline/personas.py (ARCHETYPES); none is measured, and calibration should tune them.",
+        "The numbers are the builder's judgement, informed by facts in the cited pages: Time Out for the venue mix and opening patterns, ONS Time Use and TfL for daily timing.",
+        "returningProb is high for daily routines (residents, commuters, office and shift workers) and ~0 for tourists; lightingSensitivity is highest for night-time and unfamiliar visitors; storePrefs, stopsPerTrip, dwellMinutes and entryKinds are per-archetype judgement.",
+        "Time Out London: robots.txt checked; 3 of 3 Shoreditch guide pages fetched (scrape cache data/raw/timeout/) and cited.",
+        "Reddit r/london, r/AskLondon, r/londonsocialclub: not collected; REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET are not set (the PRAW path runs once both are).",
+        "Google Maps, Yelp and TripAdvisor reviews: not collected; their terms of use forbid scraping.",
+        "ONS Time Use and TfL open data: cited as the public basis for daily timing (work and meal times, rail peaks, Friday/Saturday night trains); not fetched or fitted.",
+        "share = share of weekday arrivals into the area; on Sat/Sun weight it by weekendMultiplier and renormalise.",
+        "activeHours = arrival weight by clock hour, normalised to sum 1 for each persona.",
+        "weekendMultiplier applies to Sat/Sun clock days, so Friday-night hours after midnight count as Saturday.",
+        "Implied returning share of weekday arrivals (sum of share x returningProb): 0.58.",
+        "morning-commuter: weekday rail peaks 07-09 and 17-19 through Shoreditch High St (TfL); coffee to go, often no stop at all; weekdays only, so weekend 0.25",
+        "office-worker: works in the area's offices: lunch peak 12-14 and after-work 17-19 (ONS daily routines); the same routine every weekday, so returning 0.85",
+        "remote-worker: laptop workers in cafes 09-17 with long dwell (Time Out: a late-night bar serves them breakfast from 8am; a pay-by-the-hour venue runs 8am-6pm); daytime, so lighting barely matters",
+        "local-resident: lives nearby and walks in: evening grocery and off-licence runs 17-21, more at weekends; habit over lights; the most regular group",
+        "tourist: visitors for markets, museums, galleries and food 10-19 (Time Out area guide), busiest at weekends; one-off (0.02 covers multi-night hotel stays); a lit front signals open to strangers",
+        "weekend-shopper: Londoners at markets and independent shops 10-17, mostly Sat/Sun (Time Out: Columbia Road flower market Sundays 8am-3pm, Brick Lane Market); several shops plus a cafe",
+        "after-work-drinker: office crowd in bars 17-23 (Time Out: a 5-8pm happy hour; a pub that fills with nearby tech workers from 7pm); bar first, takeaway later; regular haunts, so returning 0.55",
+        "evening-diner: dinner 18-22 with a drink before or after (the Time Out area guide lists destination restaurants); more at weekends; occasional repeat visits",
+        "night-owl: club-goers arriving 21-02, busiest at weekends (Time Out: XOYO draws crowds every weekend; late-night bars and a pub-club with a late licence); Fri/Sat night trains (TfL); pre-drinks, the club, then late food (takeaway 0.9); drawn to lit, open fronts",
+        "late-shift-worker: hospitality, cleaning and care staff finishing 22-02 or starting 05-07; quick food on the way home by night bus; regular shifts, so returning 0.8",
+        "student-creative: art and design students and studio workers on loose hours 11-01 (Time Out area guide: galleries, gig venues, arty pubs); cheap cafes, bars and takeaways; half are regulars"
+      ]
+    },
+    {
+      "step": "energy",
+      "file": "energy.json",
+      "fallback": false,
+      "sources": [
+        {
+          "label": "NESO Carbon Intensity API (CC BY 4.0), London regionid 13, half-hourly estimates 2026-09-17 to 2026-09-30",
+          "url": "https://api.carbonintensity.org.uk/regional/intensity/2026-09-17T00:00Z/2026-10-01T00:00Z/regionid/13",
+          "fetchedAt": "2026-10-15T09:07:04Z"
+        },
+        {
+          "label": "NESO Carbon Intensity API (CC BY 4.0), London regionid 13, half-hourly estimates 2026-10-01 to 2026-10-14",
+          "url": "https://api.carbonintensity.org.uk/regional/intensity/2026-10-01T00:00Z/2026-10-15T00:00Z/regionid/13",
+          "fetchedAt": "2026-10-15T09:07:06Z"
+        },
+        {
+          "label": "DESNZ ND-NEED 2026, England and Wales (published 30 Sep 2026): median electricity intensity by building use from metered 2024 consumption",
+          "url": "https://assets.publishing.service.gov.uk/media/6abcf5f355bc01d752a7f136/nd-need-2026-report.pdf"
+        },
+        {
+          "label": "CIBSE TM46:2008 Energy benchmarks (typical electricity and fossil, kWh/m2 GIA per year)",
+          "url": "https://www.cibse.org/knowledge-research/knowledge-portal/tm46-energy-benchmarks"
+        },
+        {
+          "label": "Clark (2013) What Colour is Your Building?, Appendix C, Tables C.4, C.6 and C.10: reproduces the TM46:2008 rows used here",
+          "url": "https://bluepools.co.uk/SiteAssets/AHU%27s/Energy%20Consumption%20Data.pdf"
+        },
+        {
+          "label": "DESNZ QEP table 3.4.2: prices of fuels purchased by non-domestic consumers in the UK, including CCL (published 29 Sep 2026)",
+          "url": "https://www.gov.uk/government/statistical-data-sets/gas-and-electricity-prices-in-the-non-domestic-sector"
+        }
+      ],
+      "notes": [
+        "carbonGPerKwh: live. Mean of 1344 half-hourly London (regionid 13) estimates, 2026-09-17 to 2026-10-14 (UTC days), grouped by Europe/London clock hour: lowest 94.8 g at 13:00, highest 187.8 g at 18:00. Regional values are NESO model estimates (the API's 'forecast'; no regional 'actual' is published).",
+        "cafe: 160 kWh/m2/yr (ND-NEED 2026 Hospitality median, metered 2024); open 07:00-18:00 (11 h) on 365 days = 4015 h/yr (assumption); standby share 0.2 (display chillers and fridges stay on overnight; the espresso machine is on a timer) -> 0.0322 kWh/m2 per open hour, 0.0064 closed; 100 m2 on an open day = 43.8 kWh before facade lighting.",
+        "restaurant: 160 kWh/m2/yr (ND-NEED 2026 Hospitality median, metered 2024); open 12:00-23:00 (11 h) on 365 days = 4015 h/yr (assumption); standby share 0.15 (only the walk-in fridge and freezer run while kitchen and dining room are off) -> 0.0338 kWh/m2 per open hour, 0.0051 closed; 100 m2 on an open day = 43.8 kWh before facade lighting.",
+        "takeaway: 310 kWh/m2/yr (TM46 Small food store: TM46 has no takeaway category and this is the closest all-electric, refrigerated counter-service format); open 11:00-23:00 (12 h) on 365 days = 4380 h/yr (assumption); standby share 0.3 (fridges, freezers and drinks chillers on a small floor area) -> 0.0544 kWh/m2 per open hour, 0.0163 closed; 100 m2 on an open day = 84.9 kWh before facade lighting.",
+        "bar: 160 kWh/m2/yr (ND-NEED 2026 Hospitality median, metered 2024); open 16:00-00:00 (8 h) on 365 days = 2920 h/yr (assumption); standby share 0.25 (cellar cooling and bottle fridges run around the clock) -> 0.0365 kWh/m2 per open hour, 0.0091 closed; 100 m2 on an open day = 43.8 kWh before facade lighting.",
+        "shop: 108 kWh/m2/yr (ND-NEED 2026 Shops median, metered 2024); open 10:00-19:00 (9 h) on 365 days = 3285 h/yr (assumption); standby share 0.2 (a mix of corner shops with drinks chillers and non-food shops with little left on) -> 0.0247 kWh/m2 per open hour, 0.0049 closed; 100 m2 on an open day = 29.6 kWh before facade lighting.",
+        "offlicence: 310 kWh/m2/yr (TM46 Small food store); open 08:00-23:00 (15 h) on 365 days = 5475 h/yr (assumption); standby share 0.4 (glass-door drinks chillers dominate the load and never switch off) -> 0.0457 kWh/m2 per open hour, 0.0183 closed; 100 m2 on an open day = 84.9 kWh before facade lighting.",
+        "club: 150 kWh/m2/yr (TM46 Entertainment halls, the closest category for a late-night music venue); open 22:00-03:00 (5 h) on 156 days = 780 h/yr (assumption); standby share 0.1 (cellar cooling and bar fridges against a large sound, lighting and ventilation load; 3 club nights a week) -> 0.0951 kWh/m2 per open hour, 0.0095 closed; 100 m2 on an open day = 65.6 kWh before facade lighting.",
+        "kWh/m2 derivation: E = annual electricity intensity, H = typical open hours per year, f = standby share (closed-hours load / open-hours load). open = E / (H + f x (8760 - H)) and standby = f x open, so a store kept to its typical hours uses exactly E a year; dividing E by H alone would count the closed-hours load twice. Each extra open hour costs (open - standby) per m2.",
+        "Cross-check, CIBSE TM46:2008 typical electricity (kWh/m2 GIA/yr): Restaurant 90 and Bar or pub 130 (both assume gas cooking and heating: fossil 370 and 350), General retail 165, Small food store 310, Entertainment halls 150. TM46 Restaurant would put a 100 m2 cafe at ~25 kWh/day, below an all-electric espresso cafe, so cafes, restaurants and bars use the metered ND-NEED hospitality median (ND-NEED publishes no split within hospitality).",
+        "Benchmarks cover a building's whole electricity use including its lighting. Facade and window lighting (lightingKw) is added on top, so stores with lights on most hours model slightly above their benchmark.",
+        "Floor area bases differ: ND-NEED divides by VOA floor area, TM46 by gross internal area, and map.json floor areas come from footprints. Clark (2013) puts the spread between measurement bases at up to ~25%, inside the benchmark uncertainty.",
+        "lightingKw (assumption: LED fittings on a typical small shopfront, independent of floor area): off = 0; low 0.25 kW = illuminated fascia sign 0.10 + window display dimmed 0.15; high 0.60 kW = sign 0.10 + window display at full 0.30 + facade wall-washers and canopy 0.20. Older halogen fittings would draw 2-3x more.",
+        "priceGbpPerKwh: flat \u00a30.3201/kWh, the midpoint of DESNZ QEP 3.4.2 2025 annual non-domestic electricity prices incl. CCL, excl. VAT: Very Small band (0-20 MWh/yr) 34.93 p/kWh and Small band (20-499 MWh/yr) 29.09 p/kWh, because the modelled independents straddle the 20 MWh/yr boundary. These are average delivered prices (standing charges spread per kWh), so the unit rate a saved kWh avoids is somewhat lower. DESNZ publishes no time-of-day split, hence flat. DESNZ flags the Very Small series as subject to revision.",
+        "EPC: the non-domestic EPC register (epc.opendatacommunities.org) now redirects to get-energy-performance-data.communities.gov.uk, whose API needs a GOV.UK One Login bearer token (checked 2026-10-15; this build has none), so it is not used. Non-domestic EPCs are modelled asset ratings, not metered use, so metered ND-NEED medians are the closer source.",
+        "fallback describes the carbon profile only: True means the API could not be used and the snapshot was written. Intensities, lighting and price are published figures plus the assumptions stated here in every build."
+      ]
+    },
+    {
+      "step": "demand",
+      "file": "demand.json",
+      "fallback": false,
+      "sources": [
+        {
+          "label": "TfL NUMBAT 2025, typical Monday: Shoreditch High Street station exits by quarter hour",
+          "url": "https://crowding.data.tfl.gov.uk/NUMBAT/NUMBAT%202025/NBT25MON_Outputs.xlsx",
+          "fetchedAt": "2026-10-15T09:13:18Z"
+        },
+        {
+          "label": "TfL NUMBAT 2025, typical Tuesday-Thursday: Shoreditch High Street station exits by quarter hour",
+          "url": "https://crowding.data.tfl.gov.uk/NUMBAT/NUMBAT%202025/NBT25TWT_Outputs.xlsx",
+          "fetchedAt": "2026-10-15T09:13:19Z"
+        },
+        {
+          "label": "TfL NUMBAT 2025, typical Friday: Shoreditch High Street station exits by quarter hour",
+          "url": "https://crowding.data.tfl.gov.uk/NUMBAT/NUMBAT%202025/NBT25FRI_Outputs.xlsx",
+          "fetchedAt": "2026-10-15T09:13:20Z"
+        },
+        {
+          "label": "TfL NUMBAT 2025, typical Saturday: Shoreditch High Street station exits by quarter hour",
+          "url": "https://crowding.data.tfl.gov.uk/NUMBAT/NUMBAT%202025/NBT25SAT_Outputs.xlsx",
+          "fetchedAt": "2026-10-15T09:13:21Z"
+        },
+        {
+          "label": "TfL NUMBAT 2025, typical Sunday: Shoreditch High Street station exits by quarter hour",
+          "url": "https://crowding.data.tfl.gov.uk/NUMBAT/NUMBAT%202025/NBT25SUN_Outputs.xlsx",
+          "fetchedAt": "2026-10-15T09:13:22Z"
+        },
+        {
+          "label": "TfL Unified API: Windrush line Night route stop sequence",
+          "url": "https://api.tfl.gov.uk/Line/windrush/Route/Sequence/outbound?serviceTypes=Night",
+          "fetchedAt": "2026-10-15T09:13:24Z"
+        },
+        {
+          "label": "Approved Document B vol 2 (2026), Table D1: floor space factor 0.5 m2/person for clubs (static reference, checked 2026-10-15)",
+          "url": "https://assets.publishing.service.gov.uk/media/6aa3bb7492e72b8ac437f145/AD_B2_2026.pdf"
+        }
+      ],
+      "notes": [
+        "Units: sim agents per hour (expected values; sample e.g. Poisson per hour), not real people. Scale: 1 sim agent ~ 48 real arrivals.",
+        "Scale derivation: SHS station exits 11,495 per weekday and 10,023 per weekend day (TfL NUMBAT 2025, mean of calendar days); assumed station share 30% of all arrivals into the area gives 38,317 real arrivals per weekday; weekday sim total fixed at 800 (BUILD_NOTES budget 600-1200/day); weekend total 698 follows the measured weekend/weekday exit ratio 0.87.",
+        "Station entries: hour-of-day = SHS exits (people arriving into the area; quarter-hour bands summed to hours), TfL traffic days (05:00-05:00) mapped to calendar days; several station entries share the station budget equally.",
+        "Night Overground: TfL lists Shoreditch High Street on the Windrush Night route (Unified API); NUMBAT SHS exits 01:00-05:00 by night: Mon 0, Tue-Thu (each) 0, Fri 76, Sat 108, Sun 0. Late station arrivals therefore sit in the 00-04 hours of the weekend profile (Sat/Sun mornings) and are ~0 on weekday nights.",
+        "Street entries (assumption): hourly arrivals at street edges are not measured here; timing = 70% weekday / 60% weekend SHS exit timing plus 30% / 40% night-time-economy walk-ins (weekday 11:00-01:00, peak 17-23; weekend 10:00-04:00, peak 20-24). Split across street entries by the width of the street each sits on: e1 8 m, e2 8 m, e3 14 m, e4 12 m, e5 8 m, e6 12 m, e7 8 m, e8 14 m, e9 8 m, e10 14 m, e11 14 m, e12 10 m, e13 8 m, e14 14 m, e15 8 m, e16 8 m.",
+        "Club nights: one per club store, nights thu/fri/sat, hours from map.json defaultHours when they describe a night (open from 18:00, close after midnight by 08:00), else 22:00-03:00 (assumption; club events are not scraped). Club-goers are NOT in entryPoints: the sim adds `capacity` club-goers per club night; capacity is already in sim agents (do not rescale). capacity = floor area / 0.5 m2 per person (Approved Document B) x 60% typical fill, clamped 150-1500 real (500 without floor area), x scale 0.0209: c1 22:00-03:00 (default: map hours 17:00-00:00 are not a night), 514 real -> 11 agents; c2 22:00-03:00 (default: map hours 12:00-00:00 are not a night), 150 real -> 3 agents.",
+        "returningShare and returningPoolSize (estimate; open question in the spec): commuters = arrivals in the TfL AM peak band 07:00-10:00 (30% of weekday, 5% of weekend arrivals) plus 25% of all other arrivals assumed regulars (residents, regular diners and drinkers, club regulars); weekly mix = 0.43. Pool = share x busiest daily total / 0.9 (a regular arrives on ~9 of 10 days) = 380.",
+        "Checked 2026-10-15, not used: TfL crowding API (/crowding/910GSHRDHST returns isFound=false); ONS Time Use Survey tables (OTUS, March 2024) give daily minutes per activity with no hour-of-day split, so hour-of-day comes from NUMBAT; TfL BUSTO bus demand files are 55-125 MB (over the download cap); Resident Advisor, Dice and Eventbrite are not scraped (terms)."
+      ]
+    },
+    {
+      "step": "calibration",
+      "file": "calibration.json",
+      "fallback": true,
+      "sources": [],
+      "notes": [
+        "PLACEHOLDER, NOT MEASURED: 5 of 5 venues (measured=false) are hand-written shapes of the hourly pattern Google Popular Times typically shows for the venue type, not data for these venues. They cannot validate the sim: calibration error and report confidence must leave them out.",
+        "Scale: 0-100 = share of the venue's busiest hour of the week (Popular Times scale). weekday = mean of the Mon-Fri calendar days, weekend = Sat-Sun; an hour after midnight belongs to the next calendar day (Fri 01:00 counts as Saturday), as in StoreStats.",
+        "s5 Quaker Street Coffee & Bubble Tea (cafe) is the cafe nearest the station; placeholder (weekday commuter rush 08-10 and lunch, weekend brunch peak 11-14).",
+        "s10 The Knave of Clubs (restaurant) is the restaurant nearest the station; placeholder (lunch 12-14 and a bigger dinner peak 19-21, busiest on Saturday).",
+        "s18 Shoreditch House (bar) is the bar nearest the station; placeholder (after-work rise from 17:00, latest and busiest on Friday and Saturday nights).",
+        "c1 Little Fires (club) is the club nearest Dumbo Shoreditch; placeholder (open Thu-Sat 22:00-03:00, peak 01-02 on Friday and Saturday nights).",
+        "s13 Dumbo Shoreditch (takeaway) is the takeaway nearest a club (Little Fires, 49 m); placeholder (lunch, dinner 18-21 and an after-club peak 02-04 on Friday and Saturday nights).",
+        "Popular Times needs a paid API key: BESTTIME_API_KEY and OUTSCRAPER_API_KEY are not set (SerpAPI is key-gated too and not wired in), so no venue was measured.",
+        "London Datastore checked 2026-10-15 (all 1306 datasets): no open hourly high-street footfall for Shoreditch, Hackney or Tower Hamlets. Closest: Google Mobility by Borough (daily % change, All Rights Reserved, ended Oct 2022), the COVID-19 Mobility Report footfall series (daily, London-wide) and LTDS 'Trips made in London by time of day' (London-wide weekday trip starts). GLA High Streets Data Service footfall is not in the open catalogue (only its boundaries, dataset 2rq4w)."
+      ]
+    }
+  ],
+  "fallbacks": [
+    "personas",
+    "calibration"
+  ],
+  "cacheHitRates": {
+    "pipeline": 1.0,
+    "scrape": 1.0
+  },
+  "calibration": {
+    "venues": [
+      {
+        "name": "Typical cafe",
+        "storeId": "s5",
+        "type": "cafe",
+        "measured": false,
+        "weekday": {
+          "mae": 0.1032,
+          "r": 0.8898
+        },
+        "weekend": {
+          "mae": 0.1148,
+          "r": 0.8543
+        },
+        "mae": 0.109
+      },
+      {
+        "name": "Typical restaurant",
+        "storeId": "s10",
+        "type": "restaurant",
+        "measured": false,
+        "weekday": {
+          "mae": 0.1168,
+          "r": 0.8682
+        },
+        "weekend": {
+          "mae": 0.1498,
+          "r": 0.7589
+        },
+        "mae": 0.1333
+      },
+      {
+        "name": "Typical bar",
+        "storeId": "s18",
+        "type": "bar",
+        "measured": false,
+        "weekday": {
+          "mae": 0.1047,
+          "r": 0.914
+        },
+        "weekend": {
+          "mae": 0.198,
+          "r": 0.7156
+        },
+        "mae": 0.1514
+      },
+      {
+        "name": "Typical club",
+        "storeId": "c1",
+        "type": "club",
+        "measured": false,
+        "weekday": {
+          "mae": 0.1242,
+          "r": 0.5546
+        },
+        "weekend": {
+          "mae": 0.1042,
+          "r": 0.5648
+        },
+        "mae": 0.1142
+      },
+      {
+        "name": "Typical late-night takeaway",
+        "storeId": "s13",
+        "type": "takeaway",
+        "measured": false,
+        "weekday": {
+          "mae": 0.2195,
+          "r": 0.7732
+        },
+        "weekend": {
+          "mae": 0.3024,
+          "r": 0.2537
+        },
+        "mae": 0.261
+      }
+    ],
+    "measuredCount": 0,
+    "meanError": null,
+    "note": "No measured targets yet: all calibration shapes are placeholders, so the sim is uncalibrated and report confidence is capped."
+  }
+}
