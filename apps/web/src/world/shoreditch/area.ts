@@ -105,7 +105,7 @@ function yardRing(ring: [number, number][]): [number, number][] {
   for (let i = 0; i < ring.length; i++) {
     const [x, z] = ring[i];
     // the notch between the Shoreditch High Street strip and the main yard is part of the site too
-    if (x > -162 && x < -158 && z < -45) continue;
+    if (x > -162 && x < -158 && z < -45 && z > -52) continue;
     const notch = x < -183.5 && x > -185 && z < -45 && z > -50;
     const north = notch || (z > -40 && x > -160 && x < 56);
     out.push(north ? [x, -11] : [x, z]);

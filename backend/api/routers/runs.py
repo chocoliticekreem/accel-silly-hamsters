@@ -1,5 +1,5 @@
-"""GET /api/runs and the per-run files: stores, days, suggestions, summary, owner and street
-events."""
+"""GET /api/runs and the per-run files: stores, days, suggestions, summary, footfall, owner and
+street events."""
 
 from __future__ import annotations
 
@@ -7,11 +7,12 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 
 from backend import store
-from backend.api import common
+from backend.api import common, footfall
 from backend.contract import (
     DAYS,
     DayData,
     OwnerEvent,
+    RunFootfall,
     RunListItem,
     StoreRunResult,
     StreetEvent,
@@ -63,6 +64,13 @@ def get_run_suggestions(run: int) -> JSONResponse:
 def get_run_summary(run: int) -> JSONResponse:
     """City view for one run (area totals only: no store ids, see BUILD_NOTES misuse cases)."""
     return common.contract_json(common.read_run_file(run, "summary.json", RunSummary))
+
+
+@router.get("/api/runs/{run}/footfall", response_model=RunFootfall)
+def get_run_footfall(run: int) -> JSONResponse:
+    """Sim agents on the street by day and clock hour, for the background crowd (area totals: no
+    store or agent ids). Built from the day files on first request, then cached in the run."""
+    return common.contract_json(footfall.run_footfall(run))
 
 
 @router.get("/api/runs/{run}/owner-events", response_model=list[OwnerEvent])

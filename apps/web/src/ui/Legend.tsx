@@ -1,12 +1,16 @@
-// Persona colours and map symbols, hidden behind one click.
+// Persona colours and map symbols, hidden behind one click. Each line names its unit: the coloured figures and the
+// columns count sim citizens; the grey background crowd is people on the street (the backend's people-per-agent scale).
 import { useState } from "react";
-import { useMap } from "../state/data";
+import { useHealth, useMap } from "../state/data";
+import { CROWD_TONES } from "../world/modules/Footfall";
 import { PERSONA_COLORS } from "../world/palette";
+import { fmtInt } from "./format";
 import { Icon } from "./icons";
 
 export function Legend() {
   const [open, setOpen] = useState(false);
   const sources = useMap().data?.sources ?? [];
+  const scale = useHealth().data?.peoplePerAgent;
   return (
     <div className={`legend ${open ? "open" : ""}`}>
       <button className="chip" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="Legend">
@@ -14,16 +18,19 @@ export function Legend() {
       </button>
       {open && (
         <div className="legend-body panel">
+          <span className="legend-item">sim citizens · shirt = persona</span>
           {Object.entries(PERSONA_COLORS).map(([p, c]) => (
             <span key={p} className="legend-item">
               <i style={{ background: c }} /> {p}
             </span>
           ))}
+          {scale ? (
+            <span className="legend-item">
+              <i style={{ background: CROWD_TONES[1], flexShrink: 0 }} /> background crowd ≈ people on the street · {fmtInt(scale)} per sim citizen
+            </span>
+          ) : null}
           <span className="legend-item">
-            <i style={{ background: "#9aa3b2" }} /> background crowd · 1 agent ≈ 48 people
-          </span>
-          <span className="legend-item">
-            <i className="lg-column" /> people inside
+            <i className="lg-column" /> sim citizens inside
           </span>
           <span className="legend-item">
             <i className="lg-open" /> open

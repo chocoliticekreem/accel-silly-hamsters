@@ -16,6 +16,8 @@
     "@react-three/postprocessing": "^3.2.0",
     "@react-three/rapier": "^2.2.0",
     "3d-tiles-renderer": "^0.5.3",
+    "@takram/three-atmosphere": "^0.19.1",
+    "@takram/three-geospatial": "^0.9.1",
     "lucide-react": "^1.57.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
