@@ -29,7 +29,7 @@ import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { BUILDING_COLORS, GROUND } from "../palette";
-import { FLOOR_H, TILE_COLS, TILE_ROWS, WINDOW_W, windowTextures } from "../textures";
+import { facadeMaterialParams, FLOOR_H, TILE_COLS, TILE_ROWS, WINDOW_W, windowTextures } from "../textures";
 
 const noRaycast = () => null;
 
@@ -256,7 +256,7 @@ function build(map: CityMap): Built {
     const real = geos;
     const [wall, frame, variant] = STYLES[style];
     const t = windowTextures(wall, variant, frame);
-    const mat = new MeshStandardMaterial({ map: t.map, emissiveMap: t.emissive, emissive: "#ffffff", emissiveIntensity: 0, roughness: 0.88 });
+    const mat = new MeshStandardMaterial({ map: t.map, emissiveMap: t.emissive, emissive: "#ffffff", emissiveIntensity: 0, ...facadeMaterialParams(t) });
     windowMats.push({ mat, office: style.startsWith("office") });
     merged.push({ geo: mergeGeometries(real)!, mat, shadow: true });
     real.forEach((g) => g.dispose());
@@ -412,6 +412,8 @@ export default function Infill() {
         const m = mat as MeshStandardMaterial;
         m.map?.dispose();
         m.emissiveMap?.dispose();
+        m.normalMap?.dispose();
+        m.roughnessMap?.dispose();
         m.dispose();
       });
       built.inst.forEach(({ geo, mat }) => {

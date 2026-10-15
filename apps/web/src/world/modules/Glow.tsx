@@ -54,9 +54,9 @@ export default function Glow() {
   const on = <T,>(cond: boolean, el: T) => (cond ? el : <></>);
   return (
     <EffectComposer multisampling={p.multisampling} key={level}>
-      {on(p.ao !== "off", <N8AO halfRes={p.ao === "half"} quality={p.ao === "full" ? "medium" : "performance"} aoRadius={5} distanceFalloff={1.2} intensity={2.2} color="#1b1a26" />)}
+      {on(p.ao !== "off", <N8AO halfRes quality={p.ao === "full" ? "medium" : "performance"} aoRadius={5} distanceFalloff={1.2} intensity={2.2} color="#1b1a26" />)}
       {on(p.aerial, <AerialPerspective ref={(e: Effect | null) => { if (e) gainAerial(e); }} />)}
-      {on(p.godRays && !!sun, <GodRays ref={rays} sun={sun!} samples={p.ao === "full" ? 48 : 32} density={0.94} decay={0.92} weight={0.45} exposure={0.45} clampMax={1} blur kernelSize={KernelSize.SMALL} />)}
+      {on(p.godRays && !!sun, <GodRays ref={rays} sun={sun!} samples={level === "high" ? 40 : 28} density={0.94} decay={0.92} weight={0.45} exposure={0.45} clampMax={1} blur kernelSize={KernelSize.SMALL} />)}
       <Bloom ref={bloom} mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.25} intensity={0.6} radius={0.75} levels={level === "low" ? 5 : 7} />
       {on(tilt && level !== "low", <TiltShift2 blur={0.09} taper={0.55} start={[0, 0.48]} end={[1, 0.48]} samples={level === "high" ? 8 : 6} />)}
       <ToneMapping mode={ToneMappingMode.AGX} />

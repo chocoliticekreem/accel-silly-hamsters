@@ -11,7 +11,7 @@ import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { BUILDING_COLORS } from "../palette";
-import { FLOOR_H, TILE_COLS, TILE_ROWS, WINDOW_W, windowTextures } from "../textures";
+import { facadeMaterialParams, FLOOR_H, TILE_COLS, TILE_ROWS, WINDOW_W, windowTextures } from "../textures";
 
 const VARIANTS = 4;
 
@@ -48,7 +48,7 @@ export default function Buildings() {
         k,
         Array.from({ length: VARIANTS }, (_, v) => {
           const t = windowTextures(BUILDING_COLORS[k], v + (k === "office" ? 10 : 0), k === "residential" ? "#efe9df" : undefined);
-          return new MeshStandardMaterial({ map: t.map, emissiveMap: t.emissive, emissive: "#ffffff", emissiveIntensity: 0, roughness: 0.85 });
+          return new MeshStandardMaterial({ map: t.map, emissiveMap: t.emissive, emissive: "#ffffff", emissiveIntensity: 0, ...facadeMaterialParams(t) });
         }),
       ]),
     ) as Record<(typeof kinds)[number], MeshStandardMaterial[]>;
@@ -66,6 +66,8 @@ export default function Buildings() {
         .forEach((m) => {
           m.map?.dispose();
           m.emissiveMap?.dispose();
+          m.normalMap?.dispose();
+          m.roughnessMap?.dispose();
           m.dispose();
         });
     },

@@ -120,6 +120,7 @@ export default function Sky() {
   useEffect(
     () => () => {
       env.current.rt?.dispose();
+      env.current = { rt: null, hour: -99, at: -1 }; // StrictMode remounts: bake again
       pmrem.dispose();
       scene.environment = null;
       parts.envMat.dispose();

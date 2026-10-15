@@ -2,7 +2,7 @@
 // Add a module: create world/modules/<Name>.tsx (default export, reads useWorld() + useSim), then list it in MODULES.
 // Debug: ?only=Sky,Ground,Streets or ?skip=Glow,Agents switch modules off.
 import { Canvas } from "@react-three/fiber";
-import { Atmosphere } from "@takram/three-atmosphere/r3f";
+import { AtmosphereRoot } from "./AtmosphereRoot";
 import { PerformanceMonitor, Stats } from "@react-three/drei";
 import { Suspense, useMemo, useState, type ComponentType } from "react";
 import type { CityMap, RunStores } from "../api/contract";
@@ -104,7 +104,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
       {stats && <Stats />}
       <WorldContext.Provider value={ctx}>
         {/* physically based sky + aerial perspective share this (Sky drives it from the sim clock) */}
-        <Atmosphere correctAltitude>
+        <AtmosphereRoot>
         {Object.entries(MODULES)
           .filter(([name]) => enabled.includes(name) && !photorealHides.has(name))
           .map(([name, M]) => (
@@ -114,7 +114,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
               </Suspense>
             </ModuleBoundary>
           ))}
-        </Atmosphere>
+        </AtmosphereRoot>
       </WorldContext.Provider>
     </Canvas>
     {interactive && cameraGroup === "main" && <GraphicsMenu />}
