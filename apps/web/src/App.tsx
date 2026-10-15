@@ -11,7 +11,7 @@ import { Bot } from "lucide-react";
 import { AnalystChip } from "./ui/AnalystChip";
 import { CompareView } from "./ui/CompareView";
 import { DemoBar, DemoChip } from "./ui/DemoBar";
-import { GraphicsChip } from "./ui/GraphicsChip";
+import { GraphicsChip, MapAttribution } from "./ui/GraphicsChip";
 import { HistoryPanel } from "./ui/HistoryPanel";
 import { Clock, Hud } from "./ui/Hud";
 import { Icon } from "./ui/icons";
@@ -104,6 +104,7 @@ export default function App() {
         </div>
         <DemoBar />
         <Toast />
+        <MapAttribution />
       </div>
     </main>
   );
