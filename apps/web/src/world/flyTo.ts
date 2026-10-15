@@ -14,6 +14,12 @@ export interface FlyRequest {
   seq: number;
 }
 
+/** True while the free camera drives (world/modules/FreeCam): the orbit rig drops fly-tos. */
+export const freeCamActive = { current: false };
+
+/** Where the free camera may not go below inside an open landmark interior (scene coords, local frame). */
+export const interiorFloor: { current: { x: number; z: number; rot: number; hw: number; hd: number; y: number } | null } = { current: null };
+
 let seq = 0;
 export const flyRequest: { current: FlyRequest | null } = { current: null };
 

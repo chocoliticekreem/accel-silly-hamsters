@@ -43,6 +43,10 @@ export interface StationSite {
   /** Local (x, z) → contract (x, z). */
   toContract: (lx: number, lz: number) => [number, number];
   L: number;
+  /** Street gaps under the box, the ticket hall and which way its glazed front looks (local x). */
+  gaps: [number, number][];
+  hall: [number, number] | null;
+  hallFace: -1 | 1;
 }
 
 const cache = new WeakMap<CityMap, StationSite | null>();
@@ -98,7 +102,7 @@ export function stationSite(map: CityMap, b?: Building): StationSite | null {
     const wz = sz - lx * s + lz * c;
     return [wx, -wz];
   };
-  const site: StationSite = { building: station, pos: [sx, 0, sz], rotY, parts, toContract, L };
+  const site: StationSite = { building: station, pos: [sx, 0, sz], rotY, parts, toContract, L, gaps, hall, hallFace };
   cache.set(map, site);
   return site;
 }
