@@ -352,6 +352,15 @@ def test_missed_demand_extends_the_open_over_early_demand() -> None:
     assert insight.title == "42 people a week find you shut before 11:00"
 
 
+def test_missed_demand_extends_at_most_five_hours_a_side() -> None:
+    # Demand all day long (citizens walk up unless they see the shop shut) must not send an
+    # evening shop to open at dawn: the opening move stops 5 h before the current open.
+    case = make_case(missed={h: 3.0 for h in range(0, 11)})
+    insight = insight_map(build(case))["missed-demand-open"]
+    assert insight.suggestion is not None
+    assert (insight.suggestion.from_, insight.suggestion.to) == ("11:00", "06:00")
+
+
 def test_missed_demand_stays_silent_below_two_people_a_day() -> None:
     case = make_case(missed={23: 0.9, 0: 0.9})
     assert build(case).insights == []
@@ -374,9 +383,9 @@ def test_missed_demand_stays_inside_the_licence() -> None:
 def test_missed_demand_stops_on_the_grid_before_an_off_grid_licence_end() -> None:
     case = make_case(
         store_type="cafe",
-        hours=("08:00", "18:00"),
+        hours=("08:00", "20:00"),
         licence=("06:00", "23:45"),
-        missed={h: 3.0 for h in range(18, 24)},
+        missed={h: 3.0 for h in range(20, 24)},
     )
     suggestion = insight_map(build(case))["missed-demand-close"].suggestion
     assert suggestion is not None
@@ -410,16 +419,16 @@ def test_both_extensions_together_keep_the_rules() -> None:
 
 
 def test_extensions_never_close_the_last_30_minutes() -> None:
-    # Demand all night under a 24 h licence: the close walks on until 30 minutes stay closed,
-    # and no open-side extension can follow it.
+    # Demand all night under a 24 h licence: both edges move their full 5 hours and the day they
+    # leave still keeps at least 30 minutes closed between the new close and the new open.
     closed_hours = [*range(23, 24), *range(0, 11)]
     case = make_case(licence=("00:00", "00:00"), missed={h: 3.0 for h in closed_hours})
     found = insight_map(build(case))
-    assert "missed-demand-open" not in found
-    suggestion = found["missed-demand-close"].suggestion
-    assert suggestion is not None
-    assert suggestion.to == "10:30"
-    assert window_ok("11:00", suggestion.to, ("00:00", "00:00"))
+    close = found["missed-demand-close"].suggestion
+    open_ = found["missed-demand-open"].suggestion
+    assert close is not None and open_ is not None
+    assert (close.to, open_.to) == ("04:00", "06:00")
+    assert window_ok(open_.to, close.to, ("00:00", "00:00"))
 
 
 # --- wasted energy ---------------------------------------------------------------------------

@@ -103,6 +103,11 @@ MISSED_MIN_PER_DAY = 2.0
 # Share of found-shut people who become visits once the store is open. The sim records an agent's
 # top choice that was visibly shut; some were only passing or would pick the next store anyway.
 MISSED_CAPTURE = 0.6
+# Change the day by a service, not a shift: at most 5 hours a side per week (a lunch service, or
+# past the 03:00 club close for a late takeaway). Citizens walk up to any shop they want unless
+# they see it shut, so all-day "found shut" counts would otherwise send an evening takeaway to
+# open at 06:00. The next run measures again.
+MISSED_MAX_EXTENSION_MINUTES = 300
 
 # Fewer than one visit every two hours on an average day: the hour is open mostly for its energy
 # bill. MIN_GBP_PER_WEEK still decides whether trimming it pays.
@@ -567,6 +572,8 @@ def _extension(
     edge = s.close_u if later else s.open_m
     best: _HoursPlan | None = None
     for target in _steps(edge, later):
+        if abs(target - edge) > MISSED_MAX_EXTENSION_MINUTES:
+            break
         if not _window_valid(s, field, target, other_m):
             break
         start, end = (edge, target) if later else (target, edge)
