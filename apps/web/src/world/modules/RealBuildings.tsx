@@ -18,6 +18,10 @@ import { Box3, type BufferAttribute, type BufferGeometry, type Mesh, type Object
 import type { Building, CityMap } from "../../api/contract";
 import { frontage, toScene } from "../../sim/geometry";
 import { SKYLINE_SPOTS } from "../../sim/london";
+import { GOODSYARD_AREA, HOXTON_AREA, inPoly } from "../../sim/areaKeepouts";
+import { OLD_STREET_AREA, OLD_STREET_OSM_WAYS, WHITE_COLLAR_AREA } from "../../sim/oldStreetArea";
+import { keptOut } from "../keepOut";
+import { landmarkKeepouts } from "../models/plots";
 import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
 import { useSafety } from "../../state/safety";
@@ -90,8 +94,41 @@ function build(city: RealCity, map: CityMap): Built {
     return { x, z, r: s.r + 8 };
   });
   const byId = new Map(city.buildings.map((b, i) => [b.id, i]));
+  // footprints other modules draw themselves (contract coords): hero landmark plots, keep-out heroes, area patches
+  const heroPlots = landmarkKeepouts(map);
+  const boxCover = (b: RealBuilding) => {
+    // share of the footprint covered by map.json boxes / landmark plots (Hoxton draws the uncovered ones itself)
+    let n = 0;
+    let covered = 0;
+    const r = b.rings[0];
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const [x, z] of r) (minX = Math.min(minX, x)), (maxX = Math.max(maxX, x)), (minZ = Math.min(minZ, z)), (maxZ = Math.max(maxZ, z));
+    // map boxes near this footprint (contract z = -scene z)
+    const near = map.buildings.filter((m) => m.x + m.w / 2 > minX - 1 && m.x - m.w / 2 < maxX + 1 && m.z + m.d / 2 > -maxZ - 1 && m.z - m.d / 2 < -minZ + 1);
+    for (let x = minX + 0.75; x < maxX; x += 1.5)
+      for (let z = minZ + 0.75; z < maxZ; z += 1.5) {
+        if (!inPolygon(x, z, b.rings)) continue;
+        n++;
+        const cx = x;
+        const cz = -z;
+        if (near.some((m) => Math.abs(cx - m.x) < m.w / 2 + 0.3 && Math.abs(cz - m.z) < m.d / 2 + 0.3) || heroPlots.some((k) => cx > k.x0 && cx < k.x1 && cz > k.z0 && cz < k.z1)) covered++;
+      }
+    return n ? covered / n : 1;
+  };
+  const ownedElsewhere = (b: RealBuilding) => {
+    const x = b.cx;
+    const z = -b.cz;
+    if (OLD_STREET_OSM_WAYS.has(Number(b.id.slice(1))) && b.id[0] === "w") return true;
+    if (keptOut(x, z)) return true;
+    if (heroPlots.some((k) => x > k.x0 && x < k.x1 && z > k.z0 && z < k.z1)) return true;
+    if (inPoly(x, z, GOODSYARD_AREA) || inPoly(x, z, OLD_STREET_AREA) || inPoly(x, z, WHITE_COLLAR_AREA)) return true;
+    // Hoxton extrudes the OSM footprints the backend map has no box for: leave those to it
+    if (inPoly(x, z, HOXTON_AREA) && b.minH === 0 && !b.part && boxCover(b) <= 0.35) return true;
+    return false;
+  };
   const skip = (b: RealBuilding) =>
     b.hasParts ||
+    (!b.outer && ownedElsewhere(b)) ||
     (station && b.cx > station.minX && b.cx < station.maxX && b.cz > station.minZ && b.cz < station.maxZ) ||
     (b.outer && skyline.some((s) => Math.hypot(b.cx - s.x, b.cz - s.z) < s.r));
 
