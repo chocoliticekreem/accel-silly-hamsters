@@ -252,3 +252,111 @@ def dump(model: BaseModel) -> dict:
     as in the contract samples; optional extras declared with Optional() are omitted when unset.
     """
     return model.model_dump(mode="json", by_alias=True)
+
+
+# --- GET /api/stores/{storeId}/insights?run={run} -------------------------------------------
+# Additive: the per-store insights panel, built by backend/insights.py. Store-scoped: the
+# store's own run data plus anonymous peer aggregates over >= 3 stores, never another store's
+# id, name or per-store numbers. kpis, funnel and energy are 14-day totals like StoreKpis;
+# hourly and weekdayVsWeekend are averages per day by clock hour; insight metrics and
+# impact.gbpPerWeek are per week.
+
+InsightKind = Literal[
+    "missed_demand", "wasted_energy", "dead_hours", "lighting_opportunity", "benchmark"
+]
+Severity = Literal["high", "medium", "low"]
+
+
+class InsightKpis(Model):
+    visits: int
+    kwh: float
+    visitsPerKwh: float
+    returnRate: float
+    energyCostGbp: float
+    co2Kg: float
+
+
+class InsightFunnel(Model):
+    passersBy: int  # sum(footfallNearbyByHour) x days
+    visits: int
+    uniqueVisitors: int
+    returningVisitors: int  # visited on 2+ different days
+    captureRate: float  # visits / passersBy, 0 when nobody passed
+    returnRate: float
+
+
+class InsightHourly(Model):
+    visits: list[float] = Field(min_length=24, max_length=24)
+    footfall: list[float] = Field(min_length=24, max_length=24)
+    missedDemand: list[float] = Field(min_length=24, max_length=24)  # found the store shut
+    kwh: list[float] = Field(min_length=24, max_length=24)
+    lighting: list[LightingLevel] = Field(min_length=24, max_length=24)
+    openFraction: list[float] = Field(min_length=24, max_length=24)  # 0..1 of the hour open
+
+
+class WeekdayVsWeekend(Model):
+    weekday: list[float] = Field(min_length=24, max_length=24)
+    weekend: list[float] = Field(min_length=24, max_length=24)
+
+
+class PersonaVisits(Model):
+    persona: str  # anonymous archetype id, e.g. "night-owl"
+    visits: int
+    share: float
+
+
+class InsightEnergy(Model):
+    kwh: float
+    kwhWhileClosed: float
+    kwhLightingWhileClosed: float
+    kwhLowTrafficOpen: float  # open hours quieter than insights.DEAD_VISITS_PER_OPEN_HOUR
+    costGbp: float
+    co2Kg: float
+    visitsPerKwh: float
+
+
+class InsightBenchmarks(Model):
+    peers: int  # anonymous stores in the comparison group, never fewer than 3
+    peerType: StoreType | Literal["all"]  # "all" when fewer than 3 same-type peers exist
+    areaMedianVisitsPerKwh: float
+    visitsPerKwhPercentile: float  # 0..1: share of peers below this store, ties count half
+    areaMedianCaptureRate: float
+    captureRatePercentile: float
+
+
+class InsightMetric(Model):
+    label: str
+    value: float
+    unit: str
+
+
+class Insight(Model):
+    id: str  # stable per store and kind, e.g. "missed-demand-close"
+    kind: InsightKind
+    severity: Severity
+    title: str = Field(max_length=60)
+    detail: str = Field(max_length=140)
+    metric: InsightMetric
+    # Same shape as the report's impact: visits/kwh are fractions of the store's current 14-day
+    # values; gbpPerWeek = economics.gbp_per_week (margin on visits minus energy, + = better off).
+    impact: Impact
+    confidence: Confidence
+    suggestion: Suggestion | None
+    evidence: list[Source]
+
+
+class StoreInsights(Model):
+    storeId: str
+    run: int
+    name: str
+    type: StoreType
+    days: int
+    kpis: InsightKpis
+    funnel: InsightFunnel
+    hourly: InsightHourly
+    weekdayVsWeekend: WeekdayVsWeekend
+    personas: list[PersonaVisits]
+    energy: InsightEnergy
+    benchmarks: InsightBenchmarks | None  # null when fewer than 3 anonymous peers exist at all
+    insights: list[Insight]  # ranked by impact.gbpPerWeek, then severity; at most 5
+    note: str = "Simulated, not guaranteed."
