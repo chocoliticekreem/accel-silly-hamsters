@@ -13,7 +13,7 @@ import { activeCrashes, clearCrash, crashAt, triggerCrash } from "./crash";
 import Crashes from "./Crashes";
 import Cranes from "./Cranes";
 import Details from "./Details";
-import { engine, G, groups, MAX_SUBSTEPS, PHYS_RATE, STEP } from "./engine";
+import { engine, G, groups, MAX_SUBSTEPS, PHYS_RATE, STEP, removeBody } from "./engine";
 import { junctions } from "./schedule";
 import { trafficVehicles } from "./traffic";
 
@@ -106,7 +106,7 @@ function StaticWorld({ plan }: { plan: InfillPlan }) {
     }
     return () => {
       try {
-        world.removeRigidBody(body);
+        removeBody(world, body);
       } catch {
         // world already freed with the <Physics> provider
       }

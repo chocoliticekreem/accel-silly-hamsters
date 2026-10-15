@@ -57,3 +57,15 @@ declare global {
     __physics?: Record<string, unknown>;
   }
 }
+
+/**
+ * Remove a body only if it still belongs to this world. @react-three/rapier frees and lazily re-creates its world
+ * (React StrictMode runs cleanups twice); removing a stale handle from the fresh world panics inside the WASM, and a
+ * panic leaves Rapier's internal borrow flags stuck ("recursive use of an object" on every later call).
+ */
+export function removeBody(world: World, body: RigidBody) {
+  if (world.getRigidBody(body.handle) === body) world.removeRigidBody(body);
+}
+export function removeJoint(world: World, joint: ImpulseJoint) {
+  if (world.getImpulseJoint(joint.handle) === joint) world.removeImpulseJoint(joint, true);
+}

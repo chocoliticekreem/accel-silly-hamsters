@@ -33,7 +33,7 @@ import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { activeCrashes, crashQueue, emitCrash, externalSchedule, type CrashInfo, type CrashRequest, type CrashSpec } from "./crash";
 import { binsNear, resetBins, toppleBin } from "./Details";
-import { engine, G, groups, PHYS_RATE, type Collider, type RigidBody } from "./engine";
+import { engine, G, groups, PHYS_RATE, type Collider, type RigidBody, removeBody } from "./engine";
 import { DecalPool, ParticlePool } from "./fx";
 import { fallbackSchedule, streetDirAt, streetsAt, type Junction } from "./schedule";
 import { trafficHolds, trafficVehicles, type TrafficVehicle, type VehicleOverride } from "./traffic";
@@ -166,7 +166,7 @@ export default function Crashes({ junctions }: { junctions: Junction[] }) {
       if (!p) return;
       pool.delete(v);
       try {
-        world.removeRigidBody(p.body);
+        removeBody(world, p.body);
       } catch {
         // freed
       }
@@ -382,7 +382,7 @@ export default function Crashes({ junctions }: { junctions: Junction[] }) {
     const remove = (c: Crash) => {
       for (const w of c.wrecks) {
         try {
-          world.removeRigidBody(w.body);
+          removeBody(world, w.body);
         } catch {
           // freed
         }
@@ -392,7 +392,7 @@ export default function Crashes({ junctions }: { junctions: Junction[] }) {
       }
       for (const d of c.debris)
         try {
-          world.removeRigidBody(d.body);
+          removeBody(world, d.body);
         } catch {
           // freed
         }
@@ -611,6 +611,7 @@ export default function Crashes({ junctions }: { junctions: Junction[] }) {
 
     engine.pre.add(pre);
     engine.post.add(post);
+    if (window.__physics) window.__physics.crashState = crashes;
     return () => {
       engine.pre.delete(pre);
       engine.post.delete(post);

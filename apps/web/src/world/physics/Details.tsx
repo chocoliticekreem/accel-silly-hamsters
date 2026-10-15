@@ -16,7 +16,7 @@ import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { createPeople, SKIN_TONES, TROUSERS } from "../people";
-import { engine, G, groups, type RigidBody } from "./engine";
+import { engine, G, groups, type RigidBody, removeBody } from "./engine";
 import { streetDirAt, type Junction } from "./schedule";
 import { trafficVehicles } from "./traffic";
 
@@ -382,7 +382,7 @@ export default function Details({ plan, junctions }: { plan: InfillPlan; junctio
       engine.post.delete(post);
       for (const b of created)
         try {
-          world.removeRigidBody(b);
+          removeBody(world, b);
         } catch {
           // freed
         }

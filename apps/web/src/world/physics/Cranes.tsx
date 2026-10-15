@@ -6,7 +6,7 @@
 import { useRapier } from "@react-three/rapier";
 import { useEffect } from "react";
 import { craneLoads, HOOK_HALF, type CraneLoadImpl } from "./craneLoad";
-import { engine, G, groups, type ImpulseJoint, type RigidBody } from "./engine";
+import { engine, G, groups, type ImpulseJoint, type RigidBody, removeBody, removeJoint } from "./engine";
 
 interface Rig {
   anchor: RigidBody;
@@ -54,9 +54,9 @@ export default function Cranes() {
 
     const drop = (l: CraneLoadImpl, r: Rig) => {
       try {
-        world.removeRigidBody(r.load);
-        world.removeRigidBody(r.hook);
-        world.removeRigidBody(r.anchor);
+        removeBody(world, r.load);
+        removeBody(world, r.hook);
+        removeBody(world, r.anchor);
       } catch {
         // world freed
       }
@@ -75,7 +75,7 @@ export default function Cranes() {
         }
         r.anchor.setNextKinematicTranslation({ x: l.anchor.x, y: l.anchor.y, z: l.anchor.z });
         if (r.ropeVersion !== l.ropeVersion) {
-          world.removeImpulseJoint(r.rope, true);
+          removeJoint(world, r.rope);
           r.rope = ropeJoint(l, r.anchor, r.hook);
           r.ropeVersion = l.ropeVersion;
           r.hook.wakeUp();
