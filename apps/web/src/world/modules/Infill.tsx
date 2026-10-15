@@ -245,14 +245,15 @@ function build(map: CityMap): Built {
           concrete.add(p.x + (ix * (fw - 1)) / 2, 0, p.z + (iz * (fd - 1)) / 2, 0.7, top, 0.7);
       } else {
         // site cabins stacked two high, and material piles
-        const n = 1 + Math.floor(r() * 3);
+        // most of the site is bare ground; a few plots get a cabin cluster
+        const n = r() < 0.3 ? 1 + Math.floor(r() * 2) : 0;
         for (let k = 0; k < n; k++) {
           const x = p.x + (r() - 0.5) * Math.max(0, p.w - 8);
           const z = p.z + (r() - 0.5) * Math.max(0, p.d - 4);
           cabins.add(x, 0, z, 1, 1, 1, 0, "#3d6fb5");
           if (r() < 0.5) cabins.add(x, 2.7, z, 1, 1, 1, 0, "#e6e1d6");
         }
-        concrete.add(p.x + (r() - 0.5) * 4, 0, p.z + (r() - 0.5) * 4, 3 + r() * 3, 1 + r(), 2 + r() * 2);
+        if (r() < 0.5) concrete.add(p.x + (r() - 0.5) * 4, 0, p.z + (r() - 0.5) * 4, 3 + r() * 3, 0.6 + r(), 2 + r() * 2);
       }
     }
   }
