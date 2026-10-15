@@ -4,7 +4,7 @@
 import type { Building, CityMap, Street } from "../../api/contract";
 import { closestOnStreet } from "../../sim/geometry";
 import { MARKING_LIFT, ROAD_TOP, roadClass } from "../../sim/roadLayers";
-import { buildingKeptOut } from "../keepOut";
+import { buildingKeptOut, keptOut } from "../keepOut";
 
 /** The area this module dresses (contract coords). */
 export const AREA = { minX: -620, maxX: 700, minZ: -750, maxZ: -55 };
@@ -175,8 +175,75 @@ export interface Face {
   nz: number;
   /** Half-length of the face either side of the hit (how wide a sign may be). */
   room: number;
-  b: Building;
+  /** Building height and an id (to space signs out per building). */
+  h: number;
+  id: string;
 }
+
+/** Something to cast facade rays against: the base map's boxes or the real OSM footprints. */
+export type FacadeCaster = (x: number, z: number, dx: number, dz: number, max?: number) => Face | null;
+
+/**
+ * Facade caster over the real city's OSM footprints (scene-frame rings, see world/realcity/data.ts): ray against
+ * every outer-ring edge of the buildings near the area, via a grid. Kept-out hero footprints are skipped.
+ */
+export function realCaster(buildings: { id: string; rings: [number, number][][]; h: number; part: boolean; cx: number; cz: number }[]): FacadeCaster {
+  interface Edge {
+    ax: number;
+    az: number;
+    bx: number;
+    bz: number;
+    h: number;
+    id: string;
+  }
+  const grid = new Map<number, Edge[]>();
+  for (const b of buildings) {
+    const cx = b.cx;
+    const cz = -b.cz;
+    if (!inArea(cx, cz, 60) || keptOut(cx, cz)) continue;
+    const ring = b.rings[0];
+    for (let i = 0; i < ring.length; i++) {
+      const [ax, sz0] = ring[i];
+      const [bx, sz1] = ring[(i + 1) % ring.length];
+      const e = { ax, az: -sz0, bx, bz: -sz1, h: b.h, id: b.id };
+      put(grid, Math.min(e.ax, e.bx), Math.min(e.az, e.bz), Math.max(e.ax, e.bx), Math.max(e.az, e.bz), e);
+    }
+  }
+  return (x, z, dx, dz, max = 18) => {
+    const seen = new Set<Edge>();
+    let best: Face | null = null;
+    let bestT = max;
+    for (let t = 0; t <= max + CELL / 2; t += CELL / 4) {
+      const l = grid.get(key(Math.floor((x + dx * t) / CELL), Math.floor((z + dz * t) / CELL)));
+      if (!l) continue;
+      for (const e of l) {
+        if (seen.has(e)) continue;
+        seen.add(e);
+        const ex = e.bx - e.ax;
+        const ez = e.bz - e.az;
+        const den = dx * ez - dz * ex;
+        if (Math.abs(den) < 1e-9) continue;
+        const tt = ((e.ax - x) * ez - (e.az - z) * ex) / den;
+        const u = ((e.ax - x) * dz - (e.az - z) * dx) / den;
+        if (u < 0 || u > 1 || tt < 0.5 || tt >= bestT) continue;
+        const len = Math.hypot(ex, ez) || 1;
+        // edge normal, flipped to face the ray's origin
+        let nx = -ez / len;
+        let nz = ex / len;
+        if (nx * dx + nz * dz > 0) {
+          nx = -nx;
+          nz = -nz;
+        }
+        bestT = tt;
+        best = { x: x + dx * tt, z: z + dz * tt, nx, nz, room: Math.min(u, 1 - u) * len, h: e.h, id: e.id };
+      }
+    }
+    return best;
+  };
+}
+
+/** Facade caster over the base map's boxes. */
+export const boxCaster = (map: CityMap): FacadeCaster => (x, z, dx, dz, max) => castToFacade(map, x, z, dx, dz, max);
 
 /** Casts from (x, z) along (dx, dz) and returns the first base-building face it meets within `max` metres. */
 export function castToFacade(map: CityMap, x: number, z: number, dx: number, dz: number, max = 18): Face | null {
@@ -219,7 +286,7 @@ export function castToFacade(map: CityMap, x: number, z: number, dx: number, dz:
     const nz = axis === 1 ? -Math.sign(dz) : 0;
     const room = axis === 0 ? Math.min(hz - z0, z1 - hz) : Math.min(hx - x0, x1 - hx);
     bestT = tmin;
-    best = { x: hx, z: hz, nx, nz, room, b };
+    best = { x: hx, z: hz, nx, nz, room, h: b.h, id: b.id };
   }
   return best;
 }

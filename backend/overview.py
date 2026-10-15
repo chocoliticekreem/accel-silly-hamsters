@@ -105,16 +105,17 @@ def advice_text(s: Suggestion, customers_per_week: float, gbp_per_week: float) -
     """One plain sentence per suggestion, with the number an owner cares about."""
     more = round(customers_per_week)
     save = abs(round(gbp_per_week))
+    net = f", £{save} a week after staff and power" if gbp_per_week >= 0.5 else ""
     if s.field == "close":
         if _later(s.to, s.from_):
-            return f"Stay open until {s.to}: about {more} more customers a week."
+            return f"Stay open until {s.to}: about {more} more customers a week{net}."
         return (
             f"Close at {s.to} instead of {s.from_}: the last hours are nearly empty, "
-            f"saving about £{save} a week."
+            f"saving about £{save} a week in staff and power."
         )
     if s.field == "open":
         if _later(s.from_, s.to):
-            return f"Open at {s.to}: catch about {more} more customers a week."
+            return f"Open at {s.to}: catch about {more} more customers a week{net}."
         return f"Open at {s.to} instead of {s.from_}: the first hours are nearly empty."
     hours = hours_range(s.hours or [])
     if LEVEL_RANK.get(s.to, 0) > LEVEL_RANK.get(s.from_, 0):
@@ -331,7 +332,8 @@ def store_overview(map_data: MapData, store_id: str, run: int | None = None) -> 
             continue
         d_visits = current.kpis.visits * s.expectedDelta.visits
         d_kwh = current.kpis.kwh * s.expectedDelta.kwh
-        gbp = round(economics.gbp_per_week(ms.type, d_visits, d_kwh, price))
+        d_hours = economics.suggestion_open_hours_delta(current.result, s)
+        gbp = round(economics.gbp_per_week(ms.type, d_visits, d_kwh, d_hours, price))
         key = _suggestion_key(s)
         status: AdviceStatus = "new"
         if key in applied:

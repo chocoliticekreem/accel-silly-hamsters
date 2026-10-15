@@ -12,6 +12,9 @@ export interface KeepOut {
 }
 
 export const KEEP_OUT: KeepOut[] = [
+  // the Tea Building, Shoreditch High Street / Bethnal Green Road (world/shoreditch/tea.ts, same OSM rings)
+  { name: "Tea Building", owner: "ShoreditchStation", ring: [[-142.7, 112.6], [-140.9, 51.8], [-174, 52.7], [-177.9, 57.6], [-175.5, 108.8], [-170.5, 113.3], [-142.9, 115.3]] },
+  { name: "Tea Building (Bethnal Green Road)", owner: "ShoreditchStation", ring: [[-140.9, 51.8], [-122.3, 51.3], [-125.5, 68.3], [-123.4, 77.8], [-124, 91.2], [-126.8, 114.5], [-142.7, 112.6]] },
   {
     name: "Christ Church Spitalfields",
     owner: "Spitalfields",

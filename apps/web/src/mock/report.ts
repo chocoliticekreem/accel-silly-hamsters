@@ -7,8 +7,8 @@ import type { RunConfig } from "./configs";
 import { LIGHT_KWH } from "./simulate";
 
 import { diffStore, type Change } from "../sim/diff";
-export { GBP_PER_KWH, GROSS_MARGIN, SPEND_GBP } from "../sim/economics";
-import { GBP_PER_KWH, GROSS_MARGIN, SPEND_GBP } from "../sim/economics";
+export { GBP_PER_KWH, marginPerVisit, SPEND_GBP } from "../sim/economics";
+import { profitPerWeek } from "../sim/economics";
 export { diffStore, type Change };
 
 const frac = (a: number, b: number) => (a > 0 ? Math.round(((b - a) / a) * 100) / 100 : 0);
@@ -81,7 +81,7 @@ export function buildReport(
   const a = resFrom[storeId].kpis;
   const b = resBest[storeId].kpis;
   const weeks = 2;
-  const gbpPerWeek = Math.round(((b.visits - a.visits) * SPEND_GBP[type] * GROSS_MARGIN - (b.kwh - a.kwh) * GBP_PER_KWH) / weeks);
+  const gbpPerWeek = Math.round(profitPerWeek(type, (b.visits - a.visits) / weeks, (b.kwh - a.kwh) / weeks, ((b.openHours ?? 0) - (a.openHours ?? 0)) / weeks));
   const confidence = confidenceFor(a.visits + b.visits);
   return {
     storeId,

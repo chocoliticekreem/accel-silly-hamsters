@@ -2,7 +2,7 @@
 // Visits come from that day's file, kWh from the owners' evolving schedule, profit = margin on visits minus energy
 // (sim/economics.ts, the same terms as profitPerWeek), ownerActions = owner events decided that day.
 import type { DayData, OwnerEvent, RunDay, StoreType } from "../api/contract";
-import { GBP_PER_KWH, GROSS_MARGIN, SPEND_GBP } from "../sim/economics";
+import { GBP_PER_KWH, marginPerVisit } from "../sim/economics";
 
 export interface DailyInput {
   days: DayData[];
@@ -24,7 +24,7 @@ export function aggregateDaily({ days, kwhByDay, types, ownerEvents }: DailyInpu
       for (const v of a.visits)
         if (shop(v.storeId)) {
           visits += 1;
-          takings += SPEND_GBP[types[v.storeId]];
+          takings += marginPerVisit(types[v.storeId]);
         }
     let kwh = 0;
     for (const [id, perDay] of Object.entries(kwhByDay)) if (shop(id)) kwh += perDay[day - 1] ?? 0;
@@ -34,7 +34,7 @@ export function aggregateDaily({ days, kwhByDay, types, ownerEvents }: DailyInpu
       visits,
       kwh: r1(kwh),
       visitsPerKwh: kwh > 0 ? r2(visits / kwh) : 0,
-      profitGbp: r2(takings * GROSS_MARGIN - kwh * GBP_PER_KWH),
+      profitGbp: r2(takings - kwh * GBP_PER_KWH),
       ownerActions,
     };
   });

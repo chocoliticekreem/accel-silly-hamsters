@@ -625,6 +625,10 @@ def _commit_choice(
     _checkpoint(state)
 
 
+# One-shop sessions test ideas down to this estimated loss; the patience rule ends the exploring.
+EXPLORE_GBP_PER_WEEK = 200.0
+
+
 def _choose_for_store(
     state: AnalystState, config: TrainingConfig, map_data: MapData, proposals: list[Suggestion]
 ) -> bool:
@@ -636,19 +640,24 @@ def _choose_for_store(
     assert sid is not None and best is not None
     files = rundata.RunFiles.load(best)
     kind, price = _shop_type(sid), economics.area_price_gbp_per_kwh()
-    kpis = files.stores[sid].kpis
+    shop = files.stores[sid]
+    kpis = shop.kpis
 
     def expected_gbp(option: tuple[Suggestion, ...]) -> float:
         d_visits = sum(c.expectedDelta.visits for c in option) * kpis.visits
         d_kwh = sum(c.expectedDelta.kwh for c in option) * kpis.kwh
-        return economics.gbp_per_week(kind, d_visits, d_kwh, price)
+        d_hours = sum(economics.suggestion_open_hours_delta(shop, c) for c in option)
+        return economics.gbp_per_week(kind, d_visits, d_kwh, d_hours, price)
 
     options = [
         option
         for size in range(1, config.maxChangesPerStore + 1)
         for option in combinations(proposals, size)
     ]
-    ranked = sorted((o for o in options if expected_gbp(o) > 0), key=lambda o: -expected_gbp(o))
+    ranked = sorted(
+        (o for o in options if expected_gbp(o) > -EXPLORE_GBP_PER_WEEK),
+        key=lambda o: -expected_gbp(o),
+    )
     for option in ranked:
         result = check_changes(files.config.stores, list(option), map_data, training=config)
         if result.rejections:
@@ -657,7 +666,11 @@ def _choose_for_store(
             continue
         gbp = expected_gbp(option)
         labels = ", ".join(change_label(c) for c in result.accepted)
-        hypothesis = f"{labels} should add about £{gbp:.0f} a week for this shop"
+        hypothesis = (
+            f"{labels} should add about £{gbp:.0f} a week for this shop"
+            if gbp > 0
+            else f"{labels} is worth testing: the estimate is £{gbp:.0f} a week, the 14 days decide"
+        )
         scale = _shop_scale(state, config)
         _commit_choice(state, result.accepted, hypothesis, gbp / scale, "heuristic")
         return True
@@ -666,7 +679,7 @@ def _choose_for_store(
         {
             "agent": "analyst",
             "type": "no_experiment",
-            "reason": "No untried change for this shop with a positive expected profit",
+            "reason": "Nothing untried is worth testing for this shop: no change should be made",
         },
     )
     return False

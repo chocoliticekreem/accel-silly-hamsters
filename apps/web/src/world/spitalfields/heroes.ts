@@ -6,7 +6,7 @@
 //  - The Old Truman Brewery: the 49 m brick chimney with TRUMAN down it, and the bridge over Brick Lane.
 //  - Brick Lane: the Banglatown gateway arch and the Jamme Masjid's steel minaret.
 // Everything is placed from the OSM outlines (public/areas/spitalfields.json) in contract coords → toScene.
-import { CylinderGeometry, ExtrudeGeometry, Shape, TorusGeometry } from "three";
+import { BoxGeometry, CylinderGeometry, ExtrudeGeometry, Shape, TorusGeometry } from "three";
 import { toScene } from "../../sim/geometry";
 import type { SignAtlas } from "./atlas";
 import { Kit, Quads } from "./kit";
@@ -215,9 +215,17 @@ export function marketHall(k: HeroKits, ring: Ring, atlas: SignAtlas): MarketLay
     gl.frame(cx, cz, rot);
     so.block(len, 0.45, 0.45, 0, roofY + 4.9, z, IRON); // ridge
     // a raised lantern light along the ridge
-    so.block(len - 2, 0.9, 1.6, 0, roofY + 5.1, z, "#45604f");
-    for (let x = -len / 2; x <= len / 2 + 0.01; x += len / 8) gable(so.frame(cx, cz, rot), 0.3, sw / 2 + 0.05, 4.3, x, roofY + 0.65, z, IRON);
-    so.frame(cx, cz, rot);
+    so.block(len - 2, 0.5, 1.2, 0, roofY + 4.95, z, "#45604f");
+    // light iron trusses: two rafters and a tie rod at every column line
+    const rise = 4.2;
+    const half = sw / 2;
+    const slope = Math.atan2(rise, half);
+    const rl = Math.hypot(rise, half);
+    for (let x = -len / 2; x <= len / 2 + 0.01; x += len / 8)
+      for (const e of [-1, 1]) {
+        so.add(new BoxGeometry(0.2, 0.28, rl).rotateX(e * slope).translate(x, roofY + 0.7 + rise / 2, z + (e * half) / 2), IRON);
+        so.block(0.08, 0.08, sw, x, roofY + 0.75, z, IRON);
+      }
     // strings of warm bulbs under the ridge
     for (let x = -len / 2 + 2; x < len / 2; x += 3.2) g.block(0.25, 0.25, 0.25, x, roofY - 0.4, z, WARM);
   }
@@ -419,6 +427,8 @@ export function banglaArch(k: HeroKits, atlas: SignAtlas, at: { x: number; z: nu
   for (const e of [-1, 1]) k.signs.add(x + sx * e * 0.2, 7.0, z + sz * e * 0.2, sx * e, sz * e, 7.5, 0.75, atlas.bangla);
   so.block(0.15, 0.85, 7.8, 0, 6.6, 0, "#0b3d20");
   k.glow.frame(x, z, rr);
+  k.glow.add(new TorusGeometry(half, 0.12, 4, 28, Math.PI).rotateY(Math.PI / 2).scale(1, 0.62, 1).translate(0.32, 6, 0), "#7dffa8");
+  k.glow.add(new TorusGeometry(half, 0.12, 4, 28, Math.PI).rotateY(Math.PI / 2).scale(1, 0.62, 1).translate(-0.32, 6, 0), "#7dffa8");
   for (let i = 0; i <= 12; i++) {
     const a = (i / 12) * Math.PI;
     k.glow.ball(0.14, 0, 6 + Math.sin(a) * half * 0.62, Math.cos(a) * half, "#fff0b0", 5);

@@ -1,6 +1,7 @@
 // Side card for the selected store: status now, 24h strip, KPIs vs last run, suggestions with Apply buttons,
 // and the way into the owner's weekly report.
 import { useState } from "react";
+import { GBP_PER_KWH, staffPerOpenHour } from "../sim/economics";
 import { api } from "../api/client";
 import { storeStateAt } from "../sim/storeState";
 import { hourOf, isOpenAt, minuteOfDay } from "../sim/time";
@@ -16,7 +17,7 @@ import { Icon } from "./icons";
 import { InsightsPanel } from "./InsightsPanel";
 import { SuggestionList } from "./SuggestionList";
 import { TypeIcon } from "./TypeIcon";
-import { navigate, storePath } from "../router";
+import { agentsPath, navigate, storePath } from "../router";
 import { SafetyCardExtras } from "./SafetyCardExtras";
 
 export function StoreCard() {
@@ -115,8 +116,14 @@ export function StoreCard() {
       {tab === "insights" && !isClub ? (
         <>
           <InsightsPanel storeId={id} run={run} onApply={() => apply("store")} />
-          <button className="btn btn-report" onClick={() => navigate(storePath(id))}>
-            <Icon name="report" /> Open report
+          <button className="btn btn-report" onClick={() => useSim.getState().openPanel("report")}>
+            <Icon name="report" /> Weekly report
+          </button>
+          <button className="btn btn-report" onClick={() => navigate(agentsPath(id))}>
+            Run the agents
+          </button>
+          <button className="btn" onClick={() => navigate(storePath(id))}>
+            Open shop page
           </button>
         </>
       ) : (
@@ -140,6 +147,12 @@ export function StoreCard() {
           </div>
         ))}
       </div>
+      {cfg?.kpis.openHours != null && store.type !== "club" && (
+        <div className="foot-note">
+          Open {fmtInt(cfg.kpis.openHours / 2)} h/week · wages ≈ £{fmtInt((cfg.kpis.openHours / 2) * staffPerOpenHour(store.type))} · energy ≈ £
+          {fmtInt((cfg.kpis.kwh / 2) * GBP_PER_KWH)}
+        </div>
+      )}
       <div className="foot-note">vs run {run > 1 ? run - 1 : "—"}</div>
 
       {!isClub && (
@@ -157,8 +170,14 @@ export function StoreCard() {
             </button>
           </div>
           <div className="disclaimer card-note">Simulated, not guaranteed · licence hours enforced · the owner approves every change</div>
-          <button className="btn btn-report" onClick={() => navigate(storePath(id))}>
-            <Icon name="report" /> Open report
+          <button className="btn btn-report" onClick={() => useSim.getState().openPanel("report")}>
+            <Icon name="report" /> Weekly report
+          </button>
+          <button className="btn btn-report" onClick={() => navigate(agentsPath(id))}>
+            Run the agents
+          </button>
+          <button className="btn" onClick={() => navigate(storePath(id))}>
+            Open shop page
           </button>
         </>
       )}

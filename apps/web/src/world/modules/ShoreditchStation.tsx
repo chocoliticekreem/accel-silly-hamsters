@@ -136,7 +136,7 @@ export default function ShoreditchStation() {
     return [{ x, z0, z1, h: 5.9, face: (face < 0 ? 1 : -1) as 1 | -1 }];
   }, [site]);
 
-  const area = useMemo(() => (data ? buildArea(map, data, { graffitiWalls: walls }) : null), [map, data, walls]);
+  const area = useMemo(() => (data ? buildArea(map, data, { graffitiWalls: walls, tea: real }) : null), [map, data, walls]);
   const areaObject = useMemo(() => (area ? modelObject(area.model, { noRaycast: true }) : null), [area]);
   const mats = useMemo(() => {
     const hoarding = new MeshStandardMaterial({ map: hoardingTexture(), roughness: 0.8, side: DoubleSide, emissive: "#ffffff", emissiveIntensity: 0 });

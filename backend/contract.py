@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 LightingLevel = Literal["off", "low", "high"]
 BuildingKind = Literal["store", "club", "office", "residential", "station"]
@@ -139,6 +139,8 @@ class StoreKpis(Model):
     visits: int
     kwh: float
     returnRate: float
+    # Additive: hours open over the 14 days; staff are paid for these (backend/economics.py).
+    openHours: float = 0.0
 
 
 class ScheduleEntry(Model):
@@ -156,6 +158,31 @@ class StoreRunResult(Model):
     # run, oldest first (absent = open/close every day), and the day it closed for good.
     schedule: list[ScheduleEntry] | None = Optional()
     closedFromDay: int | None = Optional()
+
+    @model_validator(mode="after")
+    def _fill_open_hours(self) -> StoreRunResult:
+        """Runs saved before openHours existed: rebuild it from the hours and schedule."""
+        if "openHours" not in self.kpis.model_fields_set:
+            self.kpis.openHours = _scheduled_open_hours(self)
+        return self
+
+
+def _window_hours(window: HoursWindow | None) -> float:
+    if window is None:
+        return 0.0
+    o, c = (int(t[:2]) * 60 + int(t[3:]) for t in (window.open, window.close))
+    return ((c - o) % MINUTES_PER_DAY or MINUTES_PER_DAY) / 60
+
+
+def _scheduled_open_hours(result: StoreRunResult) -> float:
+    last_day = (result.closedFromDay or DAYS + 1) - 1
+    entries = sorted(result.schedule or [], key=lambda e: e.fromDay)
+    daily = HoursWindow(open=result.open, close=result.close)
+    total = 0.0
+    for day in range(1, min(last_day, DAYS) + 1):
+        week = [e.week for e in entries if e.fromDay <= day]
+        total += _window_hours(week[-1][(day - 1) % 7] if week else daily)
+    return round(total, 2)
 
 
 # --- GET /api/runs/{run}/days/{day} ---------------------------------------------------------
@@ -379,7 +406,7 @@ class Insight(Model):
     detail: str = Field(max_length=140)
     metric: InsightMetric
     # Same shape as the report's impact: visits/kwh are fractions of the store's current 14-day
-    # values; gbpPerWeek = economics.gbp_per_week (margin on visits minus energy, + = better off).
+    # values; gbpPerWeek = economics.gbp_per_week (margin minus energy and wages, + = better off).
     impact: Impact
     confidence: Confidence
     suggestion: Suggestion | None
@@ -518,7 +545,7 @@ class OverviewNumbers(Model):
     customersPerWeek: OverviewNumber
     energyCostPerWeekGbp: OverviewNumber
     kwhPerWeek: OverviewNumber
-    # Margin on extra customers minus extra energy cost vs the baseline (economics.py).
+    # Margin on extra customers minus extra energy and wages vs the baseline (economics.py).
     profitChangePerWeekGbp: float
 
 
@@ -559,4 +586,4 @@ class StoreOverview(Model):
 
 class OptimizeRequest(Model):
     # Runs in the session, the baseline included (it usually comes back from the run cache).
-    maxRuns: int = Field(default=6, ge=2, le=10)
+    maxRuns: int = Field(default=6, ge=2, le=40)

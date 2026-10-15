@@ -189,7 +189,7 @@ def run_key(stores: dict[str, StoreConfig], seed: int, *, allow_closure: bool = 
         "data": sim_inputs_hash(),
     }
     if settings.OWNER_ADAPTATION:
-        key["owners"] = 2  # owner-logic version: bump when owners decide differently
+        key["owners"] = 3  # owner-logic version: bump when owners decide differently
         if allow_closure:
             key["ownerClosures"] = True
     return stable_hash(key)

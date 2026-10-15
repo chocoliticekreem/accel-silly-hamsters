@@ -134,6 +134,8 @@ export interface StoreKpis {
   visits: number;
   kwh: number;
   returnRate: number;
+  /** Additive: hours open over the 14 days; staff are paid for these (backend/economics.py). */
+  openHours?: number;
 }
 
 export interface StoreRunResult {
@@ -409,7 +411,7 @@ export interface StoreOverview {
     customersPerWeek: OverviewNumber;
     energyCostPerWeekGbp: OverviewNumber;
     kwhPerWeek: OverviewNumber;
-    /** Margin on extra customers minus extra energy cost, vs the baseline. */
+    /** Margin on extra customers minus extra energy cost and wages, vs the baseline. */
     profitChangePerWeekGbp: number;
   };
   advice: { text: string; gbpPerWeek: number; certainty: Certainty; status: AdviceStatus; suggestion: Suggestion | null }[];
