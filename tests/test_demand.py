@@ -51,12 +51,29 @@ SYNTHETIC_EXITS = {
     "SAT": _hourly(13, 300.0, late=20.0),
     "SUN": _hourly(13, 200.0),
 }
+# Liverpool Street's two NUMBAT rows: a bigger commuter station, AM peak 09:00 (LU) and PM
+# peak 17:00 (NR) on weekdays.
+LIVERPOOL_STREET_EXITS = {
+    "Liverpool Street LU": {
+        d: _hourly(9 if d in ("MON", "TWT", "FRI") else 14, 3000.0) for d in SYNTHETIC_EXITS
+    },
+    "Liverpool Street NR": {d: _hourly(17, 1000.0) for d in SYNTHETIC_EXITS},
+}
 
 
-def numbat_workbook(hourly: list[float], station: str = STATION_ROW_NAME) -> bytes:
-    """A minimal NUMBAT-shaped workbook: title rows, header, another station, then `station`."""
+def numbat_workbook(
+    hourly: list[float],
+    station: str = STATION_ROW_NAME,
+    others: dict[str, list[float]] | None = None,
+) -> bytes:
+    """A minimal NUMBAT-shaped workbook: title rows, header, another station, `station`, then
+    `others` (more station rows by name)."""
     labels = _quarter_hour_labels()
-    values = [hourly[int(label[:2])] / 4 for label in labels]
+
+    def row(name: str, by_hour: list[float]) -> list[object]:
+        values = [by_hour[int(label[:2])] / 4 for label in labels]
+        return [1024, "SDCr", name, 1, sum(values)] + [0] * 6 + values
+
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = "Station_Exits"
@@ -67,7 +84,9 @@ def numbat_workbook(hourly: list[float], station: str = STATION_ROW_NAME) -> byt
         + ["Early", "AM Peak", "Midday", "PM Peak", "Evening", "Late", *labels]
     )
     sheet.append([1, "OTHx", "Other Station", 1, 0] + [0] * 6 + [999.0] * 96)
-    sheet.append([1024, "SDCr", station, 1, sum(values)] + [0] * 6 + values)
+    sheet.append(row(station, hourly))
+    for name, by_hour in (others or {}).items():
+        sheet.append(row(name, by_hour))
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
@@ -121,7 +140,10 @@ class FakeTfl:
         if self.numbat_down:
             raise common.FetchError(f"tfl: GET {url} failed: offline")
         day_type = url.rsplit("NBT25", 1)[1].split("_", 1)[0]
-        return numbat_workbook([0.0] * 24 if self.zero_exits else SYNTHETIC_EXITS[day_type])
+        return numbat_workbook(
+            [0.0] * 24 if self.zero_exits else SYNTHETIC_EXITS[day_type],
+            others={name: rows[day_type] for name, rows in LIVERPOOL_STREET_EXITS.items()},
+        )
 
     def fetch(self, source: str, url: str, **kwargs: object) -> tuple[object, str]:
         if self.api_down:
@@ -141,8 +163,30 @@ def tfl(tmp_path, monkeypatch) -> FakeTfl:
     return fake
 
 
+SHS_INTO_AREA = demand.RAIL_STATIONS[STATION_ROW_NAME].into_area
+LIVERPOOL_STREET_INTO_AREA = demand.RAIL_STATIONS["Liverpool Street"].into_area
+
+
 def _expected_rail() -> dict[str, list[float]]:
     return demand.calendar_profiles(SYNTHETIC_EXITS)
+
+
+def _expected_liverpool_street() -> dict[str, list[float]]:
+    rows = list(LIVERPOOL_STREET_EXITS.values())
+    summed = {d: [sum(r[d][h] for r in rows) for h in range(24)] for d in SYNTHETIC_EXITS}
+    return demand.calendar_profiles(summed)
+
+
+def two_station_map() -> MapData:
+    """The synthetic map plus a Liverpool Street station entry."""
+    return synthetic_map(
+        [
+            EntryPoint(id="north", kind="street", x=0, z=100),
+            EntryPoint(id="west", kind="street", x=-100, z=50),
+            EntryPoint(id="st1", kind="station", name="Shoreditch High Street", x=10, z=0),
+            EntryPoint(id="st2", kind="station", name="Liverpool Street", x=0, z=-100),
+        ]
+    )
 
 
 def _station_hours(result: DemandFile, day_type: str) -> list[float]:
@@ -172,7 +216,7 @@ def test_daily_totals_fit_the_sim_budget(tfl: FakeTfl) -> None:
     rail = _expected_rail()
     assert weekday == pytest.approx(demand.SIM_WEEKDAY_ARRIVALS, abs=0.5)
     assert weekend == pytest.approx(weekday * sum(rail["weekend"]) / sum(rail["weekday"]), abs=0.5)
-    assert 600 <= weekend <= 1200
+    assert 2000 <= weekday <= 4000 and 1000 <= weekend <= 4000  # BUILD_NOTES, 1.5 km map
 
 
 def test_station_entry_follows_numbat_exits_on_calendar_days(tfl: FakeTfl) -> None:
@@ -211,6 +255,45 @@ def test_street_entries_split_by_street_width(tfl: FakeTfl) -> None:
     assert result.entryPoints["north"].weekend[2] > 0
 
 
+def test_each_station_takes_its_own_exits_times_its_share_walking_into_the_area(
+    tfl: FakeTfl,
+) -> None:
+    result = demand.build(map_data=two_station_map())
+
+    shs, lst = demand.calendar_profiles(SYNTHETIC_EXITS), _expected_liverpool_street()
+    for day_type in ("weekday", "weekend"):
+        into_shs = sum(shs[day_type]) * SHS_INTO_AREA
+        into_lst = sum(lst[day_type]) * LIVERPOOL_STREET_INTO_AREA
+        st1, st2 = (sum(getattr(result.entryPoints[e], day_type)) for e in ("st1", "st2"))
+        assert st1 / st2 == pytest.approx(into_shs / into_lst, rel=2e-3)
+    stations = sum(result.entryPoints["st1"].weekday) + sum(result.entryPoints["st2"].weekday)
+    station_budget = demand.SIM_WEEKDAY_ARRIVALS * demand.STATION_SHARE
+    assert stations == pytest.approx(station_budget, abs=0.5)
+    weekday_lst = result.entryPoints["st2"].weekday
+    assert max(range(24), key=weekday_lst.__getitem__) == 9, "Liverpool Street's own AM peak"
+    weekday_shs = result.entryPoints["st1"].weekday
+    assert max(range(24), key=weekday_shs.__getitem__) == 8
+    numbat = [s for s in result.sources if "NUMBAT" in s.label]
+    assert len(numbat) == 5 and all("Liverpool Street NR" in s.label for s in numbat)
+    assert len(tfl.downloads) == 5, "one download per workbook for all three station rows"
+    assert any("Liverpool Street 20%" in n for n in result.notes)
+
+
+def test_two_station_snapshot_fallback_keeps_both_stations(tfl: FakeTfl) -> None:
+    tfl.numbat_down = True
+
+    result = demand.build(map_data=two_station_map())
+
+    assert result.fallback is True
+    snapshot = demand.SNAPSHOT_EXITS
+    into_weekday = sum(snapshot[STATION_ROW_NAME]["weekday"]) * SHS_INTO_AREA
+    into_lst = sum(snapshot["Liverpool Street"]["weekday"]) * LIVERPOOL_STREET_INTO_AREA
+    st1, st2 = (sum(result.entryPoints[e].weekday) for e in ("st1", "st2"))
+    assert st1 / st2 == pytest.approx(into_weekday / into_lst, rel=2e-3)
+    weekday, _ = demand.daily_totals(result)
+    assert weekday == pytest.approx(demand.SIM_WEEKDAY_ARRIVALS, abs=0.5)
+
+
 @pytest.mark.parametrize("kind", ["station", "street"])
 def test_single_kind_maps_take_every_arrival(tfl: FakeTfl, kind: EntryKind) -> None:
     entries = [
@@ -231,9 +314,8 @@ def test_club_nights_take_map_hours_else_default_and_scale_capacity(tfl: FakeTfl
     c1, c2 = result.clubNights
     assert (c1.open, c1.close, c1.days) == ("23:00", "04:00", ["thu", "fri", "sat"])
     assert (c2.open, c2.close) == demand.CLUB_DEFAULT_HOURS
-    agents_per_person = (
-        demand.SIM_WEEKDAY_ARRIVALS * demand.STATION_SHARE / sum(_expected_rail()["weekday"])
-    )
+    into_area = sum(_expected_rail()["weekday"]) * SHS_INTO_AREA
+    agents_per_person = demand.SIM_WEEKDAY_ARRIVALS * demand.STATION_SHARE / into_area
     assert c1.capacity == round(400 / 0.5 * demand.CLUB_PEAK_FILL * agents_per_person)
     assert c2.capacity == round(30 * 20 / 0.5 * demand.CLUB_PEAK_FILL * agents_per_person)
 
@@ -307,7 +389,8 @@ def test_unreachable_numbat_falls_back_to_the_labelled_snapshot(tfl: FakeTfl) ->
     assert len(snapshot) == 1 and snapshot[0].fetchedAt is None
     assert set(result.entryPoints) == {"north", "west", "st"}
     weekday, weekend = demand.daily_totals(result)
-    ratio = sum(demand.SNAPSHOT_EXITS["weekend"]) / sum(demand.SNAPSHOT_EXITS["weekday"])
+    shs = demand.SNAPSHOT_EXITS[STATION_ROW_NAME]
+    ratio = sum(shs["weekend"]) / sum(shs["weekday"])
     assert weekday == pytest.approx(demand.SIM_WEEKDAY_ARRIVALS, abs=0.5)
     assert weekend == pytest.approx(weekday * ratio, abs=0.5)
 
@@ -387,13 +470,18 @@ def test_a_map_without_entry_points_is_rejected(tfl: FakeTfl) -> None:
 # --- NUMBAT parsing -------------------------------------------------------------------------
 
 
-def test_parse_station_exits_reads_96_quarter_hours() -> None:
-    quarter_hours = demand.parse_station_exits(
-        numbat_workbook(SYNTHETIC_EXITS["TWT"]), "Shoreditch High Street"
+def test_parse_station_exits_reads_96_quarter_hours_per_station() -> None:
+    lu = LIVERPOOL_STREET_EXITS["Liverpool Street LU"]["TWT"]
+    parsed = demand.parse_station_exits(
+        numbat_workbook(SYNTHETIC_EXITS["TWT"], others={"Liverpool Street LU": lu}),
+        ["Shoreditch High Street", "Liverpool Street LU"],
     )
 
-    assert len(quarter_hours) == 96
-    assert demand.hourly_from_quarter_hours(quarter_hours) == pytest.approx(SYNTHETIC_EXITS["TWT"])
+    assert set(parsed) == {"Shoreditch High Street", "Liverpool Street LU"}
+    assert all(len(quarter_hours) == 96 for quarter_hours in parsed.values())
+    shs = demand.hourly_from_quarter_hours(parsed["Shoreditch High Street"])
+    assert shs == pytest.approx(SYNTHETIC_EXITS["TWT"])
+    assert demand.hourly_from_quarter_hours(parsed["Liverpool Street LU"]) == pytest.approx(lu)
 
 
 @pytest.mark.parametrize(
@@ -405,4 +493,4 @@ def test_parse_station_exits_reads_96_quarter_hours() -> None:
 )
 def test_parse_station_exits_rejects_unexpected_files(payload: bytes, message: str) -> None:
     with pytest.raises(demand.SourceFormatError, match=message):
-        demand.parse_station_exits(payload, "Shoreditch High Street")
+        demand.parse_station_exits(payload, ["Shoreditch High Street"])

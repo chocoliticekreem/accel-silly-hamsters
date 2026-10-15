@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -24,10 +24,11 @@ from backend.schemas import DemandFile, Persona
 TICK = 5
 TICKS_PER_HOUR = 60 // TICK
 
-# demand.json carries real-world arrival rates; the renderer and the day-file budget want roughly
-# 600-1200 simulated people a day. The sim keeps demand's shape (entry x hour x weekday/weekend)
-# and scales its level into this band of general arrivals per day (club-goers come on top).
-GENERAL_ARRIVALS_PER_DAY = (550.0, 950.0)
+# demand.json carries sim-scale arrival rates (BUILD_NOTES: 2,000-4,000 a weekday on the 1.5 km
+# map); the renderer and the day-file budget (< 3 MB) take at most ~4,000 general arrivals a day.
+# The sim keeps demand's shape (entry x hour x weekday/weekend) and scales its level into this
+# band of general arrivals per day (club-goers come on top).
+GENERAL_ARRIVALS_PER_DAY = (550.0, 4000.0)
 # Club-goers per club night = ClubNight.capacity x this. demand.json writes capacity in sim
 # agents already, so 1.0; raise it only to exaggerate the spill-out crowd for a demo.
 CLUB_ATTENDANCE_SCALE = 1.0
@@ -206,22 +207,27 @@ class Arrival:
     club: ClubVisit | None = None
 
 
-@dataclass
 class _Availability:
     """When each regular can next be picked: one trip a day, and an evening or club trip keeps
     them out until 08:00 the next day, so a regular's trips never overlap in time."""
 
-    free_from: dict[str, int] = field(default_factory=dict)
+    def __init__(self, by_persona: dict[int, list[Regular]]) -> None:
+        self.members = by_persona
+        # Per persona, aligned with its members: the minute each one is free again.
+        self.free_from = {p: np.full(len(m), -1, dtype=np.int64) for p, m in by_persona.items()}
 
     def pick(
-        self, rng: np.random.Generator, members: list[Regular], t: int, block_until: int
+        self, rng: np.random.Generator, persona: int, t: int, block_until: int
     ) -> Regular | None:
-        free = [m for m in members if self.free_from.get(m.id, -1) <= t]
-        if not free:
+        """A uniformly random free member of the persona (in pool order), or None."""
+        if persona not in self.members:
             return None
-        chosen = free[int(rng.integers(len(free)))]
-        self.free_from[chosen.id] = block_until
-        return chosen
+        free = np.flatnonzero(self.free_from[persona] <= t)
+        if len(free) == 0:
+            return None
+        chosen = int(free[int(rng.integers(len(free)))])
+        self.free_from[persona][chosen] = block_until
+        return self.members[persona][chosen]
 
 
 def arrival_scale(demand: DemandFile, entries: list[EntryPoint]) -> float:
@@ -283,7 +289,7 @@ def plan_arrivals(
     by_persona: dict[int, list[Regular]] = {}
     for regular in pool:
         by_persona.setdefault(regular.persona, []).append(regular)
-    availability = _Availability()
+    availability = _Availability(by_persona)
     store_index = {s.id: i for i, s in enumerate(stores)}
     plan = []
     for day in range(1, days + 1):
@@ -298,7 +304,7 @@ def plan_arrivals(
             if d.returning:
                 evening = (d.t % MINUTES_PER_DAY) >= 17 * 60 or d.club is not None
                 block = day * MINUTES_PER_DAY + (8 * 60 if evening else 0)
-                member = availability.pick(pick_rng, by_persona.get(d.persona, []), d.t, block)
+                member = availability.pick(pick_rng, d.persona, d.t, block)
             if member is None:
                 one_off += 1
                 agent_id = f"v{day}-{one_off}"
@@ -332,6 +338,7 @@ def _general_drafts(
     day_start = (day - 1) * MINUTES_PER_DAY
     week_mult = np.array([m.persona.weekendMultiplier if weekend else 1.0 for m in models])
     share = np.array([m.persona.share for m in models])
+    active = np.array([m.active for m in models])  # (personas, 24)
     drafts: list[_Draft] = []
     for e_idx, entry in enumerate(entries):
         rates = demand.entryPoints.get(entry.id)
@@ -342,7 +349,9 @@ def _general_drafts(
         for hour in range(24):
             rng = rng_for(seed, "arrivals", day, entry.id, hour)
             count = int(rng.poisson(max(0.0, hourly[hour] * scale)))
-            weights = share * np.array([m.active[hour] for m in models]) * week_mult * kind_w
+            if count == 0:
+                continue
+            weights = share * active[:, hour] * week_mult * kind_w
             for n in range(count):
                 slot = int(rng.integers(TICKS_PER_HOUR))
                 persona = models[_pick(rng, weights)]
@@ -451,8 +460,7 @@ def race(
     sees it is closed and takes the next best. Only the top choice counts as wanted-but-shut.
     """
     n = len(weights)
-    with np.errstate(divide="ignore"):
-        scores = np.where(weights > 0, draws[:n] / np.where(weights > 0, weights, 1.0), np.inf)
+    scores = np.where(weights > 0, draws[:n] / np.where(weights > 0, weights, 1.0), np.inf)
     outside_score = draws[n] / outside
     wanted_shut = None
     while True:
