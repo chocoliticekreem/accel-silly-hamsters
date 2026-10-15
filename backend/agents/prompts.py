@@ -19,12 +19,13 @@ OBJECTIVE_GOALS = {
     ),
     "visits": "visits: more people through the door; energy only matters as a cost",
     "netValueGbp": (
-        "net value in GBP a week: the margin on visits (spend per visit x 30% gross margin) "
-        "minus the energy bill"
+        "net value in GBP a week: the margin on visits (spend per visit x gross margin for the "
+        "store type) minus the energy bill and the wages for every hour open"
     ),
     "storeProfitGbp": (
         "the store's profit in GBP a week against its current settings: the margin on extra "
-        "visits (spend per visit x 30% gross margin) minus the extra energy bill"
+        "visits (spend per visit x gross margin for the store type) minus the extra energy "
+        "bill and the wages for any extra hours open"
     ),
 }
 

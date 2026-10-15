@@ -212,6 +212,7 @@ class _HoursPlan:
     people: float  # per day: found-shut people covered, or passers-by in the trimmed time
     visits_14d: float
     kwh_14d: float
+    hours_14d: float  # open hours added (+) or removed (-), over the run
     gbp: float
 
 
@@ -510,7 +511,7 @@ def _lighting_opportunity(s: _Store) -> list[Insight]:
             continue
         visits = sum(s.by_hour[h] for h in hours) * LIGHTING_UPLIFT_TO_HIGH[level] * DAYS
         kwh = len(hours) * (s.light_kw["high"] - s.light_kw[level]) * DAYS
-        impact = _impact(s, visits, kwh)
+        impact = _impact(s, visits, kwh, 0.0)
         if impact.gbpPerWeek < MIN_GBP_PER_WEEK:
             continue
         people = sum(s.footfall[h] * s.open_min[h] / 60 for h in hours) * 7
@@ -558,7 +559,7 @@ def _worth_lighting(s: _Store, hour: int, level: LightingLevel) -> bool:
         return False
     visits = s.by_hour[hour] * LIGHTING_UPLIFT_TO_HIGH[level] * DAYS
     kwh = (s.light_kw["high"] - s.light_kw[level]) * DAYS
-    return economics.gbp_per_week(s.type, visits, kwh, s.price) > 0
+    return economics.gbp_per_week(s.type, visits, kwh, 0.0, s.price) > 0
 
 
 def _extension(
@@ -581,11 +582,12 @@ def _extension(
         people = _spread(s.missed, s.closed_min, start, end)
         visits = people * DAYS * MISSED_CAPTURE
         kwh = (end - start) / 60 * s.open_hour_kwh * DAYS
-        gbp = economics.gbp_per_week(s.type, visits, kwh, s.price)
+        hours = (end - start) / 60 * DAYS
+        gbp = economics.gbp_per_week(s.type, visits, kwh, hours, s.price)
         if people >= MISSED_MIN_PER_DAY and gbp >= MIN_GBP_PER_WEEK:
             if best is None or gbp > best.gbp:
                 best = _HoursPlan(
-                    field, target % MINUTES_PER_DAY, start, end, people, visits, kwh, gbp
+                    field, target % MINUTES_PER_DAY, start, end, people, visits, kwh, hours, gbp
                 )
     return best
 
@@ -612,11 +614,12 @@ def _trim(
         start, end = (edge, target) if later else (target, edge)
         visits = -_spread(s.by_hour, s.open_min, start, end) * DAYS
         kwh = -(end - start) / 60 * s.open_hour_kwh * DAYS
-        gbp = economics.gbp_per_week(s.type, visits, kwh, s.price)
+        hours = -(end - start) / 60 * DAYS
+        gbp = economics.gbp_per_week(s.type, visits, kwh, hours, s.price)
         if gbp >= MIN_GBP_PER_WEEK and (best is None or gbp > best.gbp):
             passers = _spread(s.footfall, FULL_HOUR, start, end)
             best = _HoursPlan(
-                field, target % MINUTES_PER_DAY, start, end, passers, visits, kwh, gbp
+                field, target % MINUTES_PER_DAY, start, end, passers, visits, kwh, hours, gbp
             )
         previous = target
     return best
@@ -633,7 +636,7 @@ def _wasted_energy(s: _Store, opening: set[int]) -> list[Insight]:
         if not hours:
             continue
         kwh = -len(hours) * s.light_kw[level] * DAYS
-        impact = _impact(s, 0.0, kwh)
+        impact = _impact(s, 0.0, kwh, 0.0)
         if impact.gbpPerWeek < MIN_GBP_PER_WEEK:
             continue
         spans = _hour_spans(hours)
@@ -670,7 +673,7 @@ def _wasted_energy(s: _Store, opening: set[int]) -> list[Insight]:
 
 
 def _missed_insight(s: _Store, plan: _HoursPlan) -> Insight:
-    impact = _impact(s, plan.visits_14d, plan.kwh_14d)
+    impact = _impact(s, plan.visits_14d, plan.kwh_14d, plan.hours_14d)
     people = plan.people * 7
     current, new = _edge_hhmm(s, plan.field), to_hhmm(plan.new_m)
     side, verb = ("after", "Closing") if plan.field == "close" else ("before", "Opening")
@@ -682,7 +685,8 @@ def _missed_insight(s: _Store, plan: _HoursPlan) -> Insight:
         title=_clip(f"{people:.0f} people a week find you shut {side} {current}"),
         detail=_clip(
             f"{verb} at {new} instead of {current} could add ~{_count(_weekly(plan.visits_14d))}"
-            f" visits a week for {_weekly(plan.kwh_14d):.1f} kWh more:"
+            f" visits a week for {_weekly(plan.kwh_14d):.1f} kWh and"
+            f" {_weekly(plan.hours_14d):.1f} staff hours more:"
             f" {_gbp(impact.gbpPerWeek)} a week net, within your licence.",
             DETAIL_MAX,
         ),
@@ -703,7 +707,7 @@ def _missed_insight(s: _Store, plan: _HoursPlan) -> Insight:
 
 
 def _dead_insight(s: _Store, plan: _HoursPlan) -> Insight:
-    impact = _impact(s, plan.visits_14d, plan.kwh_14d)
+    impact = _impact(s, plan.visits_14d, plan.kwh_14d, plan.hours_14d)
     current, new = _edge_hhmm(s, plan.field), to_hhmm(plan.new_m)
     verb = "Closing" if plan.field == "close" else "Opening"
     span = f"{to_hhmm(plan.start)}-{to_hhmm(plan.end)}"
@@ -715,7 +719,8 @@ def _dead_insight(s: _Store, plan: _HoursPlan) -> Insight:
         severity=_severity(impact.kwh),
         title=_clip(f"Quiet {span}: {rate:.1f} visits an hour"),
         detail=_clip(
-            f"{verb} at {new} instead of {current} saves {_weekly(-plan.kwh_14d):.1f} kWh a week"
+            f"{verb} at {new} instead of {current} saves {_weekly(-plan.kwh_14d):.1f} kWh"
+            f" and {_weekly(-plan.hours_14d):.1f} staff hours a week"
             f" for ~{_count(_weekly(-plan.visits_14d))} fewer visits:"
             f" {_gbp(impact.gbpPerWeek)} a week net.",
             DETAIL_MAX,
@@ -730,7 +735,7 @@ def _dead_insight(s: _Store, plan: _HoursPlan) -> Insight:
             new,
             impact=impact,
             confidence=confidence,
-            reason=f"Quiet {span}: {rate:.1f} visits an hour at full energy cost",
+            reason=f"Quiet {span}: {rate:.1f} visits an hour at full energy and staff cost",
         ),
         evidence=_evidence(s, span),
     )
@@ -821,11 +826,13 @@ def _edge_hhmm(s: _Store, field: Literal["open", "close"]) -> str:
 # --- shared pieces --------------------------------------------------------------------------
 
 
-def _impact(s: _Store, visits_14d: float, kwh_14d: float) -> Impact:
+def _impact(s: _Store, visits_14d: float, kwh_14d: float, hours_14d: float) -> Impact:
+    """hours_14d: open hours the change adds or removes (0 for lighting)."""
+    gbp = economics.gbp_per_week(s.type, visits_14d, kwh_14d, hours_14d, s.price)
     return Impact(
         visits=round(_fraction(visits_14d, s.visits), 4),
         kwh=round(_fraction(kwh_14d, s.kwh), 4),
-        gbpPerWeek=round(economics.gbp_per_week(s.type, visits_14d, kwh_14d, s.price), 2),
+        gbpPerWeek=round(gbp, 2),
     )
 
 

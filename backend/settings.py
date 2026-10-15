@@ -18,7 +18,7 @@ LLM_CACHE_DIR = CACHE_DIR / "llm"
 RUNS_DIR = Path(os.getenv("RUNS_DIR", ROOT / "runs"))
 
 # Simulation
-SIM_VERSION = "0.2.0"  # bump on any change that alters sim output; it is part of the run-cache key
+SIM_VERSION = "0.3.0"  # bump on any change that alters sim output; it is part of the run-cache key
 DEFAULT_SEED = 42
 TICK_MINUTES = 5
 # Self-learning city (docs/OWNER_ACTIONS.md): street events, and every shop's owner adapting day by

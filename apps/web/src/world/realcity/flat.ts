@@ -89,10 +89,18 @@ export class FlatBuilder {
   /** Polyline ribbon: a strip per segment and round joins / caps. */
   ribbon(pts: P[], hw: number, y: number, col: Color, caps = true) {
     for (let i = 0; i < pts.length - 1; i++) this.strip(pts[i], pts[i + 1], hw, y, col);
-    const seg = hw > 4 ? 14 : 8;
+    const seg = hw > 4 ? 12 : 8;
     for (let i = 0; i < pts.length; i++) {
       const end = i === 0 || i === pts.length - 1;
-      if (end ? caps : true) this.disc(pts[i][0], pts[i][1], hw, y, col, seg);
+      if (end) {
+        if (caps) this.disc(pts[i][0], pts[i][1], hw, y, col, seg);
+        continue;
+      }
+      // joins only where the line actually turns (a straight-through vertex needs no fill)
+      const ax = pts[i][0] - pts[i - 1][0], az = pts[i][1] - pts[i - 1][1];
+      const bx = pts[i + 1][0] - pts[i][0], bz = pts[i + 1][1] - pts[i][1];
+      const cos = (ax * bx + az * bz) / ((Math.hypot(ax, az) * Math.hypot(bx, bz)) || 1);
+      if (cos < 0.995) this.disc(pts[i][0], pts[i][1], hw, y, col, seg);
     }
   }
   geometry(): BufferGeometry {

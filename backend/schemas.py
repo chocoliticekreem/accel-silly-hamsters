@@ -147,7 +147,7 @@ class DailyKpis(Model):
     visits: int  # visits starting that day (a trip past midnight of day 14 counts on day 14)
     kwh: float
     visitsPerKwh: float
-    profitGbp: float  # margin on the visits minus that day's energy bill (backend/economics.py)
+    profitGbp: float  # margin on visits minus that day's energy and wages (backend/economics.py)
     ownerActions: int  # owner events dated that day
 
 
