@@ -416,8 +416,12 @@ def _objective_value(state: AnalystState, config: TrainingConfig, run: int) -> f
         return rundata.objective_value(run, config.objective)
     if base is None or run == base:
         return 0.0
-    before, after = rundata.load_stores(base)[sid].kpis, rundata.load_stores(run)[sid].kpis
-    return economics.profit_vs(_shop_type(sid), before, after, economics.area_price_gbp_per_kwh())
+    before, after = rundata.load_stores(base)[sid], rundata.load_stores(run)[sid]
+    if after.closedFromDay is not None:
+        return float("-inf")  # closing for good saves wages; it is never the advice
+    return economics.profit_vs(
+        _shop_type(sid), before.kpis, after.kpis, economics.area_price_gbp_per_kwh()
+    )
 
 
 def _shop_scale(state: AnalystState, config: TrainingConfig) -> float:
