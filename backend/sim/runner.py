@@ -110,8 +110,12 @@ def execute_run(
     use_cache: bool = True,
 ) -> int:
     """Simulate 14 days and persist runs/{run}/: config.json, stores.json, store_stats.json,
-    suggestions.json ([] until store agents fill it), days/1..14.json, summary.json; upsert
+    suggestions.json ([] until store agents fill it), owner_events.json, street_events.json
+    (both [] with settings.OWNER_ADAPTATION off), days/1..14.json, summary.json; upsert
     runs/index.json and record the run in runs/cache.json.
+
+    With owner adaptation on, an owner may close for good only in a run whose parent is not the
+    baseline (docs/OWNER_ACTIONS.md: never in run 1 of a session).
 
     Returns the run id. On a run-cache hit (same configs + seed + SIM_VERSION, honouring the
     cache policy) returns the cached run id without simulating. `run_id` lets the API reserve
@@ -121,7 +125,8 @@ def execute_run(
     "failed" if the simulation raised). summary.json is written last: its presence marks the run
     complete for the run cache.
     """
-    key = cache.run_key(stores, seed)
+    allow_closure = _closures_allowed(parent_run)
+    key = cache.run_key(stores, seed, allow_closure=allow_closure)
     if use_cache:
         hit = cache.run_lookup(key)
         if hit is not None:
@@ -143,7 +148,10 @@ def execute_run(
     store.write_json(directory / "config.json", config)
     _mark_running(run, seed)
     try:
-        out = engine.simulate(world, stores, seed)
+        if allow_closure:
+            out = engine.simulate(world, stores, seed, allow_closure=True)
+        else:
+            out = engine.simulate(world, stores, seed)
         results = kpi_model.build_results(world, stores, out)
         for day in engine.day_files(out.trips, world.stores):
             store.write_json(directory / "days" / f"{day.day}.json", dump(day))
@@ -154,6 +162,8 @@ def execute_run(
             directory / "store_stats.json", {sid: dump(s) for sid, s in results.stats.items()}
         )
         store.write_json(directory / "suggestions.json", [])
+        store.write_json(directory / "owner_events.json", [dump(e) for e in out.owner_events])
+        store.write_json(directory / "street_events.json", out.street_events)
         summary = _summary(run, seed, results, time.perf_counter() - started)
         store.write_json(directory / "summary.json", summary)
         store.update_index(run, status="done", kpis=results.kpis)
@@ -162,6 +172,18 @@ def execute_run(
         store.update_index(run, status="failed")
         raise
     return run
+
+
+def _closures_allowed(parent_run: int | None) -> bool:
+    """Permanent closures need adaptation on and a parent that is not the baseline (a run with
+    no parent of its own)."""
+    if not settings.OWNER_ADAPTATION or parent_run is None:
+        return False
+    try:
+        parent = store.read_model(store.run_dir(parent_run) / "config.json", RunConfig)
+    except FileNotFoundError:
+        return False
+    return parent.parentRun is not None
 
 
 def _check_configs(world: engine.World, stores: Mapping[str, StoreConfig]) -> None:

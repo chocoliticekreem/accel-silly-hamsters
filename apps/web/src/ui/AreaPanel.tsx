@@ -21,6 +21,8 @@ export function AreaPanel() {
 
   const data = cur?.demandByHourKw.map((kw, h) => ({ h, kw, base: base?.demandByHourKw[h] }));
   const sameRun = baseRun === run;
+  const saved = !sameRun && cur && base ? base.kpis.kwh - cur.kpis.kwh : null;
+  const cost = runs?.find((r) => r.run === run)?.costPerStoreWeekGbp;
   const tiles = cur && [
     { key: "kwh", label: "kWh", value: fmtInt(cur.kpis.kwh), d: change(base?.kpis.kwh, cur.kpis.kwh) },
     { key: "kwh", label: "CO₂ kg", value: fmtInt(cur.co2Kg), d: change(base?.co2Kg, cur.co2Kg) },
@@ -53,7 +55,11 @@ export function AreaPanel() {
               </div>
             ))}
           </div>
-          <div className="foot-note">{sameRun ? `run ${run} is the baseline` : `run ${run} vs baseline run ${baseRun}`}</div>
+          <div className="foot-note">
+            {sameRun ? `run ${run} is the baseline` : `run ${run} vs baseline run ${baseRun}`}
+            {saved !== null && ` · ${saved >= 0 ? `${fmtInt(saved)} kWh saved` : `${fmtInt(-saved)} kWh more`}`}
+            {cost !== undefined && ` · £${cost.toFixed(2)} / store-week agent spend`}
+          </div>
 
           <h3 className="section-title">
             Demand by hour <span className="muted">kW</span>

@@ -22,13 +22,18 @@ To use the real backend, set `VITE_API_URL` in `apps/web/.env.local` (see `.env.
 
 ## Demo flow
 
-| Step | Do |
+Click **Demo** (top right) for the guided path: it walks the six steps of the demo plan in `docs/BUILD_SPEC.md`, one click each, on mock or real data. The shop and the night are picked from the runs: the shop whose visits grew most among those that now stay open into hours they used to be shut (`state/demo.ts`).
+
+| Step | Shows |
 |---|---|
-| 1 | Open `?t=7365&store=s1`: Saturday 02:45, run 1, Kebab Co is **closed and dark** next to the club |
-| 2 | The store card shows the suggestions: `Close 23:00 → 03:00`, `Light 00–03: off → low` |
-| 3 | **Weekly report** → Approve / Reject per change, £/week, confidence, evidence, PDF |
-| 4 | **History**: visits/kWh climbs, then plateaus at the stop line. Click a run to replay it |
-| 5 | **Run 1 vs best**: split screen on one clock and one camera |
+| 1 Analyst overnight | Analyst chip (runtime, experiments) and History: KPI per run, the stop line, the lab notebook, cost per store-week |
+| 2 Before | Run 1 at 1× on the Saturday night: the crowd walks past a shut, dark shop (mock: Kebab Co next to the club) |
+| 3 The dark shop | Its store card: closed, light off, the suggestions as diffs (`Close 23:00 → 03:00`) |
+| 4 After | The best run, same night: the shop open and lit; History shows the climb and the plateau |
+| 5 Report | `/store/:id`: headline, three numbers, advice with Approve / Reject, certainty, evidence, PDF, "Simulated, not guaranteed" |
+| 6 Zoom out | Area view: kWh, CO2, £ energy and peak vs the baseline, kWh saved, cost per store-week |
+
+Without the guide: `?t=7365&store=s1` opens step 3 on mock data; **Before vs after** is the split screen on one clock and one camera.
 
 Keys: `space` play/pause · `←/→` ±1 h (`shift` ±1 day) · `1 2 3` speed · `esc` close.
 URL flags: `?run=` `?t=` `?store=` jump straight to a moment. `?only=Sky,Ground` / `?skip=Glow` toggle 3D modules.
@@ -41,7 +46,8 @@ mock/      seeded map, persona sim, analyst experiments, mock API (same interfac
 sim/       pure helpers: time, path interpolation, sky palette, street frontage (unit tested)
 state/     zustand store (run, t, selection, panels) · shared playback clock · cached data hooks
 world/     World.tsx registry + modules/ (Sky, Ground, Streets, Buildings, Stores, StreetLights, Agents, CameraRig, Glow)
-ui/        Hud, AnalystChip, PlaybackBar, StoreCard, HourStrip, SuggestionList, HistoryPanel, OwnerReport, CompareView
+ui/        Hud, AnalystChip, PlaybackBar, StoreCard, HourStrip, SuggestionList, HistoryPanel, AreaPanel, AgentsPanel, InsightsPanel, CompareView, DemoBar
+pages/     StorePage (/store/:id, the owner's weekly report)
 ```
 
 **Adding a 3D module:** create `world/modules/<Name>.tsx`. It default-exports a component that reads `useWorld()` (map, run, store results, live occupancy) and `useSim.getState().t` inside `useFrame`. Add it to `MODULES` in `World.tsx`. Each module runs inside its own error boundary, so a crash removes only that module.

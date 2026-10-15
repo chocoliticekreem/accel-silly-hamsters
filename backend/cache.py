@@ -155,9 +155,16 @@ def _load_run_cache() -> dict:
     return data
 
 
-def run_key(stores: dict[str, StoreConfig], seed: int) -> str:
+def run_key(stores: dict[str, StoreConfig], seed: int, *, allow_closure: bool = False) -> str:
+    """Configs + seed + sim version, plus the owner-adaptation switches when adaptation is on
+    (so runs with and without adaptation never share a cache entry; off keeps the old keys)."""
     configs = {sid: c.model_dump(mode="json") for sid, c in sorted(stores.items())}
-    return stable_hash({"stores": configs, "seed": seed, "simVersion": settings.SIM_VERSION})
+    key: dict = {"stores": configs, "seed": seed, "simVersion": settings.SIM_VERSION}
+    if settings.OWNER_ADAPTATION:
+        key["owners"] = True
+        if allow_closure:
+            key["ownerClosures"] = True
+    return stable_hash(key)
 
 
 def store_config_hash(config: StoreConfig) -> str:

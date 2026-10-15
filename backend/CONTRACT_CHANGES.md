@@ -26,9 +26,24 @@ not sent as `null`.
 | New `GET /api/agents/session` | `AgentSession` (`backend/contract.py`): the analyst checkpoint in full (sessionId, state, backend, startedAt, updatedAt, baselineRun, currentRun, bestRun, bestObjective, iterations, runsThisSession, lowGainStreak, step, stoppedReason, spentGbp, error). 404 before the analyst has ever run. `GET /api/analyst` is unchanged. |
 | New `GET /api/agents/log?run=&limit=` | `AgentEvent[]` oldest first: the session's story from `runs/llm_log.jsonl` and `runs/{run}/llm_log.jsonl`, filtered to hand-offs, proposals, hypotheses, tool calls, experiments, results, rule rejections, stops and costs. Scalar fields only under `data`: no prompts, responses or per-store id lists (lists become `<name>Count`), strings capped at 240 chars. |
 | New `GET /api/calibration` | `data/processed/calibration.json` as built (`CalibrationFile`): anchor `venues[]` with `name`, `storeId`, `type`, `weekday[24]`, `weekend[24]` busyness (0–100), `measured`, `source`; plus `fallback`, `notes`, `sources`. `measured: false` = a placeholder shape, never proof. 404 until the pipeline has built it (the frontend hides its calibration tab). |
+| `GET /api/runs/{run}/stores` → each `StoreRunResult` | Optional `schedule`: `[{fromDay, week[7]}]`, the shop's weekly hours as its owner changed them during the run, oldest first; `week` is Mon..Sun, each `{open, close}` or `null` (closed that weekday). Absent = `open`/`close` every day. Optional `closedFromDay`: the day the shop closed for good (absent = still trading). `open`/`close` keep meaning the run's starting hours. See `docs/OWNER_ACTIONS.md`. |
+| New `GET /api/runs/{run}/owner-events` | `OwnerEvent[]` oldest first (`t`, then `storeId`): `day`, `t` (sim minute), `storeId`, `action` (`hours_changed` \| `day_closed` \| `day_reopened` \| `shut_early` \| `open_late` \| `temporary_closure` \| `lighting_changed` \| `closed_permanently`), optional `from`/`to` (`HH:MM`, a weekday like `mon`, or a lighting level), `reason` (one owner-voice sentence, ≤ 100 chars), `trigger` `{kind, value, label}`. 404 like other run files (runs from before this feature have none). |
+| New `GET /api/runs/{run}/street-events` | `StreetEvent[]` oldest first: `day`, `fromT`, `toT` (sim minutes), `kind` (`roadworks` \| `heavy_traffic` \| `club_night` \| `event` \| `weather`), `streetId` (a map `Street.id`), `label`, `severity` (0–1). 404 like other run files. |
 
 ## Behaviour notes (not shape changes)
 
+- **Owners adapt inside a run** (`docs/OWNER_ACTIONS.md`, `backend/sim/owners.py`), switch
+  `OWNER_ADAPTATION` (env, default on; `0` = the pre-adaptation sim, byte-identical files apart
+  from `owner_events.json` / `street_events.json` being `[]`). Decisions taken at the end of day
+  *d* apply from day *d*+1 and their `t` is 00:00 of that day; `shut_early` has `t` = the moment
+  the owner decided (that day) and `to` = the new close; `open_late` has `t` = an hour before the
+  usual close and `to` = tonight's close (past midnight = the next morning); `temporary_closure`
+  has `day` = the first closed day and `to` = the weekday it reopens, followed by a `day_reopened`
+  on that day. Today-only actions (`shut_early`, `open_late`, `temporary_closure`) are not in
+  `schedule`: apply them from the events. Every decision passes the hard rules (licence hours,
+  minimum open/closed time). `closed_permanently` never happens in a run whose parent is the
+  baseline. Street events cut (roadworks, heavy traffic) or lift (event) stop-ins at the shops on
+  that street; walking routes are unchanged.
 - **Sample run 0** (`runs/0/`, hand-made, not simulated). `GET /api/runs` lists it while
   `runs/index.json` has no real run and drops it once one exists. Its files stay readable at
   `/api/runs/0/...`.

@@ -21,6 +21,9 @@ RUNS_DIR = ROOT / "runs"
 SIM_VERSION = "0.1.0"  # bump on any change that alters sim output; it is part of the run-cache key
 DEFAULT_SEED = 42
 TICK_MINUTES = 5
+# Self-learning city (docs/OWNER_ACTIONS.md): street events, and every shop's owner adapting day by
+# day inside a run. OWNER_ADAPTATION=0 gives exactly the pre-adaptation sim (same files, same keys).
+OWNER_ADAPTATION = os.getenv("OWNER_ADAPTATION", "1") != "0"
 
 # Training loop
 OBJECTIVE = os.getenv("OBJECTIVE", "visitsPerKwh")  # any key of contract.Kpis

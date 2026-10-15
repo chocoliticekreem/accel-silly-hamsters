@@ -106,7 +106,7 @@ export function StoreCard() {
         <>
           <InsightsPanel storeId={id} run={run} onApply={() => apply("store")} />
           <button className="btn btn-report" onClick={() => navigate(storePath(id))}>
-            <Icon name="report" /> Open shop page
+            <Icon name="report" /> Open report
           </button>
         </>
       ) : (
@@ -138,8 +138,9 @@ export function StoreCard() {
               {busy === "all" ? "Applying…" : "Apply all"}
             </button>
           </div>
+          <div className="disclaimer card-note">Simulated, not guaranteed · licence hours enforced · the owner approves every change</div>
           <button className="btn btn-report" onClick={() => navigate(storePath(id))}>
-            <Icon name="report" /> Open shop page
+            <Icon name="report" /> Open report
           </button>
         </>
       )}

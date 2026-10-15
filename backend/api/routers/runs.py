@@ -1,4 +1,5 @@
-"""GET /api/runs and the per-run files: stores, days, suggestions, summary."""
+"""GET /api/runs and the per-run files: stores, days, suggestions, summary, owner and street
+events."""
 
 from __future__ import annotations
 
@@ -7,7 +8,15 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from backend import store
 from backend.api import common
-from backend.contract import DAYS, DayData, RunListItem, StoreRunResult, Suggestion
+from backend.contract import (
+    DAYS,
+    DayData,
+    OwnerEvent,
+    RunListItem,
+    StoreRunResult,
+    StreetEvent,
+    Suggestion,
+)
 from backend.schemas import RunSummary
 
 router = APIRouter(tags=["runs"])
@@ -54,3 +63,15 @@ def get_run_suggestions(run: int) -> JSONResponse:
 def get_run_summary(run: int) -> JSONResponse:
     """City view for one run (area totals only: no store ids, see BUILD_NOTES misuse cases)."""
     return common.contract_json(common.read_run_file(run, "summary.json", RunSummary))
+
+
+@router.get("/api/runs/{run}/owner-events", response_model=list[OwnerEvent])
+def get_run_owner_events(run: int) -> JSONResponse:
+    """What each shop's owner changed day by day inside this run, oldest first (area view)."""
+    return common.contract_json(common.read_run_file(run, "owner_events.json", list[OwnerEvent]))
+
+
+@router.get("/api/runs/{run}/street-events", response_model=list[StreetEvent])
+def get_run_street_events(run: int) -> JSONResponse:
+    """Roadworks, heavy traffic, club nights and events the owners reacted to, oldest first."""
+    return common.contract_json(common.read_run_file(run, "street_events.json", list[StreetEvent]))

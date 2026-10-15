@@ -9,11 +9,11 @@ import { AgentsPanel } from "./ui/AgentsPanel";
 import { Bot } from "lucide-react";
 import { AnalystChip } from "./ui/AnalystChip";
 import { CompareView } from "./ui/CompareView";
+import { DemoBar, DemoChip } from "./ui/DemoBar";
 import { HistoryPanel } from "./ui/HistoryPanel";
-import { Hud } from "./ui/Hud";
+import { Clock, Hud } from "./ui/Hud";
 import { Icon } from "./ui/icons";
 import { Legend } from "./ui/Legend";
-import { OwnerReport } from "./ui/OwnerReport";
 import { PlaybackBar } from "./ui/PlaybackBar";
 import { StoreCard } from "./ui/StoreCard";
 import { Toast } from "./ui/Toast";
@@ -51,20 +51,30 @@ export default function App() {
       <div className="stage">{compare ? <CompareView /> : <World map={map} run={run} stores={stores} />}</div>
 
       <div className="overlay">
-        <div className="top-left">{!compare && <Hud />}</div>
+        <div className="top-left">
+          {compare ? (
+            <section className="hud panel" aria-label="Shared clock">
+              <Clock />
+              <div className="hud-foot">one clock · both runs</div>
+            </section>
+          ) : (
+            <Hud />
+          )}
+        </div>
         <div className="top-right">
           <AnalystChip onClick={() => openPanel(panel === "agents" ? null : "agents")} />
           <div className="tool-row">
-            <button className={`chip ${panel === "history" ? "on" : ""}`} onClick={() => openPanel(panel === "history" ? null : "history")}>
+            <DemoChip />
+            <button className={`chip ${panel === "history" ? "on" : ""}`} aria-pressed={panel === "history"} onClick={() => openPanel(panel === "history" ? null : "history")}>
               <Icon name="chart" size={14} /> History
             </button>
-            <button className={`chip ${compare ? "on" : ""}`} onClick={() => setCompare(!compare)}>
+            <button className={`chip ${compare ? "on" : ""}`} aria-pressed={compare} onClick={() => setCompare(!compare)}>
               <Icon name="split" size={14} /> {compare ? "Exit compare" : "Before vs after"}
             </button>
-            <button className={`chip ${panel === "agents" ? "on" : ""}`} onClick={() => openPanel(panel === "agents" ? null : "agents")}>
+            <button className={`chip ${panel === "agents" ? "on" : ""}`} aria-pressed={panel === "agents"} onClick={() => openPanel(panel === "agents" ? null : "agents")}>
               <Bot size={14} /> Agents
             </button>
-            <button className={`chip ${panel === "area" ? "on" : ""}`} onClick={() => openPanel(panel === "area" ? null : "area")}>
+            <button className={`chip ${panel === "area" ? "on" : ""}`} aria-pressed={panel === "area"} onClick={() => openPanel(panel === "area" ? null : "area")}>
               <Icon name="bolt" size={14} /> Area
             </button>
             {dataTag && <span className="chip chip-mock" title={health ? `map: ${health.mapSource} · real runs: ${health.realRuns}` : undefined}>{dataTag}</span>}
@@ -74,11 +84,11 @@ export default function App() {
         {panel === "area" && <AreaPanel />}
         {panel === "agents" && <AgentsPanel />}
         {!compare && <StoreCard />}
-        {panel === "report" && <OwnerReport />}
         <div className="bottom">
           <Legend />
           <PlaybackBar />
         </div>
+        <DemoBar />
         <Toast />
       </div>
     </main>

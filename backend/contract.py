@@ -125,12 +125,21 @@ class StoreKpis(Model):
     returnRate: float
 
 
+class ScheduleEntry(Model):
+    fromDay: int = Field(ge=1)
+    week: list[HoursWindow | None] = Field(min_length=7, max_length=7)  # Mon..Sun, null = closed
+
+
 class StoreRunResult(Model):
     open: str
     close: str
     lighting: list[LightingLevel] = Field(min_length=24, max_length=24)
     kpis: StoreKpis
     visitsByHour: list[float] = Field(min_length=24, max_length=24)
+    # Additive (docs/OWNER_ACTIONS.md): the weekly hours as the owner changed them during the
+    # run, oldest first (absent = open/close every day), and the day it closed for good.
+    schedule: list[ScheduleEntry] | None = Optional()
+    closedFromDay: int | None = Optional()
 
 
 # --- GET /api/runs/{run}/days/{day} ---------------------------------------------------------
@@ -398,3 +407,62 @@ class AgentEvent(Model):
     run: int | None = None
     # scalar fields only (no prompts, responses or store id lists); lists become <name>Count
     data: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+
+# --- GET /api/runs/{run}/owner-events, GET /api/runs/{run}/street-events ---------------------
+# Additive (docs/OWNER_ACTIONS.md): the self-learning city. Owners adapt day by day inside a run
+# (backend/sim/owners.py); street events are what they react to (backend/sim/street.py).
+
+OwnerAction = Literal[
+    "hours_changed",
+    "day_closed",
+    "day_reopened",
+    "shut_early",
+    "open_late",
+    "temporary_closure",
+    "lighting_changed",
+    "closed_permanently",
+]
+TriggerKind = Literal[
+    "missed_demand",
+    "empty_hours",
+    "dead_day",
+    "roadworks",
+    "heavy_traffic",
+    "club_night",
+    "event",
+    "weather",
+    "losses",
+    "lights_waste",
+]
+StreetEventKind = Literal["roadworks", "heavy_traffic", "club_night", "event", "weather"]
+
+
+class OwnerTrigger(Model):
+    kind: TriggerKind
+    value: float
+    label: str
+
+
+class OwnerEvent(Model):
+    day: int  # the day the action applies (today-only actions: that day)
+    t: int  # sim minute it happens: decision time today, else 00:00 of `day`
+    storeId: str
+    action: OwnerAction
+    # "HH:MM" for hours, a weekday ("mon") for days, a LightingLevel for lighting.
+    from_: str | None = Field(default=None, alias="from", exclude_if=lambda v: v is None)
+    to: str | None = Optional()
+    reason: str = Field(max_length=100)  # one plain sentence in the owner's voice
+    trigger: OwnerTrigger
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class StreetEvent(Model):
+    day: int
+    fromT: int
+    toT: int
+    kind: StreetEventKind
+    streetId: str  # a Street.id from the map
+    label: str
+    severity: float = Field(ge=0, le=1)

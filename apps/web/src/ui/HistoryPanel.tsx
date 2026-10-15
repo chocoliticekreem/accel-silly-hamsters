@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useAnalyst, useCalibration, useRuns } from "../state/data";
 import { useSim } from "../state/store";
 import { CalibrationPanel } from "./CalibrationPanel";
-import { fmtNum } from "./format";
+import { fmtNum, STOP_LABELS } from "./format";
 import { Icon } from "./icons";
 
 const LAMP = "#ffc857";
@@ -61,7 +61,7 @@ export function HistoryPanel() {
               formatter={(v) => [fmtNum(Number(v)), "visits/kWh"]}
             />
             {stopRun && (
-              <ReferenceLine x={stopRun} stroke="#8b97ad" strokeDasharray="4 4" label={{ value: "stopped · plateau", position: "insideBottomRight", fill: "#8b97ad", fontSize: 10 }} />
+              <ReferenceLine x={stopRun} stroke="#8b97ad" strokeDasharray="4 4" label={{ value: `stopped · ${analyst?.stoppedReason ? STOP_LABELS[analyst.stoppedReason] : "done"}`, position: "insideBottomRight", fill: "#8b97ad", fontSize: 10 }} />
             )}
             <Line
               type="monotone"
