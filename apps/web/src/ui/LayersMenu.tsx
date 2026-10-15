@@ -15,7 +15,7 @@ const LAYERS: { id: Layer; label: string; hint: string; scale?: string }[] = [
   { id: "footfall", label: "Footfall", hint: "Time people spent on foot here today", scale: "quiet → busy" },
   { id: "missed", label: "Missed demand", hint: "People who walked to a shop today and found it shut", scale: "few → many found it shut" },
   { id: "wealth", label: "Wealth", hint: "Shop owners' money at the end of today, around their homes", scale: "in debt → well off" },
-  { id: "safety", label: "Safety", hint: "Incident density so far this run: places, never people. Synthetic data.", scale: "fewer → more incidents" },
+  { id: "safety", label: "Safety", hint: "Incident density so far this run.", scale: "fewer → more incidents" },
 ];
 
 export function LayersMenu() {

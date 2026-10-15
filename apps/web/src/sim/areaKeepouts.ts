@@ -1,7 +1,7 @@
 // Areas that a hand-built area module fills itself from real OSM data, so the generic Infill planner leaves them
 // alone (no made-up blocks on top of real gardens, yards and buildings). Contract coords (x east, z north).
 // Area modules add their outline here; keep each entry one polygon.
-import { OLD_STREET_AREA, OLD_STREET_HIDDEN_BUILDINGS, WHITE_COLLAR_AREA } from "./oldStreetArea";
+import { OLD_STREET_AREA, OLD_STREET_REPLACED_SPOTS, WHITE_COLLAR_AREA } from "./oldStreetArea";
 import { SPITALFIELDS_SITES } from "./spitalfieldsSites";
 
 export interface AreaKeepout {
@@ -52,8 +52,15 @@ export function inPoly(x: number, z: number, poly: [number, number][]): boolean 
   return inside;
 }
 
-/** Map buildings an area module redraws itself (the Buildings module skips them). b579: Best Mangal, Hoxton. */
-export const REPLACED_BUILDINGS: ReadonlySet<string> = new Set(["b579", ...OLD_STREET_HIDDEN_BUILDINGS]);
+/** Spots (contract) where an area module redraws the map's box itself: Best Mangal (Hoxton), and Old Street's. By
+ * position, not building id, because ids are renumbered whenever the map is rebuilt. */
+const REPLACED_SPOTS: [number, number][] = [[-625.2, 395.1], ...OLD_STREET_REPLACED_SPOTS];
+
+/** Does an area module redraw this map building itself (the Buildings module skips it)? Never a store's own box. */
+export function isReplacedBuilding(b: { kind: string; x: number; z: number; w: number; d: number }): boolean {
+  if (b.kind === "store" || b.kind === "club" || b.kind === "station") return false;
+  return REPLACED_SPOTS.some(([x, z]) => Math.abs(b.x - x) <= b.w / 2 + 1 && Math.abs(b.z - z) <= b.d / 2 + 1);
+}
 
 /** Is (x, z) inside any area module's own patch? */
 export const inAreaKeepout = (x: number, z: number) => AREA_KEEPOUTS.some((a) => inPoly(x, z, a.poly));

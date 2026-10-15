@@ -20,7 +20,7 @@ export function SafetyToggle() {
         if (!on) useEconomy.getState().setHeatmap(null);
         useSafety.getState().setHeat(!on);
       }}
-      title="Incident density so far this run: places, never people. Synthetic data."
+      title="Incident density so far this run."
     >
       <ShieldAlert size={14} /> Safety
     </button>

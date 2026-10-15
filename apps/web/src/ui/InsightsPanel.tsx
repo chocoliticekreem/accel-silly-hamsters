@@ -261,7 +261,6 @@ export function InsightsPanel({ storeId, run, onApply }: { storeId: string; run:
           </div>
         </>
       )}
-      <div className="disclaimer insights-note">{data.note ?? "Simulated, not guaranteed."} · only this shop's data</div>
     </div>
   );
 }

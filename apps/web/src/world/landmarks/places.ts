@@ -148,9 +148,12 @@ function clampTo(map: CityMap, x: number, z: number) {
 }
 
 function resolveSpec(map: CityMap, s: Spec, lms: ResolvedLandmark[]): Place | null {
-  const store = s.store ? map.stores.find((x) => s.store!.test(x.name)) : undefined;
-  const storeB = store && map.buildings.find((b) => b.id === store.buildingId);
+  const named = s.store ? map.stores.find((x) => s.store!.test(x.name)) : undefined;
+  const storeB = named && map.buildings.find((b) => b.id === named.buildingId);
   const lm = s.landmark ? lms.find((l) => l.key === s.landmark) : undefined;
+  // landmark stores (backend LANDMARK_STORES: Encode Hub's café, art'otel's restaurant and bar, Boxpark units) share the
+  // landmark's building: the first one stands for the place, so clicking it opens a card with real sim numbers
+  const store = named ?? (lm?.buildingId ? map.stores.find((x) => x.buildingId === lm.buildingId) : undefined);
   const lmB = lm?.buildingId ? map.buildings.find((b) => b.id === lm.buildingId) : undefined;
   let host: Building | null = null;
   let foot: Footprint | undefined;
