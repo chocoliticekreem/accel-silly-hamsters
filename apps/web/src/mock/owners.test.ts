@@ -110,7 +110,7 @@ describe("adaptations respect the hard rules", () => {
       const stores = await api.runStores(run);
       const by = eventsByStore(await api.ownerEvents(run));
       for (let day = 1; day <= 14; day++)
-        for (const a of state.result(run).days[day - 1].agents)
+        for (const a of state.result(run).days[day - 1].agents.filter((x) => (x as { role?: string }).role !== "owner")) // owners open up: not customers
           for (const v of a.visits) {
             if (state.map.stores.find((s) => s.id === v.storeId)!.type === "club") continue;
             expect(storeStateAt(stores[v.storeId], by.get(v.storeId) ?? [], v.tIn - 0.05).open, `${v.storeId} run ${run} t ${v.tIn}`).toBe(true);
