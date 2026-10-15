@@ -35,8 +35,9 @@ describe("mock runs", () => {
   it("returns runs whose main KPI improves from run 1 to the best run", async () => {
     const runs = await api.runs();
     expect(runs.length).toBeGreaterThanOrEqual(3);
-    const best = Math.max(...runs.map((r) => r.kpis.visitsPerKwh));
-    expect(best).toBeGreaterThan(runs[0].kpis.visitsPerKwh * 1.1);
+    const v = runs.map((r) => r.kpis?.visitsPerKwh ?? 0);
+    expect(v.every((x) => x > 0)).toBe(true); // mock runs are all done
+    expect(Math.max(...v)).toBeGreaterThan(v[0] * 1.1);
     for (const r of runs) expect(r.notebook.length).toBeLessThan(90);
   });
 

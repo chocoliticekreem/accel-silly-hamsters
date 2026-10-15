@@ -13,8 +13,9 @@ export function HistoryPanel() {
   const analyst = useAnalyst().data;
   const current = useSim((s) => s.run);
   const replay = (run: number) => useSim.getState().replay(run, useSim.getState().t);
-  const stopRun = analyst?.state === "stopped" ? analyst.iterations : null;
-  const data = runs.filter((r) => r.status === "done").map((r) => ({ run: r.run, v: r.kpis.visitsPerKwh }));
+  const done = runs.flatMap((r) => (r.status === "done" && r.kpis ? [{ run: r.run, v: r.kpis.visitsPerKwh }] : []));
+  const stopRun = analyst?.state === "stopped" && analyst.iterations > 0 ? (done.at(-1)?.run ?? null) : null;
+  const data = done;
   const cost = runs.at(-1)?.costPerStoreWeekGbp;
 
   return (

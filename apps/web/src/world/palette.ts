@@ -12,7 +12,19 @@ export const PERSONA_COLORS: Record<string, string> = {
   "passer-by": "#7d8aa0",
 };
 export const PERSONA_FALLBACK = "#b8c1d1";
-export const personaColor = (p: string) => PERSONA_COLORS[p] ?? PERSONA_FALLBACK;
+/** Backend persona ids (data/processed/personas.json) folded into the colour families above. */
+export const PERSONA_ALIASES: Record<string, string> = {
+  "morning-commuter": "commuter",
+  "office-worker": "commuter",
+  "local-resident": "resident",
+  "remote-worker": "student",
+  "student-creative": "student",
+  "weekend-shopper": "shopper",
+  "evening-diner": "foodie",
+  "after-work-drinker": "foodie",
+  "late-shift-worker": "passer-by",
+};
+export const personaColor = (p: string) => PERSONA_COLORS[p] ?? PERSONA_COLORS[PERSONA_ALIASES[p]] ?? PERSONA_FALLBACK;
 
 /** Soft pastel store bodies; awnings use the stronger accent. */
 export const STORE_COLORS: Record<StoreType, { body: string; awning: string; icon: string }> = {
