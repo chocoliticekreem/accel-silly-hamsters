@@ -1,23 +1,31 @@
 // Module: Stores. Every store and club: a pastel box with a lit shop window, an awning and an OPEN sign.
 // Window glow = this run's lighting level for the current hour (off / low / high), stronger at night,
 // with an additive pool of light on the pavement. A lamp-yellow column above the roof shows how many agents are inside.
+// Owners adapt day by day (docs/OWNER_ACTIONS.md): open sign, glow and lighting follow storeStateAt (schedule,
+// today-only actions, closures). Shut all day = shutter down; closed for good = boarded-up windows.
 // Click to select (opens the store card); hover shows the name.
 import { Html } from "@react-three/drei";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { AdditiveBlending, type Group, type Mesh, type MeshBasicMaterial, type MeshStandardMaterial } from "three";
-import type { Building, Store } from "../../api/contract";
+import type { Building, OwnerEvent, Store } from "../../api/contract";
 import { frontage, toScene } from "../../sim/geometry";
 import { nightLevel } from "../../sim/sky";
-import { hourOf, isOpenAt, minuteOfDay } from "../../sim/time";
+import { eventsByStore, storeStateAt, type StoreState } from "../../sim/storeState";
+import { hourOf } from "../../sim/time";
+import { useOwnerEvents } from "../../state/data";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { LAMP, LIGHT_INTENSITY, STORE_COLORS } from "../palette";
 import { glowTexture } from "../textures";
 import { TypeIcon } from "../../ui/TypeIcon";
 
+const NO_EVENTS: OwnerEvent[] = [];
+
 export default function Stores() {
-  const { map } = useWorld();
+  const { map, run } = useWorld();
+  const owner = useOwnerEvents(run).data;
+  const byStore = useMemo(() => eventsByStore(owner ?? []), [owner]);
   const items = useMemo(
     () =>
       map.stores.flatMap((s) => {
@@ -29,13 +37,13 @@ export default function Stores() {
   return (
     <group name="stores">
       {items.map(({ s, b, f }) => (
-        <StoreBox key={s.id} store={s} b={b} nx={f.nx} nz={f.nz} />
+        <StoreBox key={s.id} store={s} b={b} nx={f.nx} nz={f.nz} events={byStore.get(s.id) ?? NO_EVENTS} />
       ))}
     </group>
   );
 }
 
-function StoreBox({ store, b, nx, nz }: { store: Store; b: Building; nx: number; nz: number }) {
+function StoreBox({ store, b, nx, nz, events }: { store: Store; b: Building; nx: number; nz: number; events: OwnerEvent[] }) {
   const { stores, live, interactive } = useWorld();
   const selected = useSim((s) => s.selectedStoreId === store.id);
   const hovered = useSim((s) => s.hoveredStoreId === store.id);
@@ -56,14 +64,26 @@ function StoreBox({ store, b, nx, nz }: { store: Store; b: Building; nx: number;
   const column = useRef<Mesh>(null);
   const ring = useRef<Group>(null);
   const neon = useRef<MeshStandardMaterial>(null);
+  const shutter = useRef<Group>(null);
+  const boards = useRef<Group>(null);
+  // the shop's state only changes minute to minute: recompute then, not every frame
+  const memo = useRef<{ minute: number; cfg: unknown; events: OwnerEvent[] | null; state: StoreState | null }>({ minute: -1, cfg: null, events: null, state: null });
 
   useFrame(({ clock }) => {
     const t = useSim.getState().t;
     const cfg = stores?.[store.id];
+    const minute = Math.floor(t);
+    const m = memo.current;
+    if (m.minute !== minute || m.cfg !== cfg || m.events !== events) {
+      memo.current = { minute, cfg, events, state: cfg ? storeStateAt(cfg, events, t) : null };
+    }
+    const st = memo.current.state;
     const hour = hourOf(t);
     const night = nightLevel(hour);
-    const open = cfg ? isOpenAt(cfg.open, cfg.close, minuteOfDay(t)) : false;
-    const level = cfg ? LIGHT_INTENSITY[cfg.lighting[Math.floor(hour) % 24]] : 0;
+    const open = st?.open ?? false;
+    const level = st ? LIGHT_INTENSITY[st.lighting] : 0;
+    if (shutter.current) shutter.current.visible = !!st && st.shutAllDay && !st.closedForGood;
+    if (boards.current) boards.current.visible = !!st?.closedForGood;
     const glow = level * (0.35 + 2.4 * night);
     if (glass.current) glass.current.emissiveIntensity = glow + (open ? 0.12 : 0);
     if (pool.current) pool.current.opacity = level * night * 0.85;
@@ -135,6 +155,36 @@ function StoreBox({ store, b, nx, nz }: { store: Store; b: Building; nx: number;
             <boxGeometry args={[width * 0.86, 0.18, 2.4]} />
             <meshStandardMaterial color={colors.awning} roughness={0.8} />
           </mesh>
+        )}
+        {/* shut all day: roller shutter down over the window */}
+        {!isClub && (
+          <group ref={shutter} visible={false} position={[0, 0.4 + glassH / 2, depth / 2 + 0.16]}>
+            <mesh>
+              <boxGeometry args={[width * 0.86, glassH + 0.2, 0.08]} />
+              <meshStandardMaterial color="#8a919c" roughness={0.6} metalness={0.4} />
+            </mesh>
+            {Array.from({ length: 5 }, (_, i) => (
+              <mesh key={i} position={[0, -glassH / 2 + ((i + 1) * glassH) / 6, 0.05]}>
+                <boxGeometry args={[width * 0.86, 0.06, 0.02]} />
+                <meshStandardMaterial color="#5f6670" roughness={0.7} />
+              </mesh>
+            ))}
+          </group>
+        )}
+        {/* closed for good: boarded up */}
+        {!isClub && (
+          <group ref={boards} visible={false} position={[0, 0.4 + glassH / 2, depth / 2 + 0.2]}>
+            {[-0.32, 0, 0.32].map((k) => (
+              <mesh key={k} position={[0, k * glassH, 0]} rotation-z={k * 0.08}>
+                <boxGeometry args={[width * 0.9, glassH * 0.26, 0.1]} />
+                <meshStandardMaterial color={k === 0 ? "#b08a5a" : "#a07a4c"} roughness={0.95} />
+              </mesh>
+            ))}
+            <mesh position-z={0.08} rotation-z={Math.atan2(glassH, width * 0.82)}>
+              <boxGeometry args={[Math.hypot(width * 0.82, glassH), 0.32, 0.08]} />
+              <meshStandardMaterial color="#8c6a40" roughness={0.95} />
+            </mesh>
+          </group>
         )}
         {/* OPEN sign */}
         <mesh position={[width * 0.32, 0.4 + glassH + 0.05, depth / 2 + 0.2]}>

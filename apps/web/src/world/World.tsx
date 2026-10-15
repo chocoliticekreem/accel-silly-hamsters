@@ -18,6 +18,7 @@ import StreetLights from "./modules/StreetLights";
 import Footfall from "./modules/Footfall";
 import Skyline from "./modules/Skyline";
 import StreetDressing from "./modules/StreetDressing";
+import StreetEvents from "./modules/StreetEvents";
 import Streets from "./modules/Streets";
 import Traffic from "./modules/Traffic";
 
@@ -30,6 +31,7 @@ export const MODULES: Record<string, ComponentType> = {
   Stores,
   StreetLights,
   StreetDressing,
+  StreetEvents,
   Traffic,
   Footfall,
   Agents,
