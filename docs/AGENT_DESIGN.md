@@ -9,9 +9,9 @@ and how they recover when something fails. For judges and the team. Code: `backe
 
 | Agent | How many | Model | What it does | When Claude is unavailable |
 | --- | --- | --- | --- | --- |
-| Citizens | about 28,400 per 14-day run on the current map | none (rules, seeded) | Arrive by persona, walk Shoreditch, visit or find shops shut, remember shut shops for 14 days | not an LLM |
-| Shop owners in the sim | 72 venues | none (rules) | Adapt their own hours day by day inside a run (`backend/sim/owners.py`) | not an LLM |
-| Store-owner agents | 68 (one per non-club shop) | Claude Sonnet 5.5, Message Batches, structured outputs | Read only their own shop's data and propose 0-2 changes to hours or lighting | the deterministic heuristic in `store_owner.py` |
+| Citizens | about 59,800 per 14-day run on the current map (about 4,300 a day) | none (rules, seeded) | Arrive by persona, walk Shoreditch, visit or find shops shut, remember shut shops for 14 days | not an LLM |
+| Shop owners in the sim | 209 venues | none (rules) | Adapt their own hours day by day inside a run (`backend/sim/owners.py`) | not an LLM |
+| Store-owner agents | 203 (one per non-club shop) | Claude Sonnet 5.5, Message Batches, structured outputs | Read only their own shop's data and propose 0-2 changes to hours or lighting | the deterministic heuristic in `store_owner.py` |
 | Analyst (orchestrator) | 1 | Claude Opus 5.5, tool use, adaptive thinking (or a Managed Agents session) | Plans each experiment, picks which proposals to test, runs the sim as a tool, reflects in the lab notebook | `HeuristicAnalyst`, same tools and rules |
 | Report writer | 1 call per shop per session | Claude Sonnet 5.5 with citations | Words each owner's weekly report from the measured numbers | a template |
 | Persona extraction | once, in the data pipeline | Claude Haiku 5.5 | Turns sourced documents into citizen personas | cached response |
@@ -26,7 +26,7 @@ failure.
 `runs/analyst_state.json` before the next begins.
 
 1. **Baseline** (`start` to `baseline`): simulate 14 days with every shop's current settings.
-2. **Propose** (`proposed`): the analyst hands the best run to the store agents. All 68 run as
+2. **Propose** (`proposed`): the analyst hands the best run to the store agents. All 203 run as
    one Message Batch; each sees only its own shop plus public area data (the data firewall).
    Every proposal passes the hard rules (`rules.py`: licensed hours, 30-minute grid, at most two
    changes a week, never a config already tried, clubs never change).
@@ -45,8 +45,8 @@ failure.
 
 ```mermaid
 flowchart LR
-    C["Citizens<br/>~28k per run, rules + memory"] -->|visits, found-shut, kWh| SIM[(14-day sim run)]
-    SIM -->|per-shop KPIs and hourly stats| SA["68 store agents<br/>Sonnet 5.5, one Message Batch"]
+    C["Citizens<br/>~60k per run, rules + memory"] -->|visits, found-shut, kWh| SIM[(14-day sim run)]
+    SIM -->|per-shop KPIs and hourly stats| SA["203 store agents<br/>Sonnet 5.5, one Message Batch"]
     SA -->|0-2 rule-checked proposals each| AN["Analyst<br/>Opus 5.5, tool loop"]
     AN -->|run_sim: changes + hypothesis| R{{Hard rules}}
     R -->|accepted config| SIM
@@ -76,31 +76,35 @@ Every hand-off is an event in the agent log (`GET /api/agents/log`): `handoff`, 
 
 ## How long it runs (measured today)
 
-Measured on the current map (1.5 km, 72 venues, about 28,400 citizens per run), offline backends,
-on a laptop under heavy load (load average above 80), so these are upper bounds:
+Measured on the current map (1.5 km, 209 venues, 203 shops, about 59,800 citizens per run) with
+the offline backends, on a laptop that was also running other jobs (load average 22 to 25):
 
 | What | Time |
 | --- | --- |
-| One 14-day run, cold process | 56 s of simulation (59 s wall) |
-| One run inside a session | 14 to 36 s (the baseline is the slowest) |
-| One offline session: baseline + 4 experiments, stopped on the threshold, then reports for 68 shops with 2 extra-seed checks | 2 min 44 s wall |
-| Chaos demo: 5 runs (one quarantined) through the online code paths (fake Claude) under heavy faults, with reports | 71 s |
+| One 14-day run, cold process | 16.5 s of simulation (17 s wall) |
+| One run inside a session | 19 to 24 s |
+| One offline session: baseline + 2 experiments, stopped on the threshold, then reports for 203 shops with 2 extra-seed checks per report | 2 min 28 s wall |
+| Chaos demo: 3 runs through the online code paths (fake Claude) under heavy faults, with reports | 2 min 9 s |
 
-A live session adds the Claude calls: a Message Batch for 68 store agents per iteration (minutes;
-after `BATCH_TIMEOUT_SECONDS`, 2 h by default, the missing shops go per request) and a few analyst
-turns. A 10-run session runs unattended for tens of minutes to a few hours, checkpointed after
-every step.
+A live session adds the Claude calls: one Message Batch for the 203 store agents per iteration
+(minutes; after `BATCH_TIMEOUT_SECONDS`, 2 h by default, the missing shops go per request) and a
+few analyst turns. A 10-run session runs unattended for tens of minutes to a few hours,
+checkpointed after every step.
 
 ## What it costs
 
-From the cost ledger (`runs/costs.jsonl`, session 58ab54fb42ce, `docs/PMF.md` 6.4): one live
-iteration with reports for 24 shops cost USD 0.3564 over 50 calls: the Opus analyst USD 0.0737
-(2 calls), 24 batched Sonnet store agents USD 0.1379, and 24 Sonnet reports USD 0.1448.
+From the cost ledger (`runs/costs.jsonl`, session 58ab54fb42ce, `docs/PMF.md` 6.4), measured on
+the earlier 24-shop map: one live iteration with reports cost USD 0.3564 over 50 calls: the Opus
+analyst USD 0.0737 (2 calls), 24 batched Sonnet store agents USD 0.1379, and 24 Sonnet reports
+USD 0.1448.
 
-Derived for the current 68-shop map (store agents and reports scale with shops): about USD 0.46
-per run (analyst 0.07 + store agents 0.39) and USD 0.41 for the reports once per session, so a
-10-run session is about USD 5.0, a third of the USD 15 session cap. The pre-flight check below
-makes the cap a hard ceiling.
+Derived for today's 203 shops (store agents and reports scale with shops): about USD 1.24 per
+run (analyst 0.07 + store agents 1.17) and USD 1.22 for the reports once per session, so a
+10-run session is about USD 13.6, under the USD 15 session cap. The cap is a hard ceiling: every
+call is pre-flighted at its worst case, and a batch only carries the shops whose worst case
+(prompt as uncached input plus the full 8,000-token output) still fits: USD 8.66 for all 203
+shops, so late in a session some shops get the heuristic instead of a call that could cross the
+cap. Raise `sessionBudgetUsd` (up to USD 30) to keep every shop on Claude.
 
 ## Failure modes and recovery
 
@@ -129,7 +133,7 @@ that step; it closes again at the next step.
 | Refusal or `max_tokens` | store agents, analyst, reports | heuristic or template | same, now logged and counted as a `fallback` with its `kind` | `tests/test_resilience_agents.py::test_a_refusal_falls_back_to_the_heuristic_for_that_shop` |
 | Empty answer, no `run_sim` | analyst | nudge once, then heuristic | unchanged | `tests/test_resilience_agents.py::test_an_empty_answer_is_nudged_then_falls_back` |
 | Proposal breaks a hard rule | store agents, analyst, owner apply | rejected and logged | unchanged: rules run on every proposal and again on the analyst's choice | `tests/test_agents_rules.py` |
-| Budget reached mid-step | any Claude call | checked against spend so far, so one call could cross the cap | pre-flight worst-case estimate (prompt + `max_tokens`) before every call and batch; stops cleanly with `stoppedReason: "budget"` and resumes at that step | `tests/test_resilience_agents.py::test_preflight_refuses_a_call_that_could_cross_the_cap`, `tests/test_resilience_training.py::test_a_budget_hit_mid_step_stops_cleanly_and_resumes_at_that_step` |
+| Budget reached mid-step | any Claude call | checked against spend so far, so one call could cross the cap | pre-flight worst-case estimate (prompt + `max_tokens`) before every call; a batch carries only the shops that fit (the rest get the heuristic); stops cleanly with `stoppedReason: "budget"` and resumes at that step | `tests/test_resilience_agents.py::test_preflight_refuses_a_call_that_could_cross_the_cap`, `::test_a_batch_only_carries_the_shops_the_budget_can_cover`, `tests/test_resilience_training.py::test_a_budget_hit_mid_step_stops_cleanly_and_resumes_at_that_step` |
 | Sim crashes mid-run | training | session stopped with an error | retried once into the same run id; a second crash quarantines the run (status `failed`, `error.json`, files kept) and the session moves on | `tests/test_resilience_training.py::test_a_transient_sim_crash_is_retried_and_the_session_is_unchanged`, `::test_a_run_that_keeps_crashing_is_quarantined_and_the_session_moves_on` |
 | NaN or infinite objective, zero visits, outlier (gain above 300%) | training | scored as if valid | rejected with the reason in the notebook, quarantined, never reused | `tests/test_resilience_training.py::test_runs_that_fail_a_sanity_guard_are_quarantined_with_the_reason` |
 | Unusable baseline | training | scored as if valid | stops with a clear error | `tests/test_resilience_training.py::test_an_unusable_baseline_stops_the_session_with_a_clear_error` |
@@ -168,11 +172,12 @@ after its Nth checkpoint.
   session's.
 - `uv run python -m backend.cli chaos-demo` runs a short session on the real map under faults in
   a new temp runs folder (never `runs/`) and prints faults injected, recoveries and who recovered
-  from what. Measured today on the current map (`--max-runs 5 --seed 3`, 71 s): 309 faults
-  injected (172 rate limits, 42 timeouts, 37 broken JSON answers, 3 stuck batches, a NaN run...);
-  245 retries, 371 fallbacks, 37 repairs, 3 breaker openings, 4 batch timeouts, 1 run
-  quarantined. The session still stopped normally (threshold) with a better best run: 0.4737
-  visits per kWh against the baseline's 0.4484.
+  from what. Measured today on the current map (`--max-runs 5 --seed 3`, 2 min 9 s): 166 faults
+  injected (90 rate limits, 28 timeouts, 22 broken JSON answers, 3 stuck batches...); 124
+  retries, 648 fallbacks (most of them shops handed to the heuristic while the breaker was
+  open), 22 repairs, 3 breaker openings, 3 batch timeouts. The session still stopped normally
+  (threshold) with a better best run: 0.4869 visits per kWh against the baseline's 0.4848. An
+  earlier run on the 72-venue map also quarantined a NaN run and carried on.
 
 ## Not covered
 
