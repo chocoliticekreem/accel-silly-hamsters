@@ -5,7 +5,7 @@
 // Keys: ↑/↓ (or PgUp/PgDn, ] / [) step floors while inside, Esc leaves; F toggles the free camera (world/modules/
 // FreeCam), Esc leaves it first. ←/→ stay time scrub and number keys playback speed (state/clock).
 // Deep links: #goto=xoyo flies there; #goto=encode&floor=1 opens the interior on that floor.
-import { Building2, Move3d, ChevronDown, ChevronUp, Construction, DoorOpen, Hotel, LogOut, MapPin, MoreHorizontal, Music, ShoppingBag, TrainFront } from "lucide-react";
+import { Building2, Move3d, ChevronDown, ChevronUp, Construction, DoorOpen, Hotel, LogOut, MapPin, Music, ShoppingBag, TrainFront } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMap } from "../state/data";
 import { useTravel } from "../state/travel";
@@ -41,7 +41,6 @@ export function GoToBar() {
   const map = useMap().data ?? null;
   const list = useMemo(() => (map ? placesFor(map) : []), [map]);
   const main = list.filter((p) => p.group === "places");
-  const more = list.filter((p) => p.group !== "places");
   const focus = useTravel((s) => s.focusPlace);
   const interiorOpen = useTravel((s) => s.interiorOpen);
   const [menu, setMenu] = useState(false);
@@ -121,51 +120,45 @@ export function GoToBar() {
   return (
     <>
       <nav className="goto-bar" aria-label="Go to">
-        <span className="goto-label">Go to</span>
-        {main.map((p) => {
-          const Icon = iconFor(p);
-          const inside = interiorOpen && focus === p.key;
-          return (
-            <span key={p.key} className={`goto-item ${p.interior ? "has-enter" : ""}`}>
-              <button
-                className={`goto-btn ${p.key === "encode" ? "goto-hero" : ""} ${focus === p.key ? "on" : ""}`}
-                title={`Fly to ${p.name} · ${p.sub}${p.outside ? " (outside map)" : ""}`}
-                onClick={() => goPlace(p)}
-              >
-                <Icon size={15} /> {p.name}
-                {p.outside && <span className="goto-out">outside map</span>}
-              </button>
-              {p.interior && (
-                <button
-                  className={`goto-enter ${inside ? "on" : ""}`}
-                  title={inside ? `Leave ${p.name}` : `Go inside ${p.name}`}
-                  aria-label={inside ? `Leave ${p.name}` : `Enter ${p.name}`}
-                  onClick={() => (inside ? useTravel.getState().exit() : enterPlace(p))}
-                >
-                  {inside ? <LogOut size={14} /> : <DoorOpen size={14} />}
+        <div className="goto-more" ref={wrap}>
+          <button className={`goto-btn goto-trigger ${menu ? "on" : ""}`} aria-expanded={menu} aria-haspopup="menu" onClick={() => setMenu((m) => !m)}>
+            <MapPin size={15} /> Go to <ChevronDown size={13} className={`dd-caret ${menu ? "up" : ""}`} />
+          </button>
+        </div>
+        {main
+          .filter((p) => p.key === "encode")
+          .map((p) => {
+            const Icon = iconFor(p);
+            const inside = interiorOpen && focus === p.key;
+            return (
+              <span key={p.key} className={`goto-item ${p.interior ? "has-enter" : ""}`}>
+                <button className={`goto-btn goto-hero ${focus === p.key ? "on" : ""}`} title={`Fly to ${p.name} · ${p.sub}`} onClick={() => goPlace(p)}>
+                  <Icon size={15} /> {p.name}
                 </button>
-              )}
-            </span>
-          );
-        })}
-        {more.length > 0 && (
-          <div className="goto-more" ref={wrap}>
-            <button className={`goto-btn ${menu ? "on" : ""}`} aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
-              <MoreHorizontal size={15} /> More
-            </button>
-          </div>
-        )}
+                {p.interior && (
+                  <button
+                    className={`goto-enter ${inside ? "on" : ""}`}
+                    title={inside ? `Leave ${p.name}` : `Go inside ${p.name}`}
+                    aria-label={inside ? `Leave ${p.name}` : `Enter ${p.name}`}
+                    onClick={() => (inside ? useTravel.getState().exit() : enterPlace(p))}
+                  >
+                    {inside ? <LogOut size={14} /> : <DoorOpen size={14} />}
+                  </button>
+                )}
+              </span>
+            );
+          })}
         <FreeCamButton />
       </nav>
       <FreeCamHint />
       {menu && (
         <div className="goto-menu panel" role="menu" ref={menuEl}>
-          {(["clubs", "stations"] as const).map((g) => {
-            const items = more.filter((p) => p.group === g);
+          {(["places", "clubs", "stations"] as const).map((g) => {
+            const items = list.filter((p) => p.group === g);
             if (!items.length) return null;
             return (
               <div key={g} className="goto-group">
-                <div className="goto-group-title">{g === "clubs" ? "Clubs" : "Stations"}</div>
+                <div className="goto-group-title">{g === "places" ? "Places" : g === "clubs" ? "Clubs" : "Stations"}</div>
                 {items.map((p) => {
                   const Icon = iconFor(p);
                   return (
@@ -181,7 +174,7 @@ export function GoToBar() {
                         <Icon size={14} /> <span>{p.name}</span>
                         {p.outside && <span className="goto-out">outside map</span>}
                       </button>
-                      {g === "clubs" && (
+                      {(g === "clubs" || p.interior) && (
                         <button
                           className="goto-enter"
                           title={`Go inside ${p.name}`}
