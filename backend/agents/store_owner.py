@@ -696,12 +696,15 @@ def _accept(rnd: _Round, sid: str, message) -> None:
         suggestions, error = validate_output(sid, _text(repaired))
     except llm.BudgetExceeded:
         raise
-    except llm.LLMError as e:
-        error = f"repair call failed: {e}"
+    except llm.LLMError as e:  # the repair never reached the model: like any outage, heuristic
+        rnd.heuristic[sid] = f"repair failed: {e}"
+        kind = "circuit_open" if isinstance(e, llm.CircuitOpen) else "llm_unavailable"
+        _recover("fallback", rnd, sid, to="heuristic", kind=kind, outcome="heuristic")
+        return
     if error is None:
         rnd.proposals[sid] = suggestions
         return
-    rnd.proposals[sid] = []
+    rnd.proposals[sid] = []  # the model answered badly twice: skip this shop this round
     _recover("skip", rnd, sid, kind="invalid_output", error=error, outcome="no proposals")
 
 

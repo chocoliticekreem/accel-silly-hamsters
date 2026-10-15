@@ -1078,6 +1078,8 @@ def _finish(
     every file of the session is written and a new session cannot start over the wrap-up. A
     session resumed only to stop again (nothing ran, same config) skips the wrap-up it already
     has, so a repeated start costs no new store-agent batch."""
+    llm.reset_breaker()  # the wrap-up is a step of its own
+    llm.set_step("wrap_up")
     state.state = "stopped"
     state.stoppedReason = reason
     llm.log_event(

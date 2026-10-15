@@ -321,6 +321,17 @@ def test_output_that_fails_the_schema_is_repaired_once_then_the_shop_is_skipped(
     assert skip["storeId"] == "s2" and "suggestions[0]" in skip["error"]
 
 
+def test_a_repair_that_cannot_reach_claude_gives_that_shop_the_heuristic(world, monkeypatch):
+    batches = FakeBatches({})
+    monkeypatch.setattr(batches, "results", _raw_results(batches, {"s2": "{not json"}))
+    install_store_client(monkeypatch, batches, Messages([chaos.api_error(503)] * 10))
+    proposals = store_owner.propose_all(world.run, session="sess")
+    assert any(p.storeId == "s2" for p in proposals)  # advice from the heuristic, not nothing
+    assert not [e for e in log(world.run) if e["type"] == "skip"]
+    [fallback] = [e for e in log(world.run) if e["type"] == "fallback"]
+    assert fallback["storeId"] == "s2" and fallback["kind"] == "llm_unavailable"
+
+
 def test_a_refusal_falls_back_to_the_heuristic_for_that_shop(world, monkeypatch):
     batches = FakeBatches({})
     monkeypatch.setattr(

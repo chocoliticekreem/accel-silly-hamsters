@@ -25,6 +25,7 @@ import logging
 import sys
 import tempfile
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, get_args
 
@@ -296,8 +297,12 @@ def _print_demo(summary: dict, events: list[dict]) -> None:
     print("\nRecoveries:")
     for kind, n in summary["recoveries"].items():
         print(f"  {kind:<15} {n:>4}")
-    print("\nTimeline (last 20):")
-    for e in events[-20:]:
+    print("\nWho recovered from what (agent, event, kind: count):")
+    groups = Counter((e["agent"], e["type"], e.get("kind") or "-") for e in events)
+    for (agent, event, kind), n in groups.most_common(15):
+        print(f"  {agent:<12} {event:<14} {kind:<24} {n:>4}")
+    print("\nLast events other than plain retries:")
+    for e in [e for e in events if e["type"] != "retry"][-12:]:
         wait = f" wait {e['wait']}s" if e.get("wait") else ""
         attempt = f" attempt {e['attempt']}" if e.get("attempt") else ""
         print(
