@@ -59,6 +59,9 @@ MIN_DEMAND_PER_DAY = 1.0  # found-closed demand worth opening for, per day...
 MIN_DEMAND_SHARE = 0.03  # ...or 3% of the store's daily visits, whichever is larger
 QUIET_FOOTFALL_SHARE = 0.5  # a night hour is quiet below half the store's mean open-hour footfall
 MIN_GAIN = 0.001  # ignore changes estimated under +0.1% on the objective
+# A one-shop session also tests ideas estimated slightly negative: the estimate is rough and the
+# 14 simulated days decide; the patience rule stops it once nothing beats the best run.
+EXPLORE_MIN_GAIN = -0.05
 DEFAULT_FLOOR_AREA_M2 = 80.0  # only when neither map.json nor the building footprint has one
 HISTORY_RUNS = 8
 REASON_WORDS = 15
@@ -493,10 +496,11 @@ def heuristic_proposals(
     rejected = _owner_rejected(brief)
     base = {brief.store_id: brief.config}
     limit = config.maxChangesPerStore
+    floor = EXPLORE_MIN_GAIN if config.scope_store is not None else MIN_GAIN
     picked: list[Suggestion] = []
     touched: set[int] = set()
     for candidate in candidates:
-        if candidate.gain < MIN_GAIN or len(picked) >= limit:
+        if candidate.gain < floor or len(picked) >= limit:
             break
         if len(picked) + len(candidate.changes) > limit:
             continue
