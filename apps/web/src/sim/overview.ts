@@ -4,7 +4,7 @@
 import type { AdviceStatus, Certainty, Confidence, RunStores, RunSummary, Store, StoreOverview, Suggestion } from "../api/contract";
 import { DAYS_PER_RUN } from "../api/contract";
 import { diffStore, type Change } from "./diff";
-import { GBP_PER_KWH, profitPerWeek } from "./economics";
+import { GBP_PER_KWH, profitPerWeek, windowHours } from "./economics";
 import { rangeLabel } from "./time";
 
 const WEEKS = DAYS_PER_RUN / 7;
@@ -67,11 +67,11 @@ export function composeOverview(i: OverviewInput): StoreOverview {
   const done = i.runs.filter((r) => r.status === "done" && i.storesByRun.has(r.run)).sort((a, b) => a.run - b.run);
   const base = i.storesByRun.get(i.baselineRun)![id];
   const cur = i.storesByRun.get(i.run)![id];
-  const perWeek = (x: typeof cur) => ({ customers: x.kpis.visits / WEEKS, kwh: x.kpis.kwh / WEEKS });
+  const perWeek = (x: typeof cur) => ({ customers: x.kpis.visits / WEEKS, kwh: x.kpis.kwh / WEEKS, hours: (x.kpis.openHours ?? 0) / WEEKS });
   const b = perWeek(base);
   const c = perWeek(cur);
   const frac = (from: number, to: number) => (from > 0 ? (to - from) / from : 0);
-  const profit = (x: typeof cur) => profitPerWeek(i.store.type, perWeek(x).customers - b.customers, perWeek(x).kwh - b.kwh);
+  const profit = (x: typeof cur) => profitPerWeek(i.store.type, perWeek(x).customers - b.customers, perWeek(x).kwh - b.kwh, perWeek(x).hours - b.hours);
 
   // history: baseline + every run that changed this shop's settings vs the run before it
   const history: StoreOverview["history"] = [];
@@ -109,7 +109,13 @@ export function composeOverview(i: OverviewInput): StoreOverview {
     .map((s) => {
       const dCustomers = c.customers * s.expectedDelta.visits;
       const dKwh = c.kwh * s.expectedDelta.kwh;
-      const gbpPerWeek = Math.round(profitPerWeek(i.store.type, dCustomers, dKwh));
+      // an hours change also changes the wage bill: scale the hours actually open by the new window (backend/economics.py)
+      const window = (o: string, cl: string) => windowHours(o, cl);
+      const dHours =
+        s.field === "open" || s.field === "close"
+          ? c.hours * (window(s.field === "open" ? String(s.to) : cur.open, s.field === "close" ? String(s.to) : cur.close) / window(cur.open, cur.close) - 1)
+          : 0;
+      const gbpPerWeek = Math.round(profitPerWeek(i.store.type, dCustomers, dKwh, dHours));
       const { expectedDelta: _d, confidence: _c, reason: _r, ...change } = s;
       const key = JSON.stringify({ ...change, storeId: "" });
       const status: AdviceStatus = tried.has(key) ? ((tried.get(key) ?? 0) >= 0 ? "tested_better" : "tested_worse") : "new";

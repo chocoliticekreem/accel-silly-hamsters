@@ -6,7 +6,7 @@ import { DAYS_PER_RUN, MINUTES_PER_DAY } from "../api/contract";
 import { frontage } from "../sim/geometry";
 import { isOpenAt } from "../sim/time";
 import type { RunConfig } from "./configs";
-import { GBP_PER_KWH, GROSS_MARGIN, SPEND_GBP } from "./report";
+import { GBP_PER_KWH, marginPerVisit } from "./report";
 import type { RunResult } from "./simulate";
 
 const NEARBY_M = 45;
@@ -116,7 +116,7 @@ export function buildInsights(map: CityMap, run: number, cfg: RunConfig, res: Ru
         : null;
 
     // ranked insights from the analyst's suggestions + what the numbers show
-    const gbp = (dv: number, dk: number) => Math.round(((dv * visits * SPEND_GBP[store.type] * GROSS_MARGIN) - dk * kwh * GBP_PER_KWH) / weeks);
+    const gbp = (dv: number, dk: number) => Math.round((dv * visits * marginPerVisit(store.type) - dk * kwh * GBP_PER_KWH) / weeks);
     const missedTotal = res.missedByHour[storeId].reduce((a, x) => a + x, 0) * DAYS_PER_RUN;
     const evidence = [{ label: `Sim replay, run ${run}`, url: `/api/runs/${run}/days/5` }];
     const mine = suggestions.filter((s) => s.storeId === storeId);
