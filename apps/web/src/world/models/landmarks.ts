@@ -2,14 +2,15 @@
 // as a tiling texture, canvas signs). Each is recognisable from the street camera:
 //   XOYO        – Cowper St club: dark brick warehouse, black ground floor, big lit X O Y O letters, steel doors,
 //                 queue barriers on the pavement.
-//   art'otel    – Old St / Great Eastern St hotel tower: dark finned façade, huge bold art panels, lit crown sign.
+//   art'otel    – Old St / Great Eastern St: oval 26-storey "cogwheel" tower, toothed aluminium shelves, twisted
+//                 black fins, glazed top floors, crown sign, 3-storey podium wing (OSM footprint).
 //   Encode Hub  – 41 Pitfield St: converted Victorian brick building, sash windows, lit ENCODE HUB fascia band.
 //   Boxpark     – stacked black shipping containers, glazed shopfronts, upper terrace with lights, big sign.
 //   Old Street  – the roundabout island: sunken tube entrances with roundels, glass canopies, new entrance
 //                 pavilion, trees, cycle dock, digital screens.
 // Frame: origin at the footprint centre on the ground, street face toward +z, metres. Every model's name is a
 // stable `landmark-*` id (interiors / quick travel look the group up by name).
-import { Shape } from "three";
+import { BoxGeometry, ExtrudeGeometry, Shape, Vector2 } from "three";
 import { rng, type Rng } from "../../mock/rng";
 import { Kit, type HeroModel } from "./kit";
 import { label } from "./materials";
@@ -166,116 +167,161 @@ export function xoyo(): HeroModel {
 
 // ------------------------------------------------------------------------------------------------- art'otel
 
-function mural(seed: number, palette: string[]) {
-  return (c: CanvasRenderingContext2D, w: number, h: number) => {
-    const r = rng(seed);
-    c.fillStyle = palette[0];
-    c.fillRect(0, 0, w, h);
-    // big bold blocks
-    for (let i = 0; i < 7; i++) {
-      c.fillStyle = pick(r, palette);
-      const bw = w * (0.3 + r() * 0.6), bh = h * (0.08 + r() * 0.25);
-      c.fillRect(r() * (w - bw), r() * (h - bh), bw, bh);
-    }
-    // circles and half-moons
-    for (let i = 0; i < 5; i++) {
-      c.fillStyle = pick(r, palette);
-      c.beginPath();
-      const rr = w * (0.12 + r() * 0.3);
-      c.arc(r() * w, r() * h, rr, r() * Math.PI, r() * Math.PI + Math.PI * (1 + r()));
-      c.fill();
-    }
-    // stripes
-    c.fillStyle = pick(r, palette);
-    const sy = r() * h * 0.7;
-    for (let i = 0; i < 6; i++) c.fillRect(0, sy + i * h * 0.025, w, h * 0.012);
-    // the eye motif
-    const ex = w * (0.3 + r() * 0.4), ey = h * (0.25 + r() * 0.5), er = w * 0.22;
-    c.fillStyle = "#f6f2e8";
-    c.beginPath();
-    c.ellipse(ex, ey, er, er * 0.55, 0, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = pick(r, palette.slice(1));
-    c.beginPath();
-    c.arc(ex, ey, er * 0.42, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = "#111";
-    c.beginPath();
-    c.arc(ex, ey, er * 0.18, 0, Math.PI * 2);
-    c.fill();
-  };
+/** OSM way 1561019538 (27 levels): tower centre in contract coords (x east, z north). */
+export const ARTOTEL_CENTRE = { x: -615.0, z: 336.2 };
+/** OSM way 1561019539 (3 levels): the podium wing, contract offsets (east, north) from the tower centre. */
+const ARTOTEL_PODIUM: [number, number][] = [
+  [7.3, 24.3], [24.2, 28.2], [24.9, 26.2], [33.7, 28.1], [36.4, 15.2], [28.7, 14.4], [19.0, 12.9], [20.4, 8.2],
+  [21.0, 4.0], [21.6, -1.9], [39.7, -0.8], [40.1, -13.9], [17.9, -14.9], [19.4, -10.0], [12.6, -7.1], [13.8, -3.0],
+  [13.4, 2.3], [12.5, 7.4], [11.1, 11.4], [9.2, 14.2], [15.1, 17.5],
+];
+
+/** A box twisted about its own vertical axis (the tower's twisted aluminium fins). */
+function twistedFin(w: number, h: number, d: number, twist: number) {
+  const g = new BoxGeometry(w, h, d, 1, 3, 1);
+  const p = g.getAttribute("position");
+  for (let i = 0; i < p.count; i++) {
+    const a = twist * (p.getY(i) / h);
+    const x = p.getX(i), z = p.getZ(i);
+    p.setXYZ(i, x * Math.cos(a) - z * Math.sin(a), p.getY(i), x * Math.sin(a) + z * Math.cos(a));
+  }
+  g.computeVertexNormals();
+  return g;
 }
 
+/** Flat elliptical ring lying on y = 0 (thickness t upwards); the outer edge is toothed like a cog when teeth > 0. */
+function cogRing(rx: number, rz: number, out: number, inset: number, t: number, teeth: number, phase: number, depth: number) {
+  const s = new Shape();
+  const N = Math.max(96, teeth * 4);
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const tooth = teeth ? (Math.floor(((a + phase) / (Math.PI * 2)) * teeth * 2) % 2 === 0 ? depth : 0) : 0;
+    const x = Math.cos(a) * (rx + out + tooth), y = Math.sin(a) * (rz + out + tooth);
+    if (i === 0) s.moveTo(x, y);
+    else s.lineTo(x, y);
+  }
+  const hole = new Shape();
+  for (let i = 0; i <= 64; i++) {
+    const a = -(i / 64) * Math.PI * 2;
+    const x = Math.cos(a) * (rx - inset), y = Math.sin(a) * (rz - inset);
+    if (i === 0) hole.moveTo(x, y);
+    else hole.lineTo(x, y);
+  }
+  s.holes.push(hole);
+  return new ExtrudeGeometry(s, { depth: t, bevelEnabled: false, curveSegments: 1 }).rotateX(-Math.PI / 2);
+}
+
+/**
+ * art'otel London Hoxton (Squire & Partners, 2024), 1–3 Rivington St at Old St / Great Eastern St.
+ * A 26-storey cylinder (oval in plan, 27.5 × 37 m from OSM) read as a stack of rotated "cogwheels": every
+ * double-height band sits on a projecting aluminium shelf with a toothed edge, and twisted black aluminium fins
+ * run between the shelves in a syncopated rhythm (dense on the guest-room floors, sparse on the three glazed
+ * entertaining floors at the top). Double-height glazed lobby at the base, a three-storey pale podium wing to
+ * the east (OSM footprint), the art'otel name on the crown. ≈ 92 m.
+ * Local frame: origin at the tower centre, +x east, +z SOUTH (scene z): place it with rotation 0.
+ */
 export function artotel(): HeroModel {
   const k = new Kit();
   const r = rng(1931);
-  const W = 26, D = 22, base = 8.4, fh = 3.25, floors = 26;
-  const top = base + floors * fh; // ≈ 93 m
-  const CORE = "#1a1c21";
-  const PALETTE = ["#ff4f8b", "#ffd23f", "#2f5bea", "#00c2a8", "#ff6b2b", "#141414", "#f4f1ea"];
-  // podium: recessed glass lobby under the tower overhang
-  k.slab("solid", -W / 2, W / 2, 0, 0.3, -D / 2, D / 2, "#7d7a74");
-  k.slab("glass", -W / 2 + 1.2, W / 2 - 1.2, 0.3, base - 0.6, -D / 2 + 1.2, D / 2 - 1.6, "#5a5240");
-  for (let x = -W / 2 + 1.2; x <= W / 2 - 1.2; x += 2.4) k.box("metal", 0.12, base - 0.9, 0.14, x, (base - 0.3) / 2 + 0.15, D / 2 - 1.55, "#2c2f35");
-  for (const x of [-W / 2 + 0.5, -4, 4, W / 2 - 0.5]) k.box("solid", 0.9, base, 0.9, x, base / 2, D / 2 - 0.6, CORE);
-  k.slab("solid", -W / 2, W / 2, base - 0.6, base, -D / 2, D / 2, "#24272d");
-  k.slab("glow", -5, 5, base - 0.66, base - 0.6, D / 2 - 3, D / 2 - 0.3, "#ffe2b8"); // soffit lighting
-  k.sign("artotel-door", 4.2, 0.7, [0, base - 1.15, D / 2 - 1.5], [512, 86], (c, w, h) => {
-    c.fillStyle = "#141414";
-    c.fillRect(0, 0, w, h);
-    label(c, "art'otel", w / 2, h / 2 + 2, w - 30, 64, "#ffffff", "300 {px}px 'Helvetica Neue', Arial, sans-serif");
-  });
-  // tower: dark core with glass bays, floor bands and vertical fins on all four faces
-  k.slab("solid", -W / 2, W / 2, base, top, -D / 2, D / 2, CORE);
-  const GL = ["#18222c", "#1d2833", "#22303c", "#2a3542", "#4e4834", "#5d543a"];
-  const face = (len: number, half: number, ry: number) =>
-    k.at(0, 0, 0, ry, () => {
-      const bays = Math.round(len / 1.6);
-      const bw = len / bays;
-      for (let f = 0; f < floors; f++) {
-        const y = base + f * fh;
-        k.slab("solid", -len / 2, len / 2, y - 0.08, y + 0.32, half, half + 0.06, "#2e3138");
-        for (let b = 0; b < bays; b++) {
-          const x = -len / 2 + (b + 0.5) * bw;
-          k.slab("glass", x - bw / 2 + 0.08, x + bw / 2 - 0.08, y + 0.4, y + fh - 0.12, half, half + 0.03, pick(r, GL));
-        }
-      }
-      for (let b = 0; b <= bays; b++) k.slab("metal", -len / 2 + b * bw - 0.07, -len / 2 + b * bw + 0.07, base, top, half, half + 0.28, "#2a2d33");
-    });
-  face(W, D / 2, 0);
-  face(W, D / 2, Math.PI);
-  face(D, W / 2, Math.PI / 2);
-  face(D, W / 2, -Math.PI / 2);
-  // the art: three giant panels across floors (front + east side), framed, always vivid
-  const panel = (key: string, seed: number, x0: number, x1: number, y0: number, y1: number, z: number, ry: number) =>
-    k.at(0, 0, 0, ry, () => {
-      k.slab("solid", x0 - 0.3, x1 + 0.3, y0 - 0.3, y1 + 0.3, z - 0.05, z + 0.12, "#0f1013");
-      const px = 512, py = Math.min(1024, Math.round((px * (y1 - y0)) / (x1 - x0)));
-      k.sign(key, x1 - x0, y1 - y0, [(x0 + x1) / 2, (y0 + y1) / 2, z + 0.14], [px, py], mural(seed, PALETTE), true);
-    });
-  panel("artotel-mural-a", 3, -W / 2 + 0.6, -1.2, base + fh * 3, base + fh * 13, D / 2 + 0.3, 0);
-  panel("artotel-mural-b", 8, 1.2, W / 2 - 0.6, base + fh * 15, base + fh * 24, D / 2 + 0.3, 0);
-  panel("artotel-mural-c", 21, -D / 2 + 0.6, D / 2 - 0.6, base + fh * 8, base + fh * 19, W / 2 + 0.3, Math.PI / 2);
-  // crown: set-back glazed top, lit rim, sign on two faces, rooftop bar
-  k.slab("solid", -W / 2 - 0.3, W / 2 + 0.3, top, top + 0.5, -D / 2 - 0.3, D / 2 + 0.3, "#2a2d33");
-  k.slab("glass", -W / 2 + 1.5, W / 2 - 1.5, top + 0.5, top + 7, -D / 2 + 1.5, D / 2 - 1.5, "#5d543a");
-  k.slab("solid", -W / 2 + 1.2, W / 2 - 1.2, top + 7, top + 7.8, -D / 2 + 1.2, D / 2 - 1.2, CORE);
-  k.slab("glow", -W / 2 + 1.15, W / 2 - 1.15, top + 7.8, top + 8.05, -D / 2 + 1.15, D / 2 - 1.15, "#ff4f8b");
-  for (const x of [-W / 2 - 0.1, W / 2 + 0.1]) k.slab("metal", x - 0.03, x + 0.03, top + 0.5, top + 1.6, -D / 2, D / 2, "#9aa1a8");
-  for (const z of [-D / 2 - 0.1, D / 2 + 0.1]) k.slab("metal", -W / 2, W / 2, top + 0.5, top + 1.6, z - 0.03, z + 0.03, "#9aa1a8");
-  const crownSign = (z: number, ry: number, len: number) =>
-    k.at(0, 0, 0, ry, () => {
-      k.slab("solid", -len * 0.36, len * 0.36, top + 2.0, top + 6.0, z - 0.1, z + 0.12, "#0d0e10");
-      k.sign("artotel-crown", len * 0.68, 3.4, [0, top + 4.0, z + 0.14], [1024, 200], (c, w, h) => {
+  const RX = 13.8, RZ = 18.5;
+  const LOBBY = 8.0, BAND = 6.6, BANDS = 11, TOPH = 11.4;
+  const topY = LOBBY + BANDS * BAND; // 80.6
+  const H = topY + TOPH; // 92
+  const ALU = "#e2e4e7", FIN = "#1e1f23", CORE = "#15181d";
+  const GLASS = ["#2a3540", "#26313d", "#2e3944", "#232d38", "#6b6048", "#7a6b4c", "#2b3743"];
+  const ell = (a: number, s = 1): [number, number, number] => {
+    const x = Math.cos(a) * RX * s, z = Math.sin(a) * RZ * s;
+    return [x, z, Math.atan2(Math.cos(a) / RX, Math.sin(a) / RZ)];
+  };
+  /** Glass facets around the oval between y0 and y1 (at scale s of the oval). */
+  const glazing = (y0: number, y1: number, s: number, n: number, palette: string[]) => {
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+      const [x0, z0] = ell(a0, s), [x1, z1] = ell(a1, s);
+      const yaw = ell((a0 + a1) / 2, s)[2];
+      const w = Math.hypot(x1 - x0, z1 - z0) + 0.04;
+      k.box("glass", w, y1 - y0, 0.08, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, pick(r, palette), [0, yaw, 0]);
+    }
+  };
+  // solid core so the facets never show daylight through the joins
+  k.cyl("solid", 1, 1, H - LOBBY, 48, [0, (H + LOBBY) / 2, 0], CORE, [0, 0, 0], [RX * 0.96, 1, RZ * 0.96]);
+
+  // lobby: double-height glazing set back behind black columns, warm glow line under the first shelf
+  glazing(0.15, LOBBY - 0.3, 0.9, 40, ["#5d5441", "#6b5f45", "#4f4a3c"]);
+  for (let i = 0; i < 20; i++) {
+    const [x, z] = ell((i / 20) * Math.PI * 2, 0.97);
+    k.cyl("metal", 0.32, 0.32, LOBBY, 10, [x, LOBBY / 2, z], "#1b1c1f");
+  }
+  k.add("glow", cogRing(RX * 0.9, RZ * 0.9, 0.05, 0.4, 0.06, 0, 0, 0), "#ffd9a8", [0, LOBBY - 0.45, 0]);
+
+  // the cogwheel bands
+  const fin = (h: number, twist: number) => twistedFin(0.14, h, 0.85, twist);
+  for (let b = 0; b < BANDS; b++) {
+    const y = LOBBY + b * BAND;
+    const phase = b * 0.37;
+    k.add("solid", cogRing(RX, RZ, 1.0, 0.6, 0.55, 36, phase, 0.55), ALU, [0, y, 0]);
+    k.add("solid", cogRing(RX, RZ, 0.7, 0.55, 0.06, 0, 0, 0), "#3a3d42", [0, y - 0.06, 0]);
+    glazing(y + 0.55, y + BAND, 1, 44, GLASS);
+    k.add("solid", cogRing(RX, RZ, 0.08, 0.2, 0.2, 0, 0, 0), "#2a2d33", [0, y + BAND / 2, 0]); // mid floor line
+    // fins in a syncopated rhythm: clusters with uneven gaps, twist direction alternating per band
+    let a = phase;
+    while (a < phase + Math.PI * 2 - 0.05) {
+      const [x, z, yaw] = ell(a, 1.045);
+      const tw = (b % 2 ? 1 : -1) * (0.6 + r() * 0.5);
+      k.add("solid", fin(BAND - 0.36, tw), FIN, [x, y + 0.32 + (BAND - 0.36) / 2, z], [0, yaw, 0]);
+      a += r() < 0.3 ? 0.2 + r() * 0.12 : 0.07 + r() * 0.05;
+    }
+  }
+
+  // three entertaining floors on top: near-continuous glass, few fins, glass balustrades on the shelves
+  for (let f = 0; f < 3; f++) {
+    const y = topY + f * (TOPH / 3);
+    const out = f === 0 ? 1.4 : 0.6;
+    k.add("solid", cogRing(RX, RZ, out, 0.6, 0.3, 36, 4.1 + f, 0.4), ALU, [0, y, 0]);
+    glazing(y + 0.3, y + TOPH / 3, 0.985, 44, ["#5d5441", "#6b5f45", "#2a3542", "#5a5a4c"]);
+    k.add("glass", cogRing(RX, RZ, out - 0.05, -(out - 0.15), 1.1, 0, 0, 0), "#9fb7c2", [0, y + 0.3, 0]);
+    for (let i = 0; i < 9; i++) {
+      const [x, z, yaw] = ell((i / 9) * Math.PI * 2 + f, 1.045);
+      k.add("solid", fin(TOPH / 3 - 0.3, 0.9), FIN, [x, y + 0.3 + (TOPH / 3 - 0.3) / 2, z], [0, yaw, 0]);
+    }
+  }
+  // roof: parapet cog, lit rim, plant enclosure, aviation lamp
+  k.add("solid", cogRing(RX, RZ, 0.9, 0.6, 0.45, 36, 7.3, 0.5), ALU, [0, H, 0]);
+  k.add("glow", cogRing(RX, RZ, 0.95, -0.85, 0.08, 0, 0, 0), "#ffe6c4", [0, H - 0.1, 0]);
+  k.cyl("solid", 1, 1, 0.3, 40, [0, H + 0.15, 0], "#3a3d42", [0, 0, 0], [RX * 0.95, 1, RZ * 0.95]);
+  k.rbox("solid", 12, 3.2, 14, 0, H + 1.9, -1, "#2a2d33", 0.2);
+  for (let i = 0; i < 4; i++) k.rbox("solid", 2.2, 1.6, 2.2, -4 + i * 2.7, H + 4.3, -4, "#4a4e55", 0.1);
+  k.box("glow", 0.35, 0.35, 0.35, 0, H + 5.3, -1, "#ff2a1a");
+  // the name on the crown: south face (Old St junction) and west face (toward the roundabout)
+  for (const [a, key] of [[Math.PI / 2, "s"], [Math.PI, "w"]] as const) {
+    const [x, z, yaw] = ell(a, 1.0);
+    k.at(x, 0, z, yaw, () => {
+      k.slab("solid", -4.6, 4.6, H + 0.6, H + 3.0, -0.3, 0.05, "#0d0e10");
+      k.sign(`artotel-crown-${key}`, 9.0, 2.2, [0, H + 1.8, 0.07], [1024, 250], (c, w, h) => {
         c.fillStyle = "#0d0e10";
         c.fillRect(0, 0, w, h);
-        label(c, "art'otel", w / 2, h / 2 + 6, w - 60, 170, "#ffffff", "300 {px}px 'Helvetica Neue', Arial, sans-serif");
+        label(c, "art'otel", w / 2, h / 2 + 8, w - 60, 200, "#ffffff", "300 {px}px 'Helvetica Neue', Arial, sans-serif");
       });
     });
-  crownSign(D / 2 - 1.4, 0, W);
-  crownSign(W / 2 - 1.4, Math.PI / 2, D);
-  for (let i = 0; i < 6; i++) k.rbox("solid", 1.2, 0.9, 1.2, -W / 2 + 3 + i * 4, top + 0.95, -D / 2 + 2.6, "#3f6b35", 0.3); // roof planters
-  k.box("glow", 0.4, 0.4, 0.4, 0, top + 8.4, 0, "#ff2a1a"); // aviation lamp
+  }
+
+  // podium wing (3 storeys): pale stone, ribbon windows, dark ground-floor shopfront line
+  const pod = new Shape(ARTOTEL_PODIUM.map(([x, z]) => new Vector2(x, z)));
+  const PH = 12.6;
+  k.add("solid", new ExtrudeGeometry(pod, { depth: PH, bevelEnabled: false }).rotateX(-Math.PI / 2), "#d7d3ca", [0, 0, 0]);
+  k.add("solid", new ExtrudeGeometry(pod, { depth: 0.4, bevelEnabled: false }).rotateX(-Math.PI / 2), "#9aa0a6", [0, PH, 0]);
+  const n = ARTOTEL_PODIUM.length;
+  for (let i = 0; i < n; i++) {
+    const [ax, an] = ARTOTEL_PODIUM[i], [bx, bn] = ARTOTEL_PODIUM[(i + 1) % n];
+    const az = -an, bz = -bn; // north → scene -z
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len < 2.5) continue;
+    const yaw = -Math.atan2(bz - az, bx - ax);
+    const cx = (ax + bx) / 2, cz = (az + bz) / 2;
+    k.box("glass", len - 0.8, 3.2, 0.3, cx, 1.9, cz, pick(r, ["#5d5441", "#4f4a3c", "#22303c"]), [0, yaw, 0]);
+    k.box("solid", len - 0.4, 0.5, 0.36, cx, 3.8, cz, "#1b1c1f", [0, yaw, 0]);
+    for (const y of [6.0, 9.6]) k.box("glass", len - 1.2, 2.0, 0.3, cx, y, cz, pick(r, GLASS), [0, yaw, 0]);
+  }
   return k.model("landmark-artotel", { ao: 4 });
 }
 

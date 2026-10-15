@@ -16,6 +16,7 @@ import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { heroGroup } from "../hero";
 import { heroModel } from "../models";
+import { ARTOTEL_CENTRE } from "../models/landmarks";
 import { setHeroNight } from "../models/materials";
 
 /** Fallback contract positions (x east, z north) when neither the map nor resolveLandmarks knows the place. */
@@ -45,6 +46,11 @@ function place(map: CityMap): Placed[] {
     const xoyoStore = spot.key === "xoyo" ? map.stores.find((s) => /xoyo/i.test(s.name) || s.id === "c4") : undefined;
     const bid = lm?.buildingId ?? xoyoStore?.buildingId ?? (spot.key === "xoyo" ? "b72" : undefined);
     const b = bid ? map.buildings.find((x) => x.id === bid) : undefined;
+    // art'otel is modelled on its OSM footprint in true orientation: tower centre, no turn, no fit
+    if (spot.key === "artotel") {
+      const [ax, az] = toScene(ARTOTEL_CENTRE.x, ARTOTEL_CENTRE.z);
+      return { name: spot.name, x: ax, z: az, rot: 0, scale: [1, 1, 1] as [number, number, number] };
+    }
     const cx = b?.x ?? lm?.x ?? spot.x;
     const cz = b?.z ?? lm?.z ?? spot.z;
     const [x, z] = toScene(cx, cz);
