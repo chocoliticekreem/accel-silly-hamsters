@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentDay } from "../api/contract";
-import { prepareAgents, sampleAgent } from "./interp";
+import { mergeDays, prepareAgents, sampleAgent } from "./interp";
 
 const agent: AgentDay = {
   id: "a1",
@@ -47,5 +47,19 @@ describe("interp", () => {
   it("faces the direction of travel", () => {
     const s = sampleAgent(p, 115); // moving +x
     expect(s.heading).toBeCloseTo(Math.PI / 2);
+  });
+});
+
+describe("mergeDays", () => {
+  const trip = (id: string, t0: number): AgentDay => ({ id, persona: "night-owl", returning: true, path: [[t0, 0, 0], [t0 + 60, 10, 0]], visits: [] });
+
+  it("keeps a trip that crosses midnight once, even though both day files list it", () => {
+    const late = trip("r7", 1400);
+    const merged = mergeDays([{ agents: [late, trip("v1-3", 600)] }, { agents: [late, trip("v2-1", 2000)] }]);
+    expect(merged.map((a) => a.id)).toEqual(["r7", "v1-3", "v2-1"]);
+  });
+
+  it("keeps two different trips by the same regular", () => {
+    expect(mergeDays([{ agents: [trip("r7", 1400), trip("r7", 1900)] }])).toHaveLength(2);
   });
 });

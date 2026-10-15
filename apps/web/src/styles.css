@@ -1250,7 +1250,11 @@ button.chip:hover {
   background: rgba(255, 255, 255, 0.02);
   text-align: left;
 }
-.calib-row:hover {
+.calib-row:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.calib-row:hover:not(:disabled) {
   border-color: var(--line-strong);
 }
 .calib-name {

@@ -37,6 +37,24 @@ function hash(s: string) {
   return (h >>> 0) / 4294967295;
 }
 
+/**
+ * Merges consecutive day files into one trip list. A trip that crosses midnight is listed in both
+ * day files with the same id and identical path (backend/CONTRACT_CHANGES.md), and a regular can make
+ * two trips in one file, so a trip's identity is id + start time. Later files never re-add a trip.
+ */
+export function mergeDays(days: { agents: AgentDay[] }[]): AgentDay[] {
+  const seen = new Set<string>();
+  const out: AgentDay[] = [];
+  for (const d of days)
+    for (const a of d.agents) {
+      const key = `${a.id}@${a.path[0]?.[0] ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(a);
+    }
+  return out;
+}
+
 export function prepareAgents(agents: AgentDay[], opts: { jitter?: number } = {}): PreparedAgent[] {
   const jitter = opts.jitter ?? 2.5;
   return agents
