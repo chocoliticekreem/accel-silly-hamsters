@@ -68,7 +68,7 @@ REASON_WORDS = 15
 MAX_EXPECTED_DELTA = 3.0  # +300%: anything larger from a model is noise, not an estimate
 
 BATCH_MAX_TOKENS = 8000
-BATCH_POLL_SECONDS = 30
+BATCH_POLL_SECONDS: float = 30
 BATCH_TIMEOUT_SECONDS = float(os.getenv("BATCH_TIMEOUT_SECONDS", str(2 * 3600)))
 
 

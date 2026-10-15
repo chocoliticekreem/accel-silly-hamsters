@@ -278,7 +278,7 @@ def record_recovery(
 # --- the one retry policy, and the circuit breaker --------------------------------------------
 
 _rng = random.Random()
-_sleep = time.sleep
+_sleep: Callable[[float], None] = time.sleep  # patched by tests and the chaos demo
 _breaker = {"failures": 0, "open": False}
 
 

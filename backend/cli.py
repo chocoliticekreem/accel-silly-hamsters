@@ -12,6 +12,8 @@ python -m backend.cli train-config set threshold=0.01 levers=hours storeIds=s1,s
                                                  validate and save runs/training_config.json
 python -m backend.cli calibrate                  sim vs calibration targets -> chart PNG
 python -m backend.cli reports --run N            (re)write owner reports for run N
+python -m backend.cli chaos-demo                 a short session under injected faults (fake
+                                                 Claude, temp runs dir) + recovery summary
 uvicorn backend.api.main:app --reload            serve the API
 """
 
@@ -21,6 +23,9 @@ import argparse
 import json
 import logging
 import sys
+import tempfile
+import time
+from pathlib import Path
 from typing import Any, get_args
 
 from pydantic import ValidationError
@@ -203,6 +208,117 @@ def cmd_reports(args: argparse.Namespace) -> None:
     )
 
 
+# Faults for the live demo: every layer fails often enough to watch it recover.
+DEMO_CHAOS = (
+    "llm_429:0.3,llm_529:0.1,llm_timeout:0.1,llm_conn:0.05,bad_json:0.2,refusal:0.05,"
+    "batch_stuck:0.5,batch_partial:0.2,sim_crash:0.15,sim_nan:0.1"
+)
+
+
+def chaos_demo(
+    *,
+    runs_dir: Path | None,
+    spec: str,
+    seed: int,
+    max_runs: int,
+    wait_scale: float = 0.02,
+) -> dict:
+    """A short training session through the agents' online code paths (the fake Claude client:
+    no key, no spend) with CHAOS faults on, in a new runs/ directory (never the real one). Prints
+    the faults injected, the recoveries and the recovery timeline; returns the summary. Backoff
+    waits are compressed by wait_scale. Everything it switches on is switched back off."""
+    from backend import chaos, llm, store
+    from backend.agents import store_owner, training
+
+    target = (runs_dir or Path(tempfile.mkdtemp(prefix="chaos-demo-"))).resolve()
+    if target == (settings.ROOT / "runs").resolve() or (target.exists() and any(target.iterdir())):
+        sys.exit(f"refusing to run the chaos demo in {target}: use a new or empty directory")
+    saved = (settings.RUNS_DIR, settings.LLM_CACHE_DIR, settings.FAKE_LLM, llm._client, llm._sleep)
+    saved_batch = (store_owner.BATCH_TIMEOUT_SECONDS, store_owner.BATCH_POLL_SECONDS)
+    settings.RUNS_DIR, settings.LLM_CACHE_DIR = target, target / "llm_cache"
+    settings.FAKE_LLM, llm._client = True, None
+    llm._sleep = lambda seconds: time.sleep(seconds * wait_scale)
+    store_owner.BATCH_TIMEOUT_SECONDS, store_owner.BATCH_POLL_SECONDS = 3 * wait_scale, 0.0
+    injected = chaos.configure(spec, seed)
+    started = time.perf_counter()
+    try:
+        config = TrainingConfig(analystBackend="messages", storeAgents="batch", maxRuns=max_runs)
+        state = training.train(config, fresh=True)
+        events = _recovery_timeline(target)
+        spent = llm.spent_usd(session=state.sessionId)
+        runs = store.load_index()
+    finally:
+        chaos.configure("")
+        settings.RUNS_DIR, settings.LLM_CACHE_DIR, settings.FAKE_LLM, llm._client, llm._sleep = (
+            saved
+        )
+        store_owner.BATCH_TIMEOUT_SECONDS, store_owner.BATCH_POLL_SECONDS = saved_batch
+    summary = {
+        "runsDir": str(target),
+        "seconds": round(time.perf_counter() - started, 1),
+        "stoppedReason": state.stoppedReason,
+        "bestRun": state.bestRun,
+        "bestObjective": state.bestObjective,
+        "runs": state.runsThisSession,
+        "quarantinedRuns": state.quarantinedRuns,
+        "failedRuns": [r.run for r in runs if r.status == "failed"],
+        "faultsInjected": dict(sorted(injected.injected.items())),
+        "recoveries": {k: v for k, v in state.recoveries.items() if v},
+        "simulatedSpendUsd": round(spent, 4),
+    }
+    _print_demo(summary, events)
+    return summary
+
+
+def _recovery_timeline(runs_dir: Path) -> list[dict]:
+    from backend import llm
+
+    kinds = set(llm.RECOVERY_COUNTS)
+    events = []
+    for path in [runs_dir / "llm_log.jsonl", *sorted(runs_dir.glob("*/llm_log.jsonl"))]:
+        for line in path.read_text().splitlines() if path.exists() else []:
+            event = json.loads(line)
+            if event.get("type") in kinds:
+                events.append(event)
+    return sorted(events, key=lambda e: e["at"])
+
+
+def _print_demo(summary: dict, events: list[dict]) -> None:
+    print(f"\nChaos demo: {summary['seconds']}s, runs in {summary['runsDir']}")
+    print(
+        f"Session: stopped ({summary['stoppedReason']}), best run {summary['bestRun']} "
+        f"(objective {summary['bestObjective']}), runs {summary['runs']}, "
+        f"quarantined {summary['quarantinedRuns']}"
+    )
+    print("\nFaults injected:")
+    for fault, n in summary["faultsInjected"].items():
+        print(f"  {fault:<15} {n:>4}")
+    print("\nRecoveries:")
+    for kind, n in summary["recoveries"].items():
+        print(f"  {kind:<15} {n:>4}")
+    print("\nTimeline (last 20):")
+    for e in events[-20:]:
+        wait = f" wait {e['wait']}s" if e.get("wait") else ""
+        attempt = f" attempt {e['attempt']}" if e.get("attempt") else ""
+        print(
+            f"  {e['at'][11:19]} {e.get('step') or '-':<8} {e['agent']:<12} {e['type']:<14} "
+            f"{e.get('kind', ''):<16}{attempt}{wait} -> {e.get('outcome', '')}"
+        )
+    print(
+        f"\nSimulated Claude spend (fake client, nothing billed): ${summary['simulatedSpendUsd']}"
+    )
+
+
+def cmd_chaos_demo(args: argparse.Namespace) -> None:
+    chaos_demo(
+        runs_dir=args.runs_dir,
+        spec=args.chaos,
+        seed=args.seed,
+        max_runs=args.max_runs,
+        wait_scale=args.wait_scale,
+    )
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m backend.cli")
     sub = p.add_subparsers(dest="command", required=True)
@@ -264,6 +380,19 @@ def parser() -> argparse.ArgumentParser:
     prp.add_argument("--run", type=int, required=True)
     prp.add_argument("--baseline", type=int, default=None)
     prp.set_defaults(func=cmd_reports)
+
+    pcd = sub.add_parser(
+        "chaos-demo",
+        help="a short training session under injected faults, with a recovery summary",
+        description="Online agents against a fake Claude client (no key, no spend) in a new "
+        "runs directory; the real runs/ is never touched.",
+    )
+    pcd.add_argument("--chaos", default=DEMO_CHAOS, help="CHAOS spec (backend/chaos.py)")
+    pcd.add_argument("--seed", type=int, default=7, help="chaos seed")
+    pcd.add_argument("--max-runs", type=int, default=4)
+    pcd.add_argument("--runs-dir", type=Path, default=None, help="default: a new temp dir")
+    pcd.add_argument("--wait-scale", type=float, default=0.02, help="backoff waits x this")
+    pcd.set_defaults(func=cmd_chaos_demo)
     return p
 
 
