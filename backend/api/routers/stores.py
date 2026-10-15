@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.encoders import jsonable_encoder
@@ -50,13 +49,17 @@ def get_store_overview(store_id: str, run: int | None = None) -> JSONResponse:
 
 
 def _is_running(state: AnalystState | None) -> bool:
+    """A live trainer holds the lock: running, however old its checkpoint. Without one, a
+    "running" checkpoint counts only while young (a session about to take the lock); one from a
+    clock running fast (timestamp in the future) is a ghost."""
     if state is None or state.state != "running":
         return False
-    try:
-        updated = datetime.strptime(state.updatedAt, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
-    except ValueError:
+    if training.lock_held():
         return True
-    return (datetime.now(UTC) - updated).total_seconds() < STALE_SESSION_SECONDS
+    age = training.checkpoint_age_seconds(state)
+    if age is None:
+        return True
+    return -training.CLOCK_SKEW_SECONDS <= age < STALE_SESSION_SECONDS
 
 
 def _status(state: AnalystState) -> AnalystStatus:

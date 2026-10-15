@@ -11,14 +11,18 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import threading
+import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 from backend import cache, settings
 from backend.schemas import CostSummary
 from backend.store import now_iso
 
+T = TypeVar("T")
 _lock = threading.Lock()
 _client = None
 
@@ -44,17 +48,27 @@ FALLBACK_MODELS = {"claude-opus-5-5", "claude-sonnet-5-5"}
 
 
 def available() -> bool:
+    if settings.FAKE_LLM:
+        return True
     if settings.OFFLINE:
         return False
     return bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"))
 
 
 def client():
+    """The process's Anthropic client. Its own retries are off: call_with_retries is the one
+    retry policy, so a request is never retried by two layers."""
     global _client
-    if _client is None:
+    if settings.FAKE_LLM:
+        from backend import fake_llm
+
+        if not isinstance(_client, fake_llm.FakeClient):
+            _client = fake_llm.FakeClient()
+        return _client
+    if _client is None or type(_client).__name__ == "FakeClient":
         import anthropic
 
-        _client = anthropic.Anthropic()
+        _client = anthropic.Anthropic(max_retries=0, timeout=settings.LLM_TIMEOUT_SECONDS)
     return _client
 
 
@@ -201,6 +215,219 @@ class BudgetExceeded(LLMError):
     """A spend cap was reached. Training catches this, checkpoints and stops ("budget")."""
 
 
+class LLMUnavailable(LLMError):
+    """A call failed for good: a fatal error, or retries ran out (attempts or total time).
+    Agents catch LLMError and degrade to their heuristic."""
+
+
+class CircuitOpen(LLMUnavailable):
+    """The breaker is open: no Claude call until the training loop's next step."""
+
+
+# --- recovery events and counts -------------------------------------------------------------
+
+# Event type -> AgentSession.recoveries key. Every error, retry, fallback and recovery is one
+# event in the agent log (GET /api/agents/log) and one count in the session.
+RECOVERY_COUNTS = {
+    "retry": "retries",
+    "fallback": "fallbacks",
+    "repair": "repairs",
+    "skip": "skipped",
+    "resume": "resumed",
+    "quarantine": "quarantined",
+    "restore": "restored",
+    "llm_error": "errors",
+    "breaker_open": "breakerOpens",
+    "batch_timeout": "batchTimeouts",
+    "lock_takeover": "lockTakeovers",
+    "reconcile": "reconciled",
+}
+_recoveries: dict[str | None, dict[str, int]] = {}
+_step: str | None = None  # the training step in progress, for event context
+
+
+def set_step(step: str | None) -> None:
+    global _step
+    _step = step
+
+
+def reset_recoveries() -> None:
+    _recoveries.clear()
+
+
+def load_recoveries(session: str, counts: dict[str, int]) -> None:
+    """Continue a resumed session's counts from its checkpoint."""
+    _recoveries[session] = {**{k: 0 for k in RECOVERY_COUNTS.values()}, **counts}
+
+
+def recovery_counts(session: str | None) -> dict[str, int]:
+    return dict(_recoveries.get(session) or {k: 0 for k in RECOVERY_COUNTS.values()})
+
+
+def record_recovery(
+    event: str, *, agent: str, run: int | None = None, session: str | None = None, **fields: Any
+) -> None:
+    """Log one error/retry/fallback/recovery event (a RECOVERY_COUNTS type) and count it.
+    Fields: kind (what failed), attempt, wait (seconds), outcome, plus anything specific."""
+    counts = _recoveries.setdefault(session, {k: 0 for k in RECOVERY_COUNTS.values()})
+    key = RECOVERY_COUNTS[event]
+    counts[key] = counts.get(key, 0) + 1
+    log_event(run, {"agent": agent, "type": event, "step": _step, "session": session, **fields})
+
+
+# --- the one retry policy, and the circuit breaker --------------------------------------------
+
+_rng = random.Random()
+_sleep: Callable[[float], None] = time.sleep  # patched by tests and the chaos demo
+_breaker = {"failures": 0, "open": False}
+
+
+def classify(error: BaseException) -> str:
+    """ "retryable" (rate limit, overload, 5xx, 408/409, timeout, connection) or "fatal"."""
+    import anthropic
+
+    if isinstance(error, anthropic.APIConnectionError):  # includes APITimeoutError
+        return "retryable"
+    if isinstance(error, anthropic.APIStatusError):
+        code = error.status_code
+        return "retryable" if code in (408, 409, 429) or code >= 500 else "fatal"
+    return "fatal"
+
+
+def _error_kind(error: BaseException) -> str:
+    import anthropic
+
+    if isinstance(error, anthropic.APITimeoutError):
+        return "timeout"
+    if isinstance(error, anthropic.APIConnectionError):
+        return "connection"
+    if isinstance(error, anthropic.APIStatusError):
+        return f"http_{error.status_code}"
+    return type(error).__name__
+
+
+def retry_after_seconds(error: BaseException) -> float | None:
+    """The server's retry-after-ms / retry-after (seconds) header, when it sent one."""
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+    for name, scale in (("retry-after-ms", 1000.0), ("retry-after", 1.0)):
+        value = headers.get(name)
+        if value is None:
+            continue
+        try:
+            return max(0.0, float(value) / scale)
+        except ValueError:
+            continue
+    return None
+
+
+def backoff_wait(attempt: int) -> float:
+    """Exponential backoff with full jitter: uniform(0, min(max wait, base x 2^(attempt-1)))."""
+    ceiling = min(settings.RETRY_MAX_WAIT_SECONDS, settings.RETRY_BASE_SECONDS * 2 ** (attempt - 1))
+    return _rng.uniform(0.0, ceiling)
+
+
+def reset_breaker() -> None:
+    """Close the breaker (the training loop calls this at every step boundary)."""
+    _breaker.update(failures=0, open=False)
+
+
+def breaker_open() -> bool:
+    return bool(_breaker["open"])
+
+
+def _failed_attempt(
+    error: BaseException, *, agent: str, run: int | None, session: str | None
+) -> None:
+    """Count a failed attempt toward the breaker. Unavailability counts (retryable errors); an
+    auth or permission error opens it at once (no call can succeed); any other fatal error is
+    about that one request (bad request, expired results) and does not count."""
+    status = getattr(error, "status_code", None)
+    if status in (401, 403):
+        _breaker["failures"] = settings.BREAKER_THRESHOLD
+    elif classify(error) == "retryable":
+        _breaker["failures"] += 1
+    else:
+        return
+    if not _breaker["open"] and _breaker["failures"] >= settings.BREAKER_THRESHOLD:
+        _breaker["open"] = True
+        record_recovery(
+            "breaker_open",
+            agent=agent,
+            run=run,
+            session=session,
+            failures=_breaker["failures"],
+            outcome="heuristic for the rest of the step",
+        )
+
+
+def call_with_retries(
+    fn: Callable[[], T],
+    *,
+    agent: str,
+    run: int | None = None,
+    session: str | None = None,
+    what: str = "messages.create",
+) -> T:
+    """Run one Claude API call under the retry policy and the circuit breaker.
+
+    Retryable errors are retried with backoff_wait (or the server's retry-after, capped at
+    RETRY_MAX_WAIT_SECONDS) up to RETRY_MAX_ATTEMPTS attempts and RETRY_TOTAL_SECONDS of waiting;
+    fatal errors are not. Raises LLMUnavailable when it gives up and CircuitOpen while the breaker
+    is open. Each retry and the final error is a recovery event in the agent log.
+    """
+    from backend import chaos
+
+    if _breaker["open"]:
+        raise CircuitOpen(f"{agent}: circuit open, Claude calls paused until the next step")
+    waited = 0.0
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            chaos.inject_llm()
+            result = fn()
+        except Exception as e:
+            fatal = classify(e) == "fatal"
+            _failed_attempt(e, agent=agent, run=run, session=session)
+            hint = retry_after_seconds(e)
+            wait = min(
+                settings.RETRY_MAX_WAIT_SECONDS, hint if hint is not None else backoff_wait(attempt)
+            )
+            reason = None
+            if fatal:
+                reason = "fatal"
+            elif _breaker["open"]:
+                reason = "circuit open"
+            elif attempt >= settings.RETRY_MAX_ATTEMPTS:
+                reason = f"gave up after {attempt} attempts"
+            elif waited + wait > settings.RETRY_TOTAL_SECONDS:
+                reason = f"retry time cap {settings.RETRY_TOTAL_SECONDS:.0f}s reached"
+            error = f"{_error_kind(e)}: {str(e)[:200]}"
+            record_recovery(
+                "retry" if reason is None else "llm_error",
+                agent=agent,
+                run=run,
+                session=session,
+                what=what,
+                kind=_error_kind(e),
+                attempt=attempt,
+                wait=0.0 if reason else round(wait, 3),
+                outcome=reason or "retrying",
+                error=error,
+            )
+            if reason is not None:
+                exc = CircuitOpen if _breaker["open"] and not fatal else LLMUnavailable
+                raise exc(f"{agent}: {reason}: {error}") from e
+            _sleep(wait)
+            waited += wait
+            continue
+        _breaker["failures"] = 0
+        return result
+
+
 def spent_usd(*, session: str | None = None) -> float:
     return sum(
         r.get("costUsd", r["costGbp"] / settings.GBP_PER_USD)
@@ -225,21 +452,59 @@ def session_budget_usd(session: str | None) -> float:
     return _session_budgets_usd.get(session, settings.SESSION_BUDGET_USD)
 
 
-def check_budget(session: str | None = None) -> None:
-    """Raise BudgetExceeded before a call once the global or the session cap is reached.
+def check_budget(session: str | None = None, estimate_usd: float = 0.0) -> None:
+    """Raise BudgetExceeded before a call once the global or the session cap is reached, or when
+    a call estimated at `estimate_usd` (preflight) could cross it: spend never passes a cap.
 
     Call this before every Claude request or batch submission. The ledger lives in
     runs/costs.jsonl, so deleting runs/ resets the count: keep a Console spend limit as the
     real backstop.
     """
-    total = spent_usd()
-    if total >= settings.SPEND_CAP_USD:
-        raise BudgetExceeded(f"spend cap reached: ${total:.2f} of ${settings.SPEND_CAP_USD:.2f}")
+    caps = [("spend cap", spent_usd(), settings.SPEND_CAP_USD)]
     if session is not None:
-        in_session = spent_usd(session=session)
-        cap = session_budget_usd(session)
-        if in_session >= cap:
-            raise BudgetExceeded(f"session budget reached: ${in_session:.2f} of ${cap:.2f}")
+        caps.append(("session budget", spent_usd(session=session), session_budget_usd(session)))
+    for name, spent, cap in caps:
+        if spent >= cap:
+            raise BudgetExceeded(f"{name} reached: ${spent:.2f} of ${cap:.2f}")
+        if spent + estimate_usd > cap:
+            raise BudgetExceeded(
+                f"{name}: the next call (up to ${estimate_usd:.2f}) would cross it: "
+                f"${spent:.2f} of ${cap:.2f} spent"
+            )
+
+
+# Characters per token for the pre-flight estimate: low on purpose (JSON and numbers tokenise
+# densely), so the estimate errs high.
+CHARS_PER_TOKEN = 3.0
+
+
+def estimate_usd(request: dict, *, batch: bool = False) -> float:
+    """Worst-case cost of one request before it is sent: every prompt character as an uncached
+    cache-write token, plus max_tokens of output."""
+    model = request["model"]
+    prompt = json.dumps(
+        [request.get(k) for k in ("system", "messages", "tools")],
+        separators=(",", ":"),
+        default=str,
+    )
+    usage = Usage(
+        cache_write_tokens=int(len(prompt) / CHARS_PER_TOKEN) + 1,
+        output_tokens=int(request.get("max_tokens", 0)),
+    )
+    return usage.cost_usd(model, batch=batch)
+
+
+def remaining_usd(session: str | None = None) -> float:
+    """What can still be spent before the global cap or this session's cap, whichever is first."""
+    left = settings.SPEND_CAP_USD - spent_usd()
+    if session is not None:
+        left = min(left, session_budget_usd(session) - spent_usd(session=session))
+    return max(0.0, left)
+
+
+def preflight(session: str | None, request: dict, *, batch: bool = False) -> None:
+    """check_budget with this request's worst-case cost: call before sending it."""
+    check_budget(session, estimate_usd(request, batch=batch))
 
 
 def system_blocks(*stable_parts: str) -> list[dict]:
@@ -288,14 +553,17 @@ def call_json(
             log_event(run, {"agent": agent, "type": "cached_response", "key": key})
             return hit["data"], usage
 
-    check_budget(session)
+    preflight(session, request)
     log_event(run, {"agent": agent, "type": "request", "request": request})
-    if model in FALLBACK_MODELS:
-        response = client().beta.messages.create(
-            **request, betas=[FALLBACK_BETA], fallbacks="default"
-        )
-    else:
-        response = client().messages.create(**request)
+
+    def send():
+        if model in FALLBACK_MODELS:
+            return client().beta.messages.create(
+                **request, betas=[FALLBACK_BETA], fallbacks="default"
+            )
+        return client().messages.create(**request)
+
+    response = call_with_retries(send, agent=agent, run=run, session=session)
     usage = Usage.from_api(response.usage)
     record_usage(agent, model, usage, run=run, session=session)
     text = next((b.text for b in response.content if b.type == "text"), "")

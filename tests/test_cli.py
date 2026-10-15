@@ -160,6 +160,29 @@ def test_reports_are_rewritten_on_the_sessions_objective(world, monkeypatch, cap
     assert seen == [{"objective": "netValueGbp"}]
 
 
+def test_chaos_demo_runs_a_session_under_faults_and_prints_the_recoveries(world, tmp_path, capsys):
+    from backend import chaos, llm, settings
+
+    demo = tmp_path / "demo-runs"
+    real_runs = settings.RUNS_DIR
+    summary = cli.chaos_demo(runs_dir=demo, spec=cli.DEMO_CHAOS, seed=1, max_runs=4, wait_scale=0)
+    out = capsys.readouterr().out
+    assert "Recoveries" in out and "Faults injected" in out
+    assert summary["stoppedReason"] in ("threshold", "max_runs") and summary["bestRun"]
+    assert sum(summary["recoveries"].values()) > 0
+    assert (demo / "analyst_state.json").exists()
+    # everything it switched on for the demo is switched back off
+    assert settings.RUNS_DIR == real_runs and not settings.FAKE_LLM
+    assert not chaos.current().enabled() and type(llm._client).__name__ != "FakeClient"
+
+
+def test_chaos_demo_never_writes_into_the_real_runs_dir(world):
+    from backend import settings
+
+    with pytest.raises(SystemExit, match="refusing"):
+        cli.chaos_demo(runs_dir=settings.ROOT / "runs", spec="", seed=0, max_runs=2)
+
+
 def test_train_runs_end_to_end_with_flags(world, capsys):
     cli.main(["train", "--max-runs", "2", "--levers", "hours", "--store-agents", "heuristic"])
     state = AnalystState.model_validate(json.loads(capsys.readouterr().out))

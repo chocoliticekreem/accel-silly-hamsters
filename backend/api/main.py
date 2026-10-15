@@ -9,7 +9,10 @@ hand-made sample run in runs/0 (and its map), so the frontend can switch off moc
 
 from __future__ import annotations
 
+import logging
 import shutil
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,7 +39,24 @@ if (
 # Any localhost port: Vite moves to the next free port when 5173 is taken.
 LOCAL_ORIGIN_REGEX = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """On startup, a checkpoint left "running" by a trainer that died (crash, kill, or this API
+    restarting under its own session) is reconciled to stopped, so the UI shows no ghost."""
+    try:
+        from backend.agents import training
+
+        training.reconcile_stale(grace_seconds=0)
+    except Exception:  # never keep the API from starting
+        logger.exception("could not reconcile the training checkpoint")
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Smart City Sim API",
     version=settings.SIM_VERSION,
     summary="Shoreditch sim runs, store-owner reports and the analyst, as JSON.",

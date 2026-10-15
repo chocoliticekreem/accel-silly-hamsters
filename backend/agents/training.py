@@ -51,24 +51,26 @@ session is never resumed: "optimise again" starts a new one.
 from __future__ import annotations
 
 import fcntl
+import math
 import os
 import socket
 import threading
 import traceback
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from itertools import combinations
 from typing import IO, Any
 
-from backend import cache, economics, llm, settings, store
+from backend import cache, chaos, economics, llm, settings, store
 from backend.agents import analyst, report, rundata, store_owner
 from backend.agents.analyst import AnalystBackend
 from backend.agents.experiment import AnalystContext, IterationOutcome
 from backend.agents.objective import STORE_PROFIT, gain
 from backend.agents.rules import check_changes, log_rejections
-from backend.agents.wording import change_label
-from backend.contract import MapData, StoreType, Suggestion, dump
-from backend.schemas import AnalystState, NotebookEntry, StopReason, TrainingConfig
+from backend.agents.wording import change_label, clamp_words
+from backend.contract import MapData, RunListItem, StoreType, Suggestion, dump
+from backend.schemas import AnalystState, NotebookEntry, StopReason, StoreConfig, TrainingConfig
 from backend.sim import runner
 
 AGENT = "training"
@@ -89,6 +91,12 @@ class SessionBusy(RuntimeError):
 
 def pending_path():
     return settings.RUNS_DIR / "analyst_pending.json"
+
+
+def intent_path():
+    """runs/training_intent.json: the run id reserved for the simulation in progress, written
+    before it starts, so a kill mid-run resumes into the same id (no duplicate runs)."""
+    return settings.RUNS_DIR / "training_intent.json"
 
 
 # --- stop requests --------------------------------------------------------------------------
@@ -136,6 +144,145 @@ def _lock_runs_dir() -> IO[str]:
             "(POST /api/training/stop, or Ctrl-C in its terminal)"
         ) from None
     return handle
+
+
+def lock_held() -> bool:
+    """True while some live process (this one included) holds runs/training.lock. Creates
+    nothing: no lock file means nobody holds it."""
+    if not store.training_lock_path().exists():
+        return False
+    handle = _try_lock()
+    if handle is None:
+        return True
+    handle.close()
+    return False
+
+
+def _try_lock() -> IO[str] | None:
+    path = store.training_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
+
+
+def heartbeat_path():
+    """runs/training_heartbeat.json: who holds the session and when it last checkpointed. The
+    flock is the authority on liveness (the kernel drops it with the process); the heartbeat
+    names the holder for takeover events and the API."""
+    return settings.RUNS_DIR / "training_heartbeat.json"
+
+
+def _heartbeat(state: AnalystState) -> None:
+    store.write_json(
+        heartbeat_path(),
+        {
+            "pid": os.getpid(),
+            "host": socket.gethostname(),
+            "sessionId": state.sessionId,
+            "step": state.step,
+            "at": store.now_iso(),
+        },
+    )
+
+
+# A checkpoint stamped this far in the future came from a clock that runs fast (or was skewed):
+# its age says nothing about liveness.
+CLOCK_SKEW_SECONDS = 300
+
+
+def checkpoint_age_seconds(state: AnalystState) -> float | None:
+    try:
+        updated = datetime.strptime(state.updatedAt, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+    return (datetime.now(UTC) - updated).total_seconds()
+
+
+def is_dead(state: AnalystState, grace_seconds: float = 60.0) -> bool:
+    """A "running" checkpoint that no live process owns: the lock is free and the checkpoint is
+    older than grace_seconds (or stamped in the future beyond CLOCK_SKEW_SECONDS)."""
+    if state.state != "running":
+        return False
+    age = checkpoint_age_seconds(state)
+    if age is not None and -CLOCK_SKEW_SECONDS <= age < grace_seconds:
+        return False
+    return not lock_held()
+
+
+def as_stopped(state: AnalystState) -> AnalystState:
+    """`state` as reconcile_stale writes it: stopped, "error", resumable."""
+    return state.model_copy(
+        update={
+            "state": "stopped",
+            "stoppedReason": "error",
+            "error": (
+                f"the process running this session ({state.owner}) ended without stopping "
+                f"(crash, kill or restart); start training to resume after step {state.step}"
+            ),
+        }
+    )
+
+
+def reconcile_stale(grace_seconds: float = 60.0) -> AnalystState | None:
+    """A checkpoint reads "running" but no live process holds the lock (the trainer crashed or
+    was killed, or the API restarted under it): mark it stopped with stoppedReason "error" so the
+    UI stops showing a ghost session; the next start resumes it. A checkpoint younger than
+    grace_seconds is left alone (a session between its first checkpoint and taking the lock),
+    unless its timestamp is in the future beyond CLOCK_SKEW_SECONDS. Holds the lock while it
+    writes, so it can never overwrite a trainer. Returns the reconciled state, or None."""
+    if settings.READ_ONLY:  # the hosted demo replays files it must not rewrite
+        return None
+    state = store.load_analyst_state()
+    if state is None or state.state != "running":
+        return None
+    age = checkpoint_age_seconds(state)
+    if age is not None and -CLOCK_SKEW_SECONDS <= age < grace_seconds:
+        return None
+    handle = _try_lock()
+    if handle is None:
+        return None  # its trainer is alive
+    try:
+        state = store.load_analyst_state()  # re-read under the lock
+        if state is None or state.state != "running":
+            return None
+        state = as_stopped(state)
+        llm.load_recoveries(state.sessionId, state.recoveries)
+        llm.record_recovery(
+            "reconcile",
+            agent=AGENT,
+            session=state.sessionId,
+            kind="stale_running",
+            owner=state.owner,
+            lastCheckpoint=state.updatedAt,
+            outcome="marked stopped; resumable",
+        )
+        state.recoveries = llm.recovery_counts(state.sessionId)
+        store.save_analyst_state(state)
+        return state
+    finally:
+        handle.close()
+
+
+def _note_takeover(previous: AnalystState | None, beat: dict, state: AnalystState) -> None:
+    """This process took the lock over a checkpoint another process left "running": that
+    process is dead (the kernel released its lock). Logged with what its heartbeat said."""
+    if previous is None or previous.state != "running" or beat.get("pid") in (None, os.getpid()):
+        return
+    llm.record_recovery(
+        "lock_takeover",
+        agent=AGENT,
+        session=state.sessionId,
+        kind="dead_holder",
+        previousPid=beat.get("pid"),
+        previousHost=beat.get("host"),
+        lastHeartbeat=beat.get("at"),
+        outcome="taken over",
+    )
 
 
 # --- config ---------------------------------------------------------------------------------
@@ -198,7 +345,9 @@ def begin(
         backend = analyst.select_backend(
             "heuristic" if config.scope_store else config.analystBackend
         )
+        previous, beat = store.load_analyst_state(), store.read_json(heartbeat_path()) or {}
         state = _start_or_resume(fresh, config, backend.name)
+        _note_takeover(previous, beat, state)
         llm.set_session_budget(state.sessionId, config.sessionBudgetUsd)
     except BaseException:
         lock.close()
@@ -343,17 +492,17 @@ def _start_or_resume(fresh: bool, config: TrainingConfig, backend_name: str) -> 
         previous.config = config
         previous.owner = _this_process()
         cache.policy.session_runs.update(previous.runsThisSession)
-        _checkpoint(previous)
-        llm.log_event(
-            None,
-            {
-                "agent": AGENT,
-                "type": "resume",
-                "session": previous.sessionId,
-                "step": previous.step,
-                "runs": previous.runsThisSession,
-            },
+        llm.load_recoveries(previous.sessionId, previous.recoveries)
+        llm.record_recovery(
+            "resume",
+            agent=AGENT,
+            session=previous.sessionId,
+            step=previous.step,
+            runs=previous.runsThisSession,
+            kind="restart",
+            outcome=f"continuing after step {previous.step}",
         )
+        _checkpoint(previous)
         return previous
     return _new_session(config, fresh, backend_name, replaces=previous, reason=blocker)
 
@@ -398,7 +547,10 @@ def _new_session(
 
 def _checkpoint(state: AnalystState) -> None:
     state.spentGbp = round(llm.ledger_total_gbp(session=state.sessionId), 4)
+    state.recoveries = llm.recovery_counts(state.sessionId)
     store.save_analyst_state(state)
+    _heartbeat(state)
+    chaos.after_checkpoint()  # CHAOS kill_after_step:N
 
 
 # --- objective ------------------------------------------------------------------------------
@@ -464,7 +616,7 @@ def _add_run(state: AnalystState, run: int) -> None:
 def _stop_reason(state: AnalystState, config: TrainingConfig) -> StopReason | None:
     if state.lowGainStreak >= config.patience:
         return "threshold"
-    if len(state.runsThisSession) >= config.maxRuns:
+    if len(state.runsThisSession) + len(state.quarantinedRuns) >= config.maxRuns:
         return "max_runs"
     return None
 
@@ -485,6 +637,8 @@ def _loop(state: AnalystState, backend: AnalystBackend, config: TrainingConfig) 
             llm.log_event(state.bestRun, {"agent": AGENT, "type": "stop_requested", "step": step})
             return "stopped"
         state.wrappedUp = False  # this step changes what the wrap-up would write
+        llm.reset_breaker()  # a breaker opened in one step degrades that step only
+        llm.set_step(step)
         if step == "start":
             _baseline(state, config)
         elif step in ("baseline", "scored"):
@@ -501,7 +655,13 @@ def _loop(state: AnalystState, backend: AnalystBackend, config: TrainingConfig) 
 
 
 def _baseline(state: AnalystState, config: TrainingConfig) -> None:
-    run = runner.execute_run(runner.baseline_configs(), state.seed)
+    configs = runner.baseline_configs()
+    run = _simulate(state, configs)
+    if run is None:
+        raise RuntimeError("the baseline run crashed on every attempt (quarantined)")
+    reason = _sanity(state, config, run, reference=None)
+    if reason is not None:
+        raise RuntimeError(f"baseline run {run} is not usable: {reason}")
     summary = rundata.load_summary(run)
     state.baselineRun = state.currentRun = state.bestRun = run
     state.bestObjective = _objective_value(state, config, run)
@@ -709,9 +869,12 @@ def _run(state: AnalystState, map_data: MapData, config: TrainingConfig) -> None
     )
     if result.rejections:
         raise RuntimeError(f"pending changes no longer pass the rules: {result.rejections}")
-    run = runner.execute_run(
-        result.configs, state.seed, parent_run=parent, applied_changes=pending["changes"]
-    )
+    run = _simulate(state, result.configs, parent_run=parent, applied_changes=pending["changes"])
+    if run is None:  # crashed on every attempt: quarantined, and the iteration counts as no gain
+        state.lowGainStreak += 1
+        state.step = "scored"
+        _checkpoint(state)
+        return
     state.currentRun = run
     _add_run(state, run)
     store.write_json(pending_path(), {**pending, "run": run})
@@ -733,6 +896,16 @@ def _score(state: AnalystState, backend: AnalystBackend, config: TrainingConfig)
     pending = _load_pending(state)
     run = state.currentRun
     assert run is not None and state.bestObjective is not None
+    reason = _sanity(state, config, run, reference=state.bestObjective)
+    if reason is not None:
+        state.runsThisSession.remove(run)
+        state.iterations = len(state.runsThisSession)
+        state.currentRun = pending["bestRun"]
+        _quarantine(state, config, run, reason, rundata.load_config(run).stores, attempts=1)
+        state.lowGainStreak += 1
+        state.step = "scored"
+        _checkpoint(state)
+        return
     value = _objective_value(state, config, run)
     run_gain = _gain(state, config, value, state.bestObjective)
     outcome = IterationOutcome(
@@ -766,6 +939,162 @@ def _score(state: AnalystState, backend: AnalystBackend, config: TrainingConfig)
     _checkpoint(state)
 
 
+# --- simulation: intent, retries, sanity guards, quarantine ----------------------------------
+
+
+def _execute(configs: dict[str, StoreConfig], seed: int, **kwargs: Any) -> int:
+    """runner.execute_run behind the chaos seam (CHAOS sim_crash / sim_nan / sim_zero)."""
+    if chaos.fires("sim_crash"):
+        raise RuntimeError("chaos: simulated sim crash")
+    run = runner.execute_run(configs, seed, **kwargs)
+    if kwargs.get("parent_run") is None:
+        return run  # a corrupt baseline stops the session by design (tested on its own)
+    nan, zero = chaos.fires("sim_nan"), chaos.fires("sim_zero")
+    if nan or zero:
+        path = store.run_dir(run) / "summary.json"
+        summary = store.read_json(path)
+        if nan:
+            summary["objectiveValue"] = math.nan
+            summary["kpis"]["visitsPerKwh"] = math.nan
+        else:
+            summary["kpis"]["visits"] = 0
+        store.write_json(path, summary)
+    return run
+
+
+def _simulate(state: AnalystState, configs: dict[str, StoreConfig], **kwargs: Any) -> int | None:
+    """Simulate with intent and retries. The run id is reserved and recorded (training_intent
+    .json) before the sim starts, so a kill mid-run resumes into the same id and a run that
+    finished before the kill comes back from the run cache. A crash is retried (SIM_ATTEMPTS);
+    a run that crashes on every attempt is quarantined and None returned."""
+    key = cache.run_key(configs, state.seed)
+    intent = store.read_json(intent_path()) or {}
+    if intent.get("sessionId") == state.sessionId and intent.get("key") == key:
+        reserved = int(intent["reservedRun"])
+        store.run_dir(reserved).mkdir(parents=True, exist_ok=True)
+    else:
+        reserved = store.reserve_run_id()
+        store.write_json(
+            intent_path(), {"sessionId": state.sessionId, "key": key, "reservedRun": reserved}
+        )
+    error: Exception | None = None
+    for attempt in range(1, settings.SIM_ATTEMPTS + 1):
+        try:
+            run = _execute(configs, state.seed, run_id=reserved, **kwargs)
+        except Exception as e:
+            error = e
+            if attempt < settings.SIM_ATTEMPTS:
+                llm.record_recovery(
+                    "retry",
+                    agent=AGENT,
+                    run=reserved,
+                    session=state.sessionId,
+                    kind="sim_crash",
+                    attempt=attempt,
+                    wait=0.0,
+                    outcome="simulating again",
+                    error=f"{type(e).__name__}: {str(e)[:200]}",
+                )
+            continue
+        if run != reserved:  # a run-cache hit: the reserved id was never used
+            _release(reserved)
+        return run
+    assert error is not None
+    reason = f"crashed {settings.SIM_ATTEMPTS} times: {type(error).__name__}: {error}"
+    _quarantine(state, state.config, reserved, reason, configs, attempts=settings.SIM_ATTEMPTS)
+    return None
+
+
+def _release(run: int) -> None:
+    directory = store.run_dir(run)
+    try:
+        directory.rmdir()  # only when empty: never touch a run with files
+    except OSError:
+        pass
+
+
+def _sanity(
+    state: AnalystState, config: TrainingConfig, run: int, *, reference: float | None
+) -> str | None:
+    """Why `run` must not be trusted (None when it can): unreadable files, zero visits, a NaN or
+    infinite objective, or an implausible jump vs the best run (MAX_PLAUSIBLE_GAIN)."""
+    try:
+        summary = rundata.load_summary(run)
+        value = _objective_value(state, config, run)
+    except (OSError, ValueError) as e:
+        return f"unreadable run files: {type(e).__name__}"
+    if summary.kpis.visits <= 0:
+        return "zero visits"
+    if not math.isfinite(value):
+        return "objective is not a finite number"
+    if reference is not None:
+        run_gain = _gain(state, config, value, reference)
+        if not math.isfinite(run_gain) or abs(run_gain) > settings.MAX_PLAUSIBLE_GAIN:
+            return f"outlier: {run_gain:+.0%} vs the best run"
+    return None
+
+
+def _quarantine(
+    state: AnalystState,
+    config: TrainingConfig | None,
+    run: int,
+    reason: str,
+    configs: dict[str, StoreConfig],
+    *,
+    attempts: int,
+) -> None:
+    """Mark `run` failed and keep its files: index status "failed" with the reason, error.json,
+    a notebook line, out of the run cache (its configs count as tried), a recovery event."""
+    try:
+        key = rundata.load_config(run).configHash or cache.run_key(configs, state.seed)
+    except (OSError, ValueError):
+        key = cache.run_key(configs, state.seed)
+    cache.run_quarantine(key, run, configs)
+    store.write_json(
+        store.run_dir(run) / "error.json",
+        {
+            "run": run,
+            "session": state.sessionId,
+            "error": reason,
+            "attempts": attempts,
+            "at": store.now_iso(),
+        },
+    )
+    objective = config.objective if config is not None else settings.OBJECTIVE
+    line = clamp_words(f"Run {run} quarantined: {reason}", analyst.NOTEBOOK_WORDS)
+    store.append_notebook(
+        NotebookEntry(
+            run=run, line=line, objectiveValue=None, at=store.now_iso(), objective=objective
+        )
+    )
+    note = f"Quarantined: {reason}"[:240]
+    if any(item.run == run for item in store.load_index()):
+        store.update_index(run, status="failed", notebook=note)
+    else:
+        store.upsert_index(
+            RunListItem(
+                run=run,
+                seed=state.seed,
+                status="failed",
+                kpis=None,
+                notebook=note,
+                createdAt=store.now_iso(),
+            )
+        )
+    if run not in state.quarantinedRuns:
+        state.quarantinedRuns.append(run)
+    llm.record_recovery(
+        "quarantine",
+        agent=AGENT,
+        run=run,
+        session=state.sessionId,
+        kind="sim_crash" if attempts > 1 else "sanity_guard",
+        attempt=attempts,
+        outcome="run failed, files kept, session continues",
+        error=reason[:240],
+    )
+
+
 # --- stop and wrap-up -----------------------------------------------------------------------
 
 
@@ -777,6 +1106,8 @@ def _finish(
     every file of the session is written and a new session cannot start over the wrap-up. A
     session resumed only to stop again (nothing ran, same config) skips the wrap-up it already
     has, so a repeated start costs no new store-agent batch."""
+    llm.reset_breaker()  # the wrap-up is a step of its own
+    llm.set_step("wrap_up")
     state.state = "stopped"
     state.stoppedReason = reason
     llm.log_event(

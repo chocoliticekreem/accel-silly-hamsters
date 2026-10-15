@@ -298,7 +298,9 @@ def test_messages_analyst_runs_a_budgeted_tool_loop(world, messages_client, monk
     monkeypatch.setattr(
         llm,
         "check_budget",
-        lambda session=None: budget_checks.append(session) or real_check(session),
+        lambda session=None, estimate_usd=0.0: (
+            budget_checks.append(session) or real_check(session, estimate_usd)
+        ),
     )
     bad = [{"storeId": "s2", "field": "close", "hours": [], "from": "23:00", "to": "05:00"}]
     scripted = messages_client(
@@ -382,7 +384,7 @@ def test_messages_analyst_stops_at_the_budget_before_calling(world, messages_cli
     scripted = messages_client([response(tool_use("t1", "get_kpis", {"run": world.run}))] * 3)
     calls = {"n": 0}
 
-    def check(session=None):
+    def check(session=None, estimate_usd=0.0):
         calls["n"] += 1
         if calls["n"] == 2:
             raise llm.BudgetExceeded("session budget reached")

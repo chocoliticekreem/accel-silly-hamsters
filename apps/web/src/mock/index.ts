@@ -279,6 +279,9 @@ export function mockApi(state: MockState = sharedMockState()): Api {
           step: "scored",
           stoppedReason: "threshold",
           spentGbp: 0,
+          quarantinedRuns: [],
+          // what a session under real API weather recovers from (docs/AGENT_DESIGN.md)
+          recoveries: { retries: 14, fallbacks: 3, repairs: 2, skipped: 0, resumed: 1, quarantined: 0, restored: 0, errors: 1, breakerOpens: 0, batchTimeouts: 1, lockTakeovers: 0, reconciled: 0 },
         };
       }),
     // the same story the backend logs, synthesised from the mock's experiment plan and results
@@ -306,7 +309,14 @@ export function mockApi(state: MockState = sharedMockState()): Api {
           );
           best = Math.max(best, vpk(next));
         });
-        ev.push({ at: at(runs.length, 65), agent: "training", type: "stopped", run: null, data: { reason: "threshold", bestRun: state.bestRun() } });
+        ev.push(
+          { at: at(1, 21), agent: "store_owner", type: "retry", run: 1, data: { kind: "http_429", step: "baseline", attempt: 1, wait: 2, outcome: "retrying" } },
+          { at: at(1, 23), agent: "store_owner", type: "repair", run: 1, data: { kind: "invalid_output", step: "baseline", attempt: 1, outcome: "re-ask" } },
+          { at: at(2, 22), agent: "store_owner", type: "batch_timeout", run: 2, data: { kind: "batch_stuck", step: "scored", wait: 7200, outcome: "per-request for the missing stores" } },
+          { at: at(2, 28), agent: "analyst", type: "fallback", run: 2, data: { kind: "llm_unavailable", step: "proposed", to: "heuristic", outcome: "heuristic chose this iteration" } },
+          { at: at(3, 1), agent: "training", type: "resume", run: null, data: { kind: "restart", step: "chosen", outcome: "continuing after step chosen" } },
+          { at: at(runs.length, 65), agent: "training", type: "stopped", run: null, data: { reason: "threshold", bestRun: state.bestRun() } },
+        );
         return ev;
       }),
     // a short scoped session: running for a few seconds of wall time, then stopped at the best run

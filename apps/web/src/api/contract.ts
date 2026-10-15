@@ -448,6 +448,11 @@ export interface AgentSession {
   stoppedReason?: "threshold" | "max_runs" | "budget" | "error" | "stopped" | null;
   spentGbp: number;
   error?: string | null;
+  /** Additive (docs/AGENT_DESIGN.md): runs rejected by the sanity guards or repeated sim crashes (status "failed"). */
+  quarantinedRuns?: number[];
+  /** Additive: how often each recovery fired this session (retries, fallbacks, repairs, skipped, resumed,
+   *  quarantined, restored, errors, breakerOpens, batchTimeouts, lockTakeovers, reconciled). */
+  recoveries?: Record<string, number>;
 }
 
 export interface AgentEvent {

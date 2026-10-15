@@ -58,11 +58,31 @@ SPEND_CAP_USD = float(os.getenv("SPEND_CAP_USD", "30"))  # all agents, all sessi
 SESSION_BUDGET_USD = float(os.getenv("SESSION_BUDGET_USD", "15"))  # one training session
 ANALYST_BUDGET_GBP = SESSION_BUDGET_USD * GBP_PER_USD  # the session cap, for GBP-based callers
 
+# Resilience (docs/AGENT_DESIGN.md, "Failure modes"). One retry policy for every Claude call
+# (llm.call_with_retries): exponential backoff with full jitter, retry-after honoured, capped in
+# attempts and in total time. The SDK's own retries are off so nothing retries twice.
+RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "5"))
+RETRY_BASE_SECONDS = 1.0
+RETRY_MAX_WAIT_SECONDS = 30.0
+RETRY_TOTAL_SECONDS = float(os.getenv("RETRY_TOTAL_SECONDS", "120"))
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
+# Circuit breaker: this many failed attempts in a row (an auth error counts as all of them) and
+# every agent uses its heuristic for the rest of the training step.
+BREAKER_THRESHOLD = int(os.getenv("BREAKER_THRESHOLD", "6"))
+# A run is simulated this many times before it is quarantined (a crash may be transient).
+SIM_ATTEMPTS = 2
+# Sanity guard: a run whose objective moves more than this vs the best run (3.0 = 300%) is an
+# outlier, quarantined rather than trusted.
+MAX_PLAUSIBLE_GAIN = 3.0
+
 # Business-tariff electricity price used for £ impact when energy.json has no hourly price.
 DEFAULT_PRICE_GBP_PER_KWH = 0.27
 
 # Force the offline (no-LLM) agent backends even when credentials exist: OFFLINE=1
 OFFLINE = os.getenv("OFFLINE", "") == "1"
+# The agents' online code paths against backend/fake_llm.py instead of Claude: no key, no spend.
+# For chaos runs (CHAOS=..., backend/chaos.py) and the chaos-demo CLI. Wins over OFFLINE.
+FAKE_LLM = os.getenv("FAKE_LLM", "") == "1"
 
 # A read-only demo replays pre-computed runs: requests that start or reconfigure work (training
 # start/stop and config writes, POST .../optimize, .../experiment) answer 403. On Vercel it is

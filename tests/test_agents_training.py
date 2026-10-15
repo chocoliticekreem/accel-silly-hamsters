@@ -120,14 +120,18 @@ def test_budget_stop_checkpoints_and_reports_cost_per_store_week(sim, monkeypatc
     assert {r.costPerStoreWeekGbp for r in store.load_index()} == {expected}
 
 
-def test_restart_after_a_crash_resumes_without_redoing_the_finished_run(sim):
-    sim.crash_at, sim.crash_after_write = 2, True
-    with pytest.raises(RuntimeError, match="after the run was written"):
+class Killed(BaseException):
+    """Stands in for SIGKILL: nothing after it runs, so the checkpoint still reads "running"."""
+
+
+def test_restart_after_a_kill_resumes_without_redoing_the_finished_run(sim):
+    sim.crash_at, sim.crash_after_write, sim.crash_with = 2, True, Killed
+    with pytest.raises(Killed, match="after the run was written"):
         training.train(max_runs=10)
     crashed = store.load_analyst_state()
     assert crashed is not None
-    assert crashed.stoppedReason == "error" and crashed.step == "chosen"
-    assert crashed.runsThisSession == [1] and "simulated crash" in (crashed.error or "")
+    assert crashed.state == "running" and crashed.step == "chosen"
+    assert crashed.runsThisSession == [1]
     assert sim.simulations == 2
 
     sim.crash_at = None
@@ -140,9 +144,9 @@ def test_restart_after_a_crash_resumes_without_redoing_the_finished_run(sim):
     assert any(e["type"] == "resume" for e in log_events(None))
 
 
-def test_restart_after_a_crash_before_the_run_was_written(sim):
-    sim.crash_at, sim.crash_after_write = 2, False
-    with pytest.raises(RuntimeError, match="before the run was written"):
+def test_restart_after_a_kill_before_the_run_was_written(sim):
+    sim.crash_at, sim.crash_after_write, sim.crash_with = 2, False, Killed
+    with pytest.raises(Killed, match="before the run was written"):
         training.train(max_runs=10)
     assert [r.run for r in store.load_index()] == [1]
     sim.crash_at = None
@@ -415,7 +419,14 @@ def test_an_error_stop_still_proposes_next_week_offline(sim, monkeypatch):
         return real_propose(run, session=session, config=config)
 
     monkeypatch.setattr(store_owner, "propose_all", spy)
-    sim.crash_at, sim.crash_after_write = 2, False  # the sim fails on the first experiment
+    real_simulate = training._simulate
+
+    def broken_experiment(state, configs, **kwargs):
+        if "parent_run" in kwargs:  # the first experiment fails in a way nothing recovers
+            raise RuntimeError("simulated crash")
+        return real_simulate(state, configs, **kwargs)
+
+    monkeypatch.setattr(training, "_simulate", broken_experiment)
     with pytest.raises(RuntimeError, match="simulated crash"):
         training.train()
     crashed = store.load_analyst_state()

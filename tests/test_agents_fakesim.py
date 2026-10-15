@@ -154,6 +154,9 @@ class FakeSim:
         self.simulations = 0
         self.crash_at: int | None = None  # raise on this simulation number (1-based)
         self.crash_after_write = False  # raise after the run's files and cache entry exist
+        # What the crash raises: an Exception is retried, then quarantined by training; a
+        # BaseException (tests' Killed) stands in for SIGKILL: nothing after it runs.
+        self.crash_with: type[BaseException] = RuntimeError
         self.energy = EnergyFile.model_validate(ENERGY)
 
     def install(self, monkeypatch) -> None:
@@ -219,7 +222,7 @@ class FakeSim:
     def evaluate(self, stores: dict[str, StoreConfig], seed: int) -> EvalResult:
         self.simulations += 1
         if self.crash_at == self.simulations and not self.crash_after_write:
-            raise RuntimeError("simulated crash before the run was written")
+            raise self.crash_with("simulated crash before the run was written")
         results, stats, demand = {}, {}, [0.0] * 24
         visits = 0
         kwh = 0.0
@@ -298,7 +301,7 @@ class FakeSim:
             )
         )
         if self.crash_at == self.simulations and self.crash_after_write:
-            raise RuntimeError("simulated crash after the run was written")
+            raise self.crash_with("simulated crash after the run was written")
         return run
 
 
