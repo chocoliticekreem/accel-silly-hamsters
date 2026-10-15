@@ -17,6 +17,8 @@ import { useEffect, useMemo, useRef } from "react";
 import { Box3, type BufferAttribute, type BufferGeometry, type Mesh, type Object3D } from "three";
 import type { Building, CityMap } from "../../api/contract";
 import { frontage, toScene } from "../../sim/geometry";
+import { kerbDistance, MIN_PAVEMENT } from "../../sim/footprints";
+import { useFacades } from "../facades";
 import { SKYLINE_SPOTS } from "../../sim/london";
 import { GOODSYARD_AREA, HOXTON_AREA, inPoly } from "../../sim/areaKeepouts";
 import { OLD_STREET_AREA, OLD_STREET_OSM_WAYS, WHITE_COLLAR_AREA } from "../../sim/oldStreetArea";
@@ -259,8 +261,24 @@ export default function RealBuildings() {
     if (!built || !city) return;
     const touched: { o: Object3D; mats: Mesh[]; z: number }[] = [];
     let timer = 0;
+    // every matched store's real facade (clubs too, which ClubLife dresses), never closer to the road than the kerb
+    // minus a strip of pavement
+    const fronts: Record<string, number> = {};
+    for (const [storeId, bi] of built.storeMatch) {
+      const s = map.stores.find((x) => x.id === storeId);
+      const b = s && map.buildings.find((x) => x.id === s.buildingId);
+      if (!b) continue;
+      const f = frontage(b, map.streets);
+      const [x, z] = toScene(b.x, b.z);
+      const [dx, dz] = toScene(f.nx, f.nz);
+      const depth = f.nx !== 0 ? b.w : b.d;
+      const t = exitDistance(x, z, dx, dz, city.buildings[bi]);
+      const kerb = kerbDistance(b, f.nx, f.nz, map.streets) - MIN_PAVEMENT;
+      fronts[storeId] = Math.max(0.5, Math.min(t ?? depth / 2, depth / 2 + 10, kerb));
+    }
+    useFacades.setState({ front: fronts });
     const apply = () => {
-      for (const [storeId, bi] of built.storeMatch) {
+      for (const storeId of built.storeMatch.keys()) {
         const g = scene.getObjectByName(`store-${storeId}`);
         const body = g?.getObjectByName("store-body");
         if (!g || !body || body.userData.realCity) continue;
@@ -270,12 +288,9 @@ export default function RealBuildings() {
         const shells = body.children.slice(0, 2).filter((o): o is Mesh => (o as Mesh).isMesh);
         for (const m of shells) (m.material as { visible: boolean }).visible = false;
         const f = frontage(b, map.streets);
-        const [x, z] = toScene(b.x, b.z);
-        const [dx, dz] = toScene(f.nx, f.nz);
         const depth = f.nx !== 0 ? b.w : b.d;
-        const t = exitDistance(x, z, dx, dz, city.buildings[bi]);
         const prevZ = body.position.z;
-        if (t != null) body.position.z = Math.max(-depth / 2, Math.min(10, t - depth / 2 + 0.04));
+        body.position.z = Math.max(-depth / 2, Math.min(10, (fronts[storeId] ?? depth / 2) - depth / 2 + 0.04));
         body.userData.realCity = true;
         touched.push({ o: body, mats: shells, z: prevZ });
       }
@@ -285,6 +300,7 @@ export default function RealBuildings() {
     timer = window.setInterval(apply, 1500);
     return () => {
       window.clearInterval(timer);
+      useFacades.setState({ front: {} });
       for (const t of touched) {
         for (const m of t.mats) (m.material as { visible: boolean }).visible = true;
         t.o.position.z = t.z;

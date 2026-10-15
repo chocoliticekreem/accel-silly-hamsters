@@ -2,7 +2,63 @@
 // (with their windows) ran through each other. resolveOverlaps trims each overlap once, at map load:
 // the less important / smaller box is cut back along the axis that loses the least area. Shops, clubs
 // and the station are never cut (their facades carry data); a box that would become a sliver is dropped.
-import type { Building } from "../api/contract";
+import type { Building, Street } from "../api/contract";
+import { frontage } from "./geometry";
+
+/** Pavement kept between a shop's facade and the carriageway (door staff, queues, the door glow stand there). */
+export const MIN_PAVEMENT = 1.8;
+
+/**
+ * Metres from the box centre (b.x, b.z), along the unit normal (nx, nz) toward its street (contract coords), to the
+ * nearest kerb: the first point on that ray inside any street's carriageway (centre line ± width / 2). Infinity when
+ * the ray meets no street within 60 m.
+ */
+export function kerbDistance(b: Pick<Building, "x" | "z">, nx: number, nz: number, streets: Street[]): number {
+  const near: [number, number, number, number, number][] = [];
+  for (const s of streets)
+    for (let i = 1; i < s.points.length; i++) {
+      const [ax, az] = s.points[i - 1];
+      const [bx, bz] = s.points[i];
+      if (Math.max(ax, bx) < b.x - 70 || Math.min(ax, bx) > b.x + 70 || Math.max(az, bz) < b.z - 70 || Math.min(az, bz) > b.z + 70) continue;
+      near.push([ax, az, bx, bz, s.width / 2]);
+    }
+  for (let t = 0; t <= 60; t += 0.25) {
+    const x = b.x + nx * t;
+    const z = b.z + nz * t;
+    for (const [ax, az, bx, bz, hw] of near) {
+      const dx = bx - ax;
+      const dz = bz - az;
+      const k = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+      if (Math.hypot(ax + dx * k - x, az + dz * k - z) < hw) return t;
+    }
+  }
+  return Infinity;
+}
+
+/**
+ * Shop and club boxes must stand on their building, not on the road: a box whose street-facing side reaches into
+ * the carriageway (or leaves less than MIN_PAVEMENT of pavement) is cut back from that side, keeping its back wall;
+ * one too shallow to cut (under 4 m left) is moved back whole for the rest.
+ */
+export function clearCarriageways(buildings: Building[], streets: Street[]): Building[] {
+  if (!streets.length) return buildings;
+  return buildings.map((b) => {
+    if (b.kind !== "store" && b.kind !== "club") return b;
+    const f = frontage(b, streets);
+    const half = f.nx !== 0 ? b.w / 2 : b.d / 2;
+    const over = half + MIN_PAVEMENT - kerbDistance(b, f.nx, f.nz, streets);
+    if (!(over > 0.05)) return b;
+    const depth = half * 2;
+    const keep = Math.max(4, depth - over);
+    const cut = depth - keep; // shrunk from the front
+    const shift = Math.max(0, over - cut); // and moved back by what shrinking can't take
+    const move = cut / 2 + shift;
+    const m = { ...b, x: b.x - f.nx * move, z: b.z - f.nz * move };
+    if (f.nx !== 0) m.w = keep;
+    else m.d = keep;
+    return m;
+  });
+}
 
 /** Gap left between trimmed boxes so faces are never coplanar (no z-fighting). */
 const GAP = 0.15;

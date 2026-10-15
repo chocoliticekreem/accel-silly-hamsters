@@ -1,6 +1,35 @@
 import { describe, expect, it } from "vitest";
 import type { Building } from "../api/contract";
-import { overlapArea, resolveOverlaps } from "./footprints";
+import realMap from "../../../../data/processed/map.json";
+import type { CityMap } from "../api/contract";
+import { clearCarriageways, kerbDistance, MIN_PAVEMENT, overlapArea, resolveOverlaps } from "./footprints";
+import { frontage } from "./geometry";
+
+describe("clearCarriageways", () => {
+  const street = { id: "s", name: "S", width: 10, points: [[-50, 0], [50, 0]] as [number, number][] };
+  const box = (id: string, x: number, z: number, w: number, d: number, kind: Building["kind"] = "office"): Building => ({ id, kind, x, z, w, d, h: 10 });
+  it("cuts a shop box back from the road, keeping its back wall", () => {
+    const [m] = clearCarriageways([box("x", 0, 8, 10, 10, "store")], [street]);
+    expect(m.z + m.d / 2).toBeCloseTo(13, 1);
+    expect(m.z - m.d / 2).toBeGreaterThanOrEqual(5 + MIN_PAVEMENT - 0.3);
+  });
+
+  it("leaves offices and shops that already clear the road alone", () => {
+    const office = box("o", 0, 8, 10, 10);
+    const ok = box("k", 0, 20, 10, 10, "store");
+    expect(clearCarriageways([office, ok], [street])).toEqual([office, ok]);
+  });
+
+  it("keeps every real store and club off the carriageway", () => {
+    const m = realMap as unknown as CityMap;
+    const out = clearCarriageways(m.buildings.filter((x) => x.kind === "store" || x.kind === "club"), m.streets);
+    for (const x of out) {
+      const f = frontage(x, m.streets);
+      const half = f.nx !== 0 ? x.w / 2 : x.d / 2;
+      expect(kerbDistance(x, f.nx, f.nz, m.streets) - half).toBeGreaterThan(MIN_PAVEMENT - 0.5);
+    }
+  });
+});
 
 const b = (id: string, x: number, z: number, w: number, d: number, kind: Building["kind"] = "office", h = 10): Building => ({ id, kind, x, z, w, d, h });
 
