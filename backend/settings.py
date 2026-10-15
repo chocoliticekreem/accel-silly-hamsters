@@ -71,6 +71,9 @@ DEFAULT_PRICE_GBP_PER_KWH = 0.27
 
 # Force the offline (no-LLM) agent backends even when credentials exist: OFFLINE=1
 OFFLINE = os.getenv("OFFLINE", "") == "1"
+# The agents' online code paths against backend/fake_llm.py instead of Claude: no key, no spend.
+# For chaos runs (CHAOS=..., backend/chaos.py) and the chaos-demo CLI. Wins over OFFLINE.
+FAKE_LLM = os.getenv("FAKE_LLM", "") == "1"
 
 # The hosted demo replays pre-computed runs: requests that start or reconfigure work (training
 # start/stop and config writes, POST .../optimize) answer 403.

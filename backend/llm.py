@@ -48,6 +48,8 @@ FALLBACK_MODELS = {"claude-opus-5-5", "claude-sonnet-5-5"}
 
 
 def available() -> bool:
+    if settings.FAKE_LLM:
+        return True
     if settings.OFFLINE:
         return False
     return bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"))
@@ -57,7 +59,13 @@ def client():
     """The process's Anthropic client. Its own retries are off: call_with_retries is the one
     retry policy, so a request is never retried by two layers."""
     global _client
-    if _client is None:
+    if settings.FAKE_LLM:
+        from backend import fake_llm
+
+        if not isinstance(_client, fake_llm.FakeClient):
+            _client = fake_llm.FakeClient()
+        return _client
+    if _client is None or type(_client).__name__ == "FakeClient":
         import anthropic
 
         _client = anthropic.Anthropic(max_retries=0, timeout=settings.LLM_TIMEOUT_SECONDS)

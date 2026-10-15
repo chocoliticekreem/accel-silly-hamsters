@@ -919,6 +919,8 @@ def _execute(configs: dict[str, StoreConfig], seed: int, **kwargs: Any) -> int:
     if chaos.fires("sim_crash"):
         raise RuntimeError("chaos: simulated sim crash")
     run = runner.execute_run(configs, seed, **kwargs)
+    if kwargs.get("parent_run") is None:
+        return run  # a corrupt baseline stops the session by design (tested on its own)
     nan, zero = chaos.fires("sim_nan"), chaos.fires("sim_zero")
     if nan or zero:
         path = store.run_dir(run) / "summary.json"
