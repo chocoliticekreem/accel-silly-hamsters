@@ -187,8 +187,9 @@ function resolveSpec(map: CityMap, s: Spec, lms: ResolvedLandmark[]): Place | nu
     foot = { x, z, w: Math.max(...xs) - Math.min(...xs), d: Math.max(...zs) - Math.min(...zs), h: Math.max(foot?.h ?? 0, h) };
   }
   const c = clampTo(map, x, z);
-  if (c.outside && s.interior) return null; // an interior off the map can't be drawn on our ground
-  const at = c.outside && s.drawnOutside ? { x, z } : c;
+  // the real city (Real* modules, Surroundings) is drawn past the map edge, so landmarks off a small map (the mock's)
+  // still go to their real spot instead of vanishing from the bar
+  const at = c.outside && (s.drawnOutside || s.interior) ? { x, z } : c;
   return { key: s.key, name: s.name, sub: s.sub, group: "places", x: at.x, z: at.z, y: s.y ?? 0, dist: s.dist, outside: c.outside, interior: s.interior, storeId: store?.id ?? null, host, foot };
 }
 

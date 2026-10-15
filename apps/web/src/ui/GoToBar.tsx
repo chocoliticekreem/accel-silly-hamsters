@@ -126,13 +126,13 @@ export function GoToBar() {
           </button>
         </div>
         {main
-          .filter((p) => p.key === "encode")
+          .filter((p) => p.key === "encode" || p.key === "artotel")
           .map((p) => {
             const Icon = iconFor(p);
             const inside = interiorOpen && focus === p.key;
             return (
               <span key={p.key} className={`goto-item ${p.interior ? "has-enter" : ""}`}>
-                <button className={`goto-btn goto-hero ${focus === p.key ? "on" : ""}`} title={`Fly to ${p.name} · ${p.sub}`} onClick={() => goPlace(p)}>
+                <button className={`goto-btn ${p.key === "encode" ? "goto-hero" : ""} ${focus === p.key ? "on" : ""}`} title={`Fly to ${p.name} · ${p.sub}`} onClick={() => goPlace(p)}>
                   <Icon size={15} /> {p.name}
                 </button>
                 {p.interior && (
