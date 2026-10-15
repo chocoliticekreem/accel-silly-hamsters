@@ -122,7 +122,7 @@ export default function Buildings() {
           </group>
         );
       })}
-      {station && <Station b={station} streets={map.streets} />}
+      {station && <Station b={station} map={map} />}
     </group>
   );
 }

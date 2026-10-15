@@ -5,9 +5,9 @@
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import type { MeshStandardMaterial } from "three";
-import type { Building, Street } from "../api/contract";
+import type { Building, CityMap, Street } from "../api/contract";
 import { toScene } from "../sim/geometry";
-import { DECK_Y, TRACK_OFFSET } from "../sim/overground";
+import { DECK_Y, overgroundRoute, routeAt, TRACK_OFFSET } from "../sim/overground";
 import { nightLevel } from "../sim/sky";
 import { hourOf } from "../sim/time";
 import { useSim } from "../state/store";
@@ -61,9 +61,16 @@ export function streetGaps(b: Building, streets: readonly Street[]): [number, nu
   return out;
 }
 
-export function Station({ b, streets = [] }: { b: Building; streets?: readonly Street[] }) {
-  const [x, z] = toScene(b.x, b.z);
+export function Station({ b, map }: { b: Building; map: CityMap }) {
+  const streets = map.streets;
   const alongX = b.w >= b.d;
+  // centre the platforms on the tracks, not on the OSM box (the line runs a metre or two off its middle)
+  const [x, z] = useMemo(() => {
+    const route = overgroundRoute(map);
+    if (!route || route.station.id !== b.id) return toScene(b.x, b.z);
+    const p = routeAt(route, route.stationS);
+    return toScene(alongX ? b.x : p.x, alongX ? p.z : b.z);
+  }, [map, b, alongX]);
   const L = alongX ? b.w : b.d;
   const W = Math.max(alongX ? b.d : b.w, PLATFORM_OUT * 2 + 0.6);
   const roofY = Math.max(b.h, DECK_Y + 6.2);

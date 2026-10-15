@@ -12,7 +12,7 @@
 // Pure and deterministic. Contract coords (x east, z north).
 import type { CityMap, Street } from "../api/contract";
 import { rng, seedOf, type Rng } from "../mock/rng";
-import { ARTERIALS, CITY_CENTRE, OLD_STREET, resolveLandmarks, SKYLINE_SPOTS, THAMES } from "./london";
+import { ARTERIALS, CITY_CENTRE, OLD_STREET, OLD_STREET_ENTRANCES, resolveLandmarks, ROUNDABOUT, SKYLINE_SPOTS, THAMES } from "./london";
 import { overgroundRoute, routeDistance, VIADUCT_W } from "./overground";
 
 /** Perimeter road centreline, metres outside the bounds. */
@@ -202,7 +202,7 @@ export function planSurroundings(map: CityMap, seed = 31): SurroundingsPlan {
     let prev: [number, number] = a;
     for (let k = 0; k <= n; k++) {
       const p: [number, number] = [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n];
-      const wet = (!bridge && polyDist(p[0], p[1], THAMES.points) < thamesHalf + 6) || SKYLINE_SPOTS.some((t) => Math.hypot(p[0] - t.x, p[1] - t.z) < t.r + w / 2 + 2);
+      const wet = Math.hypot(p[0] - ROUNDABOUT.x, p[1] - ROUNDABOUT.z) < ROUNDABOUT.r + ROUNDABOUT.width / 2 + w / 2 + 3 || (!bridge && polyDist(p[0], p[1], THAMES.points) < thamesHalf + 6) || SKYLINE_SPOTS.some((t) => Math.hypot(p[0] - t.x, p[1] - t.z) < t.r + w / 2 + 2);
       if (!wet && !start) start = p;
       if (wet && start) {
         roads.push({ a: start, b: prev, width: w, main: w >= 10 });
@@ -258,11 +258,12 @@ export function planSurroundings(map: CityMap, seed = 31): SurroundingsPlan {
   const landmarks = resolveLandmarks(map).filter((l) => !inInner(l.x, l.z));
   const clearOf = (x: number, z: number, w: number, d: number) => {
     const rad = Math.hypot(w, d) / 2;
-    if (Math.hypot(x - OLD_STREET.x, z - OLD_STREET.z) < 62 + rad) return false;
+    if (Math.hypot(x - ROUNDABOUT.x, z - ROUNDABOUT.z) < ROUNDABOUT.r + ROUNDABOUT.width / 2 + 6 + rad) return false;
+    for (const e of OLD_STREET_ENTRANCES) if (Math.hypot(x - e.x, z - e.z) < 9 + rad) return false;
     for (const l of landmarks) if (Math.hypot(x - l.x, z - l.z) < (l.key === "artotel" ? 30 : 24) + rad) return false;
     for (const s of SKYLINE_SPOTS) if (Math.hypot(x - s.x, z - s.z) < s.r + rad) return false;
     if (polyDist(x, z, THAMES.points) < thamesHalf + 10 + rad) return false;
-    if (viaduct && routeDistance(viaduct, x, z) < VIADUCT_W / 2 + 3 + rad) return false;
+    if (viaduct && routeDistance(viaduct, x, z) < VIADUCT_W / 2 + 5 + rad) return false;
     for (const ar of arterials)
       for (let i = 0; i < ar.points.length - 1; i++) {
         // cheap reject before the exact test
@@ -309,6 +310,8 @@ export function planSurroundings(map: CityMap, seed = 31): SurroundingsPlan {
       const k = Math.pow(1 - dCity / 800, 1.3);
       return { h: 22 + 85 * k * (0.45 + rr() * 0.8), style: rr() < 0.6 ? "glass" : "office" };
     }
+    // Silicon Roundabout: the towers round Old Street (the Atlas, the Eagle, the Bower...)
+    if (dOld < 260 && rr() < 0.5) return { h: 45 + rr() * 75, style: rr() < 0.6 ? "glass" : "office" };
     // the City fringe and Tech City: mid-rise offices and converted warehouses
     const fringe = (x < cx && z < cz + 200 && dCity < 1500) || dOld < 450;
     if (fringe) return rr() < 0.55 ? { h: 16 + rr() * 26, style: rr() < 0.5 ? "office" : "glass" } : { h: 12 + rr() * 10, style: "warehouse" };

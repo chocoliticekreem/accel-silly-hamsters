@@ -1,10 +1,36 @@
-// Real London around the sim map, as data. Offsets are metres from Shoreditch High Street station (the map's
-// origin): x east, z north, measured from OpenStreetMap / lat-long (1° lon ≈ 69.4 km, 1° lat ≈ 111.2 km here).
+// Real London around the sim map, as data. Offsets are metres from the Shoreditch High Street railway=station node
+// (the map's origin, 51.5232534 N 0.0744674 W): x east, z north, with the backend's equirectangular projection.
+// Rail alignment, stations and Old Street's entrances are from OpenStreetMap (© OpenStreetMap contributors, ODbL).
 // Used by the decorative Surroundings and Landmarks modules and by the crowd/traffic layers that run out of the map.
 import type { CityMap, Landmark } from "../api/contract";
 
-/** Old Street station (Northern line, Bank branch) under the Old Street roundabout. */
-export const OLD_STREET = { x: -850, z: 270, name: "Old Street" };
+/** Old Street station (Northern line, Bank branch) under the Old Street roundabout (OSM station node). */
+export const OLD_STREET = { x: -909, z: 264, name: "Old Street" };
+/** The Old Street roundabout (Silicon Roundabout): ring road centre and radius. */
+export const ROUNDABOUT = { x: -902, z: 270, r: 26, width: 12 };
+/** Old Street's street-level entrances (OSM subway_entrance nodes, plus the roundabout's south-east stair). */
+export const OLD_STREET_ENTRANCES: { name: string; x: number; z: number }[] = [
+  { name: "Exit 4", x: -931.4, z: 305.6 },
+  { name: "Exit 2", x: -859.8, z: 232.5 },
+  { name: "Old Street Station", x: -918.6, z: 278.9 },
+  { name: "Exit 6", x: -876, z: 314 },
+];
+
+/** The East London line (London Overground, OSM, simplified to 1.5 m): Haggerston → Hoxton → Shoreditch High
+ * Street → east toward Whitechapel, where it goes underground at ELL_TUNNEL_PORTAL. */
+export const ELL_ALIGNMENT: [number, number][] = [
+  [-65.4, 1950.3], [-80.9, 1673.7], [-90.1, 1441.8], [-88.5, 1164.0], [-83.7, 920.1], [-85.9, 858.6], [-96.8, 802.5],
+  [-118.6, 746.3], [-143.9, 702.9], [-142.3, 698.7], [-221.0, 595.8], [-241.3, 564.9], [-266.0, 505.6], [-279.1, 464.6],
+  [-289.6, 410.9], [-293.1, 345.7], [-292.2, 177.5], [-283.5, 132.4], [-266.3, 93.3], [-250.0, 70.3], [-232.9, 52.2],
+  [-212.8, 36.6], [-191.0, 24.0], [-167.1, 12.7], [-148.7, 7.7], [-111.0, 3.9], [113.4, -0.2], [159.0, -5.7],
+  [162.5, -10.1], [226.3, -21.5], [511.1, -86.8], [677.2, -114.6], [737.4, -137.8], [791.6, -169.0], [824.9, -198.6],
+];
+export const ELL_TUNNEL_PORTAL = { x: 650, z: -109 };
+/** Other Overground stations on the alignment (OSM station nodes). */
+export const ELL_STATIONS = [
+  { name: "Hoxton", x: -82.1, z: 927.2, platformLen: 110 },
+  { name: "Haggerston", x: -77.2, z: 1712.8, platformLen: 110 },
+];
 /** Middle of the City of London's tower cluster (around 22 Bishopsgate / the Gherkin). */
 export const CITY_CENTRE = { x: -520, z: -1000 };
 
@@ -19,28 +45,31 @@ export interface NamedRoad {
  * snapped to the matching exit at runtime when one is within 40 m) and runs out toward its real destination.
  */
 export const ARTERIALS: NamedRoad[] = [
-  // Old Street: from the Shoreditch High St / Kingsland Rd junction west past art'otel to the roundabout and on to Clerkenwell
-  { name: "Old Street", width: 14, points: [[-205, 366], [-530, 330], [-850, 270], [-1700, 170], [-2900, 60]] },
-  // Great Eastern Street: north-west from the map edge to Old Street at art'otel
-  { name: "Great Eastern Street", width: 12, points: [[-250, -32.9], [-330, 60], [-530, 322]] },
-  // City Road: north-west to Angel from the roundabout, and south toward Finsbury Square / Moorgate
-  { name: "City Road", width: 14, points: [[-850, 270], [-1350, 760], [-2300, 1350]] },
-  { name: "City Road", width: 14, points: [[-850, 270], [-880, -300], [-930, -900], [-1000, -1500]] },
-  // Pitfield Street north from Old Street (Encode Hub)
-  { name: "Pitfield Street", width: 9, points: [[-640, 312], [-575, 630], [-560, 1100], [-555, 2200]] },
-  // Kingsland Road north (the A10, Shoreditch High Street's continuation)
-  { name: "Kingsland Road", width: 14, points: [[-214.6, 250], [-205, 366], [-250, 1300], [-300, 2900]] },
+  // Old Street west from the map edge to the roundabout, then on to Clerkenwell
+  // (every road meeting the roundabout stops at its ring: ROUNDABOUT)
+  { name: "Old Street", width: 14, points: [[-800, 310], [-877.8, 279.5]] },
+  { name: "Old Street", width: 14, points: [[-927.9, 267.4], [-1700, 190], [-2900, 70]] },
+  // City Road: north-west to Angel, and south toward Finsbury Square / Moorgate
+  { name: "City Road", width: 14, points: [[-919.5, 289.2], [-1350, 760], [-2300, 1350]] },
+  { name: "City Road", width: 14, points: [[-903.3, 244.0], [-930, -300], [-960, -900], [-1000, -1500]] },
+  // East Road, north from the roundabout
+  { name: "East Road", width: 12, points: [[-900.7, 296.0], [-880, 700], [-860, 1500], [-850, 2900]] },
+  // Kingsland Road north (the A10) past Hoxton station
+  { name: "Kingsland Road", width: 14, points: [[-200, 750], [-166, 920], [-140, 1300], [-120, 2900]] },
   // Hackney Road north-east
-  { name: "Hackney Road", width: 12, points: [[-205, 366], [300, 640], [1100, 1150], [2300, 1700]] },
-  // Bishopsgate south into the City
-  { name: "Bishopsgate", width: 14, points: [[-250, -119.8], [-300, -480], [-440, -700], [-445, -1050], [-560, -1500], [-640, -2900]] },
-  // Commercial Street south to Aldgate, then the A11 east (Whitechapel Road)
-  { name: "Commercial Street", width: 14, points: [[-48.7, -250], [-70, -700], [-150, -1150], [-260, -1500]] },
-  { name: "Whitechapel Road", width: 14, points: [[-150, -1150], [600, -900], [1500, -700], [2900, -500]] },
-  // Bethnal Green Road east
-  { name: "Bethnal Green Road", width: 14, points: [[250, 222.5], [900, 380], [1700, 560], [2900, 820]] },
-  // Brick Lane south to Whitechapel
-  { name: "Brick Lane", width: 9, points: [[182.7, -250], [170, -900]] },
+  { name: "Hackney Road", width: 14, points: [[8, 750], [150, 1000], [600, 1500], [1300, 2100]] },
+  // New North Road and Pitfield Street north
+  { name: "New North Road", width: 10, points: [[-637, 750], [-700, 1300], [-760, 2900]] },
+  { name: "Pitfield Street", width: 9, points: [[-595, 750], [-585, 1200], [-580, 2000]] },
+  // Bishopsgate south into the City and on to London Bridge
+  { name: "Bishopsgate", width: 14, points: [[-475, -750], [-500, -1000], [-520, -1500], [-860, -1700], [-880, -2900]] },
+  // Commercial Street south to Aldgate
+  { name: "Commercial Street", width: 14, points: [[112, -750], [60, -1050], [-100, -1300]] },
+  // London Wall west
+  { name: "London Wall", width: 14, points: [[-800, -709], [-1300, -760], [-2900, -800]] },
+  // Bethnal Green Road and Whitechapel Road east
+  { name: "Bethnal Green Road", width: 14, points: [[700, 361], [1100, 450], [1700, 600], [2900, 850]] },
+  { name: "Whitechapel Road", width: 14, points: [[700, -580], [1300, -700], [2900, -900]] },
 ];
 
 /** The Thames, west → east, and its width: the City and the Shard sit either side of it. */
