@@ -1,6 +1,6 @@
 // App shell: the 3D city fills the screen; everything else is a thin overlay on top.
 import { useClock, useHotkeys } from "./state/clock";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAnalyst, useMap, useRuns, useRunStores } from "./state/data";
 import { RUN_FROM_URL, useSim } from "./state/store";
 import { AreaPanel } from "./ui/AreaPanel";
@@ -54,17 +54,21 @@ export default function App() {
   const compare = useSim((s) => s.compare);
   const { openPanel, setCompare } = useSim.getState();
   const runs = useRuns().data;
-  const analyst = useAnalyst().data;
+  const analystRes = useAnalyst();
+  const analyst = analystRes.data;
+  const analystSettled = analyst !== undefined || !!analystRes.error;
 
-  // Start on a run that exists: the analyst's best, else the latest finished one (the real backend may only have run 0).
+  // Open on the analyst's best run (else the latest finished one), once, unless the URL picked a run. A deployed API
+  // may only carry the day files of its latest runs, so staying on run 1 could show an empty street.
+  const snapped = useRef(false);
   useEffect(() => {
-    if (RUN_FROM_URL || !runs?.length) return;
+    if (RUN_FROM_URL || !runs?.length || snapped.current || !analystSettled) return;
+    snapped.current = true;
     const s = useSim.getState();
-    if (runs.some((r) => r.run === s.run && r.status === "done")) return;
     const done = runs.filter((r) => r.status === "done");
     const pick = analyst?.bestRun ?? done.at(-1)?.run ?? runs.at(-1)!.run;
-    s.setRun(pick);
-  }, [runs, analyst]);
+    if (pick !== s.run) s.setRun(pick);
+  }, [runs, analyst, analystSettled]);
 
   if (error) return <div className="splash">Map unavailable · {error.message}</div>;
   if (!map) return <div className="splash">Shoreditch · loading</div>;
