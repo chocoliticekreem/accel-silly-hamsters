@@ -1,7 +1,11 @@
 // Module: Streets. Each street polyline segment becomes a flat asphalt strip with a dashed centre line,
 // plus zebra crossings where two streets meet. Pure geometry, built once.
-import { useMemo } from "react";
-import { BoxGeometry, CylinderGeometry, Object3D, type InstancedMesh } from "three";
+import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo } from "react";
+import { BoxGeometry, CylinderGeometry, MeshStandardMaterial, Object3D, type InstancedMesh } from "three";
+import { nightLevel } from "../../sim/sky";
+import { hourOf } from "../../sim/time";
+import { useSim } from "../../state/store";
 import type { Street } from "../../api/contract";
 import { toScene } from "../../sim/geometry";
 import { useWorld } from "../context";
@@ -83,16 +87,20 @@ export default function Streets() {
   }, [map]);
 
   const box = useMemo(() => new BoxGeometry(1, 0.1, 1), []);
+  // asphalt that goes damp and glossy after dark: the sky, lamps and shop glow pick up a sheen (env-map reflections)
+  const wet = useMemo(() => new MeshStandardMaterial({ color: GROUND.asphalt, roughness: 0.9 }), []);
+  useEffect(() => () => wet.dispose(), [wet]);
+  useFrame(() => {
+    const n = nightLevel(hourOf(useSim.getState().t));
+    wet.roughness = 0.9 - 0.55 * n;
+    wet.metalness = 0.25 * n;
+  });
   const disc = useMemo(() => new CylinderGeometry(1, 1, 0.1, 20), []);
 
   return (
     <group name="streets">
-      <instancedMesh args={[box, undefined, roads.length]} receiveShadow ref={(m) => fill(m, roads)}>
-        <meshStandardMaterial color={GROUND.asphalt} roughness={0.9} />
-      </instancedMesh>
-      <instancedMesh args={[disc, undefined, Math.max(1, joints.length)]} receiveShadow ref={(m) => fill(m, joints)}>
-        <meshStandardMaterial color={GROUND.asphalt} roughness={0.9} />
-      </instancedMesh>
+      <instancedMesh args={[box, undefined, roads.length]} receiveShadow ref={(m) => fill(m, roads)} material={wet}></instancedMesh>
+      <instancedMesh args={[disc, undefined, Math.max(1, joints.length)]} receiveShadow ref={(m) => fill(m, joints)} material={wet}></instancedMesh>
       <instancedMesh args={[box, undefined, Math.max(1, dashes.length)]} ref={(m) => fill(m, dashes)}>
         <meshStandardMaterial color={GROUND.marking} roughness={0.8} />
       </instancedMesh>

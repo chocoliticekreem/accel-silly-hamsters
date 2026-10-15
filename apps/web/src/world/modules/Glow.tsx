@@ -15,6 +15,9 @@ import { useSim } from "../../state/store";
 import { gainAerial } from "../atmosphere";
 import { PRESETS, useQuality } from "../quality";
 
+/** Debug: ?nofx=ao,aerial,rays,bloom,tilt,grade switches single effects off (profiling). */
+const NOFX = new Set((typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("nofx") ?? "").split(","));
+
 export default function Glow() {
   const scene = useThree((s) => s.scene);
   const gl = useThree((s) => s.gl);
@@ -54,11 +57,11 @@ export default function Glow() {
   const on = <T,>(cond: boolean, el: T) => (cond ? el : <></>);
   return (
     <EffectComposer multisampling={p.multisampling} key={level}>
-      {on(p.ao !== "off", <N8AO halfRes quality={p.ao === "full" ? "medium" : "performance"} aoRadius={5} distanceFalloff={1.2} intensity={2.2} color="#1b1a26" />)}
-      {on(p.aerial, <AerialPerspective ref={(e: Effect | null) => { if (e) gainAerial(e); }} />)}
-      {on(p.godRays && !!sun, <GodRays ref={rays} sun={sun!} samples={level === "high" ? 40 : 28} density={0.94} decay={0.92} weight={0.45} exposure={0.45} clampMax={1} blur kernelSize={KernelSize.SMALL} />)}
-      <Bloom ref={bloom} mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.25} intensity={0.6} radius={0.75} levels={level === "low" ? 5 : 7} />
-      {on(tilt && level !== "low", <TiltShift2 blur={0.09} taper={0.55} start={[0, 0.48]} end={[1, 0.48]} samples={level === "high" ? 8 : 6} />)}
+      {on(p.ao !== "off" && !NOFX.has("ao"), <N8AO halfRes quality={p.ao === "full" ? "medium" : "performance"} aoRadius={5} distanceFalloff={1.2} intensity={2.2} color="#1b1a26" />)}
+      {on(p.aerial && !NOFX.has("aerial"), <AerialPerspective ref={(e: Effect | null) => { if (e) gainAerial(e); }} />)}
+      {on(p.godRays && !!sun && !NOFX.has("rays"), <GodRays ref={rays} sun={sun!} samples={level === "high" ? 40 : 28} density={0.94} decay={0.92} weight={0.45} exposure={0.45} clampMax={1} blur kernelSize={KernelSize.SMALL} />)}
+      <Bloom ref={bloom} mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.25} intensity={0.6} radius={0.75} levels={level === "high" ? 7 : 5} />
+      {on(tilt && level !== "low" && !NOFX.has("tilt"), <TiltShift2 blur={0.09} taper={0.55} start={[0, 0.48]} end={[1, 0.48]} samples={level === "high" ? 8 : 6} />)}
       <ToneMapping mode={ToneMappingMode.AGX} />
       <HueSaturation saturation={0.18} />
       <Vignette eskil={false} offset={0.3} darkness={0.45} />

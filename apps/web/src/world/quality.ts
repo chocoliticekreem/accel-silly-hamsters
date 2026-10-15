@@ -23,7 +23,7 @@ export interface QualityPreset {
 
 export const PRESETS: Record<Quality, QualityPreset> = {
   high: { dpr: 1.75, shadowMap: 4096, shadowRadius: 3, ao: "full", godRays: true, multisampling: 2, envSize: 128, aerial: true },
-  medium: { dpr: 1.25, shadowMap: 2048, shadowRadius: 2.5, ao: "half", godRays: true, multisampling: 2, envSize: 64, aerial: false },
+  medium: { dpr: 1.25, shadowMap: 2048, shadowRadius: 2.5, ao: "half", godRays: true, multisampling: 0, envSize: 64, aerial: false },
   low: { dpr: 1, shadowMap: 1024, shadowRadius: 1.5, ao: "off", godRays: false, multisampling: 0, envSize: 32, aerial: false },
 };
 
