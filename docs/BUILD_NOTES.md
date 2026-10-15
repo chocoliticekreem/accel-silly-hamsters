@@ -124,8 +124,11 @@ Run 0 is the hand-made sample from the contract; it disappears from `/api/runs` 
   outputs, shared city context first in the prompt (prompt cache). Offline: deterministic heuristic.
 - Hard rules (`agents/rules.py`, applied to every proposal from any source, rejections logged): 30-min
   steps; inside `licensedHours` (default caps by type); open window ≥ 60 min and closed gap ≥ 30 min;
-  ≤ 2 changes per store per week (= per iteration); valid levels/hours; clubs immutable; never a store
-  config already tried (`cache.store_config_tried`).
+  a day no longer than the type's cap (`MAX_OPEN_HOURS`: cafe 13 h, restaurant 14, takeaway 17, bar 15,
+  shop 12, off-licence 16), unless the owner already trades longer; ≤ 2 changes per store per week
+  (= per iteration); valid levels/hours; clubs immutable; never a store config already tried
+  (`cache.store_config_tried`). The cap exists because extra hours cost staff time the sim does not
+  price yet; once revenue is on real scale, wages per open hour replace it as the brake.
 - Analyst: `training.py` owns the loop, checkpoint after every step, stop rule (gain < THRESHOLD for
   PATIENCE runs, or MAX_RUNS, or budget). Decisions sit behind one `AnalystBackend` interface:
   heuristic (offline), messages (Messages API tool-use loop with `run_sim`, `get_kpis`,
