@@ -3,7 +3,8 @@
 // (limbs swing, the body bobs, idle people shift weight and gesture); the CPU only writes one transform and a few
 // per-instance floats per person. Ported from hamyway-city's Crowds shader, driven by our per-frame `set` API.
 // Colours per person: shirt (torso + arms), trousers (legs), skin (head); hair tone, bag, umbrella and dog are
-// picked from a hash of those colours, so they stay with the same person from frame to frame.
+// picked from a hash of those colours, so they stay with the same person from frame to frame. Shop owners can wear an
+// apron (a band round the waist in the apron colour) when the crowd is created with `aprons: true`.
 import {
   BufferGeometry,
   Color,
@@ -19,6 +20,7 @@ import {
   type Material,
 } from "three";
 import { dogGeometry, personGeometry, umbrellaGeometry } from "./crowdMeshes";
+import { groundY } from "./ground";
 
 export const SKIN_TONES = ["#f1c9a5", "#e0ac69", "#c68642", "#8d5524", "#5c3a21", "#ffdbac", "#a86b3c"].map((c) => new Color(c));
 export const TROUSERS = ["#2b2f3a", "#3a3f4b", "#1f2430", "#4a4036", "#36454f", "#5b6b7d", "#2e3b2e"].map((c) => new Color(c));
@@ -30,12 +32,16 @@ const DOGS = ["#3b2a1a", "#c68642", "#f1e3c8", "#111111", "#8d6e63", "#e0c097"].
 const UMBRELLA_SHARE = 0.04;
 const DOG_SHARE = 0.035;
 
+type Part = "torso" | "head" | "legL" | "legR" | "armL" | "armR" | "apron";
+
 export interface People {
   group: Group;
-  /** Writes person `i`. `phase` drives the walk cycle; `moving` = false stands still. */
-  set(i: number, x: number, y: number, z: number, heading: number, phase: number, moving: boolean, scale: number, shirt: Color, trousers: Color, skin: Color): void;
+  /** Writes person `i`. `phase` drives the walk cycle; `moving` = false stands still. `apron` null = none. */
+  set(i: number, x: number, y: number, z: number, heading: number, phase: number, moving: boolean, scale: number, shirt: Color, trousers: Color, skin: Color, apron?: Color | null): void;
   /** Shows the first `n` people written this frame. */
   commit(n: number): void;
+  /** The meshes by part, for picking (instanceId is the person's index). The whole body is one mesh: `torso`. */
+  meshes: Partial<Record<Part, InstancedMesh>>;
   dispose(): void;
 }
 
@@ -47,6 +53,7 @@ attribute vec4 aAnim;   // phase (rad), moving 0/1, kind (0 person, 1 umbrella h
 attribute vec3 aShirt;
 attribute vec3 aPants;
 attribute vec3 aSkin;
+attribute vec4 aApron;  // apron rgb, worn 0/1
 attribute float aPart;
 varying vec3 vCrowdColor;
 
@@ -95,6 +102,8 @@ vec3 crowdDeform(vec3 p) {
               : part < 3.5 ? legs
               : part < 6.5 ? hair
               : bag;
+  // apron: a band round the waist and hips, over the shirt and trousers
+  if (aApron.w > 0.5 && part < 3.5 && part != 1.0 && position.y > 0.72 && position.y < 1.2) vCrowdColor = aApron.rgb;
   return p;
 }
 `;
@@ -158,6 +167,7 @@ interface Layer {
   shirt: Float32Array;
   pants: Float32Array;
   skin: Float32Array;
+  apron: Float32Array;
   attrs: InstancedBufferAttribute[];
   mats: Material[];
 }
@@ -175,14 +185,15 @@ function layer(geo: BufferGeometry, variant: Variant, capacity: number, uTime: {
   const shirt = new Float32Array(capacity * 3);
   const pants = new Float32Array(capacity * 3);
   const skin = new Float32Array(capacity * 3);
+  const apron = new Float32Array(capacity * 4);
   const attr = (name: string, arr: Float32Array, size: number) => {
     const a = new InstancedBufferAttribute(arr, size);
     a.setUsage(DynamicDrawUsage);
     geo.setAttribute(name, a);
     return a;
   };
-  const attrs = [attr("aAnim", anim, 4), attr("aShirt", shirt, 3), attr("aPants", pants, 3), attr("aSkin", skin, 3)];
-  return { mesh, anim, shirt, pants, skin, attrs, mats: [mat, depth] };
+  const attrs = [attr("aAnim", anim, 4), attr("aShirt", shirt, 3), attr("aPants", pants, 3), attr("aSkin", skin, 3), attr("aApron", apron, 4)];
+  return { mesh, anim, shirt, pants, skin, apron, attrs, mats: [mat, depth] };
 }
 
 function writeColor(arr: Float32Array, i: number, c: Color) {
@@ -199,6 +210,8 @@ function flush(l: Layer, n: number) {
     a.addUpdateRange(0, n * a.itemSize);
     a.needsUpdate = true;
   }
+  // instances moved: let the next raycast recompute the bounds (three caches them)
+  l.mesh.boundingSphere = null;
 }
 
 /** Stable 0..1 identity for a person from their (fixed) colours. */
@@ -215,7 +228,7 @@ const base = new Matrix4();
 const scaleM = new Matrix4();
 const dogM = new Matrix4();
 
-export function createPeople(capacity: number, opts: { emissive?: number } = {}): People {
+export function createPeople(capacity: number, opts: { emissive?: number; aprons?: boolean } = {}): People {
   const uTime = { value: 0 };
   const emissive = opts.emissive ?? 0.04;
   const people = layer(personGeometry(), "person", capacity, uTime, emissive, true);
@@ -226,15 +239,20 @@ export function createPeople(capacity: number, opts: { emissive?: number } = {})
   group.name = "people";
   // children[0] must stay the people mesh: modules tune its material's emissiveIntensity for the night glow
   group.add(people.mesh, umbrellas.mesh, dogs.mesh);
+  people.mesh.name = "torso";
+  // accessories are drawn, never picked (their instance ids are not people)
+  umbrellas.mesh.raycast = () => {};
+  dogs.mesh.raycast = () => {};
   let nUmb = 0;
   let nDog = 0;
   const t0 = performance.now();
 
   return {
     group,
-    set(i, x, y, z, heading, phase, moving, scale, shirt, trousers, skin) {
+    meshes: { torso: people.mesh },
+    set(i, x, y, z, heading, phase, moving, scale, shirt, trousers, skin, apron) {
       base.makeRotationY(heading).multiply(scaleM.makeScale(scale, scale, scale));
-      base.setPosition(x, y, z);
+      base.setPosition(x, y + groundY(x, z), z);
       people.mesh.setMatrixAt(i, base);
       const seed = lookSeed(shirt, trousers, skin);
       const kind = seed < UMBRELLA_SHARE ? 1 : seed < UMBRELLA_SHARE + DOG_SHARE ? 2 : 0;
@@ -246,6 +264,13 @@ export function createPeople(capacity: number, opts: { emissive?: number } = {})
       writeColor(people.shirt, i, shirt);
       writeColor(people.pants, i, trousers);
       writeColor(people.skin, i, skin);
+      const ap = people.apron;
+      if (opts.aprons && apron) {
+        ap[i * 4] = apron.r;
+        ap[i * 4 + 1] = apron.g;
+        ap[i * 4 + 2] = apron.b;
+        ap[i * 4 + 3] = 1;
+      } else ap[i * 4 + 3] = 0;
       if (kind === 1 && nUmb < umbrellas.mesh.instanceMatrix.count) {
         const u = nUmb++;
         umbrellas.mesh.setMatrixAt(u, base);

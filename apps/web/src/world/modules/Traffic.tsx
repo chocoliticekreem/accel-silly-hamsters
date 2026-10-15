@@ -13,6 +13,7 @@ import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
+import { groundY } from "../ground";
 import { buildVehicle, PALETTES, PARTS, VEHICLE_KINDS, type Part, type VehicleKind } from "../vehicleModels";
 
 interface Vehicle {
@@ -155,7 +156,7 @@ export default function Traffic() {
       v.path.at(s, forward ? -v.lane : v.lane, p);
       const [x, z] = toScene(p.x, p.z);
       const dir = forward ? 1 : -1;
-      o.position.set(x, 0, z);
+      o.position.set(x, groundY(x, z), z);
       // scene z = -north, so heading in scene is atan2(dx, -dz)
       o.rotation.set(0, Math.atan2(p.dx * dir, -p.dz * dir), 0);
       o.updateMatrix();

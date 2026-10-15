@@ -12,7 +12,9 @@ import Buildings from "./modules/Buildings";
 import CameraRig from "./modules/CameraRig";
 import Glow from "./modules/Glow";
 import Ground from "./modules/Ground";
+import Heatmap from "./modules/Heatmap";
 import Infill from "./modules/Infill";
+import Construction from "./modules/Construction";
 import Sky from "./modules/Sky";
 import Stores from "./modules/Stores";
 import StreetLights from "./modules/StreetLights";
@@ -22,19 +24,31 @@ import StreetDressing from "./modules/StreetDressing";
 import StreetEvents from "./modules/StreetEvents";
 import Streets from "./modules/Streets";
 import Traffic from "./modules/Traffic";
+import ClubLife from "./modules/ClubLife";
+import Incidents from "./modules/Incidents";
+import Interiors from "./modules/Interiors";
+import Police from "./modules/Police";
+import Photoreal, { usePhotorealHides } from "./modules/Photoreal";
 
 export const MODULES: Record<string, ComponentType> = {
   Sky,
+  Photoreal,
   Ground,
+  Heatmap,
   Skyline,
   Streets,
   Buildings,
   Infill,
+  Construction,
   Stores,
   StreetLights,
   StreetDressing,
   StreetEvents,
   Traffic,
+  ClubLife,
+  Interiors,
+  Incidents,
+  Police,
   Footfall,
   Agents,
   CameraRig,
@@ -62,6 +76,7 @@ export interface WorldProps {
 export default function World({ map, run, stores, cameraGroup = "main", interactive = true, onLive }: WorldProps) {
   const [dpr, setDpr] = useState(1.5);
   const [enabled] = useState(enabledModules);
+  const photorealHides = usePhotorealHides();
   const live = useMemo(() => {
     const l = newLive();
     onLive?.(l);
@@ -82,7 +97,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
       <AdaptiveDpr pixelated />
       <WorldContext.Provider value={ctx}>
         {Object.entries(MODULES)
-          .filter(([name]) => enabled.includes(name))
+          .filter(([name]) => enabled.includes(name) && !photorealHides.has(name))
           .map(([name, M]) => (
             <ModuleBoundary key={name} name={name}>
               <Suspense fallback={null}>
