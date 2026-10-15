@@ -34,7 +34,15 @@ from backend.contract import (
     StoreRunResult,
     Suggestion,
 )
-from backend.schemas import AnalystState, NotebookEntry, RunConfig, RunSummary, StoreConfig
+from backend.schemas import (
+    AnalystState,
+    CalibrationFile,
+    CalibrationVenue,
+    NotebookEntry,
+    RunConfig,
+    RunSummary,
+    StoreConfig,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 SAMPLE_DIR = ROOT / "runs" / "0"
@@ -914,3 +922,33 @@ def test_cors_allows_local_dev_servers_on_any_port(
         "/api/runs", headers={"Origin": origin, "Access-Control-Request-Method": "GET"}
     )
     assert (response.headers.get("access-control-allow-origin") == origin) is allowed
+
+
+def test_calibration_is_404_until_the_pipeline_builds_it(client: TestClient) -> None:
+    response = client.get("/api/calibration")
+    assert response.status_code == 404
+    assert "run the pipeline" in response.json()["detail"]
+
+
+def test_calibration_serves_the_processed_file_with_placeholder_flags(client: TestClient) -> None:
+    flat = [0.0] * 24
+    calibration = CalibrationFile(
+        fallback=True,
+        notes=["PLACEHOLDER, NOT MEASURED"],
+        venues=[
+            CalibrationVenue(
+                name="Typical cafe",
+                storeId="s3",
+                type="cafe",
+                weekday=flat,
+                weekend=flat,
+                measured=False,
+                source=None,
+            )
+        ],
+    )
+    store.write_json(settings.PROCESSED_DIR / "calibration.json", calibration)
+    body = client.get("/api/calibration").json()
+    assert CalibrationFile.model_validate(body) == calibration
+    assert body["venues"][0]["measured"] is False
+    assert body["fallback"] is True
