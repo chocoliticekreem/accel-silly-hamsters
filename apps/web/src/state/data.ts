@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api } from "../api/client";
 import type { AgentDay, AgentEvent, AgentSession, AnalystStatus, Calibration, Health, RunAreaSummary, RunFootfall, StoreInsights, CityMap, OwnerEvent, OwnerReport, RunStores, RunSummary, StreetEvent, Suggestion } from "../api/contract";
 import { DAYS_PER_RUN } from "../api/contract";
-import { resolveOverlaps } from "../sim/footprints";
+import { clearCarriageways, resolveOverlaps } from "../sim/footprints";
 import { mergeDays, prepareAgents, type PreparedAgent } from "../sim/interp";
 import { task, watchBytes, type StageId } from "./loading";
 
@@ -101,7 +101,7 @@ export function useResource<T>(key: string | null, loader: () => Promise<T>): Re
 
 // OSM bounding boxes overlap; trim them once so walls never run through each other (sim/footprints.ts)
 export const useMap = () =>
-  useResource<CityMap>("map", () => tracked("map", "map", "/api/map", () => api.map().then((m) => ({ ...m, buildings: resolveOverlaps(m.buildings) }))));
+  useResource<CityMap>("map", () => tracked("map", "map", "/api/map", () => api.map().then((m) => ({ ...m, buildings: clearCarriageways(resolveOverlaps(m.buildings), m.streets) }))));
 export const useRuns = () => useResource<RunSummary[]>("runs", () => tracked("run", "runs", "/api/runs", () => api.runs()));
 export const useAnalyst = () => useResource<AnalystStatus>("analyst", () => api.analyst());
 export const useHealth = () => useResource<Health | null>("health", () => api.health());
