@@ -112,6 +112,8 @@ const pos = new Vector3();
 const quat = new Quaternion();
 const up = new Vector3(0, 1, 0);
 const scl = new Vector3(1, 1, 1);
+/** Live mounts per built set (see the dispose effect). */
+const mounts = new WeakMap<object, number>();
 const m4 = new Matrix4();
 const tailCol = new Color();
 const pose = { x: 0, z: 0, h: 0 };
@@ -339,13 +341,19 @@ export default function Traffic() {
     return { meshes, mats };
   }, [sim]);
 
-  useEffect(
-    () => () => {
-      Object.values(built.meshes).forEach((m) => m.dispose());
-      Object.values(built.mats).forEach((m) => m.dispose());
-    },
-    [built],
-  );
+  // dispose only once nothing holds `built` any more: StrictMode's mount → unmount → mount keeps the memo, and
+  // disposing it there nulls the batch textures (setMatrixAt then throws every frame)
+  useEffect(() => {
+    mounts.set(built, (mounts.get(built) ?? 0) + 1);
+    return () => {
+      mounts.set(built, (mounts.get(built) ?? 1) - 1);
+      window.setTimeout(() => {
+        if ((mounts.get(built) ?? 0) > 0) return;
+        Object.values(built.meshes).forEach((m) => m.dispose());
+        Object.values(built.mats).forEach((m) => m.dispose());
+      }, 0);
+    };
+  }, [built]);
 
   useFrame((_, delta) => {
     const hour = hourOf(useSim.getState().t);

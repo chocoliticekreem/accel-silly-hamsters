@@ -5,31 +5,18 @@ import { WebGLRenderer, type WebGLRendererParameters } from "three";
 type DefaultGLProps = { canvas?: unknown };
 
 export type Backend = "webgl" | "webgpu";
-const KEY = "smartcity.renderer";
-
-/** What the viewer asked for (URL beats the saved menu choice). */
+/** What the viewer asked for: ?gpu=webgpu only (not persisted, so a plain reload is always the WebGL default). */
 export function requestedBackend(): Backend {
   if (typeof window === "undefined") return "webgl";
-  const q = new URLSearchParams(window.location.search).get("gpu");
-  if (q === "webgpu" || q === "webgl") return q;
-  try {
-    return window.localStorage.getItem(KEY) === "webgpu" ? "webgpu" : "webgl";
-  } catch {
-    return "webgl";
-  }
+  return new URLSearchParams(window.location.search).get("gpu") === "webgpu" ? "webgpu" : "webgl";
 }
 
 export function webgpuAvailable(): boolean {
   return typeof navigator !== "undefined" && "gpu" in navigator && !!(navigator as Navigator & { gpu?: unknown }).gpu;
 }
 
-/** Saves the menu choice and reloads (a renderer can't be swapped under a live scene). Drops ?gpu= from the URL. */
+/** Reloads with the other renderer (a renderer can't be swapped under a live scene). */
 export function switchBackend(b: Backend) {
-  try {
-    window.localStorage.setItem(KEY, b);
-  } catch {
-    // blocked storage: fall through to the URL
-  }
   const url = new URL(window.location.href);
   url.searchParams.delete("gpu");
   if (b === "webgpu") url.searchParams.set("gpu", "webgpu");

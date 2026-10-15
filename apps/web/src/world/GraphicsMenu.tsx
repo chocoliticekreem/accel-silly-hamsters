@@ -1,6 +1,7 @@
 // "Graphics: High / Medium / Low" pill (bottom-right of the main view). Auto lets the frame rate step it down.
 import { useEffect, useRef, useState } from "react";
 import { QUALITIES, useQuality, type Quality } from "./quality";
+import { requestedBackend, switchBackend, webgpuAvailable, type Backend } from "./renderer";
 
 const LABEL: Record<Quality, string> = { high: "High", medium: "Medium", low: "Low" };
 
@@ -24,6 +25,8 @@ const box: React.CSSProperties = {
 export function GraphicsMenu() {
   const { level, auto, tiltShift, setLevel, setAuto, setTiltShift } = useQuality();
   const [open, setOpen] = useState(false);
+  const backend: Backend = requestedBackend();
+  const gpuOk = webgpuAvailable();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -50,6 +53,14 @@ export function GraphicsMenu() {
           </button>
           <button onClick={() => setTiltShift(!tiltShift)} style={row(tiltShift)} disabled={level === "low"}>
             Tilt-shift <span style={{ color: tiltShift && level !== "low" ? "var(--lamp)" : "var(--faint)" }}>{tiltShift && level !== "low" ? "on" : "off"}</span>
+          </button>
+          <div style={{ height: 1, background: "var(--line)", margin: "4px 2px" }} />
+          <div style={{ padding: "2px 8px", color: "var(--faint)", fontSize: 10, letterSpacing: 0.4, textTransform: "uppercase" }}>Renderer</div>
+          <button onClick={() => backend !== "webgl" && switchBackend("webgl")} style={row(backend === "webgl")}>
+            WebGL {backend === "webgl" && <span style={{ color: "var(--lamp)" }}>●</span>}
+          </button>
+          <button onClick={() => gpuOk && backend !== "webgpu" && switchBackend("webgpu")} style={{ ...row(backend === "webgpu"), opacity: gpuOk ? 1 : 0.45 }} disabled={!gpuOk} title={gpuOk ? "Metal via WebGPU" : "WebGPU isn't available in this browser"}>
+            WebGPU {backend === "webgpu" && <span style={{ color: "var(--lamp)" }}>●</span>}
           </button>
         </div>
       )}

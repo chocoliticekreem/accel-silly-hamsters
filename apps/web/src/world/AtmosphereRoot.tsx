@@ -9,6 +9,8 @@ import type { WebGLRenderer } from "three";
 import { seal, track } from "../state/loading";
 import { PerfProbe } from "./PerfProbe";
 import { RenderTuning } from "./RenderTuning";
+import { useWebGPURenderer } from "./renderer";
+import { WebGPUStage } from "./WebGPUStage";
 
 const Q = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
 const STATS = Q.has("stats");
@@ -18,6 +20,22 @@ const TUNE = !Q.has("notune");
 const generators = new WeakMap<WebGLRenderer, PrecomputedTexturesGenerator>();
 
 export function AtmosphereRoot({ children }: { children: ReactNode }) {
+  return useWebGPURenderer ? <WebGPURoot>{children}</WebGPURoot> : <WebGLAtmosphereRoot>{children}</WebGLAtmosphereRoot>;
+}
+
+/** ?gpu=webgpu: no takram atmosphere (WebGL-only); the WebGPU stage brings its own sky light and TSL post. */
+function WebGPURoot({ children }: { children: ReactNode }) {
+  useMemo(() => seal("lighting"), []);
+  return (
+    <>
+      <WebGPUStage />
+      {STATS && <PerfProbe />}
+      {children}
+    </>
+  );
+}
+
+function WebGLAtmosphereRoot({ children }: { children: ReactNode }) {
   const gl = useThree((s) => s.gl);
   const generator = useMemo(() => {
     let g = generators.get(gl);
