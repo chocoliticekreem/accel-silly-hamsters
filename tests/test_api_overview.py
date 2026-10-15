@@ -346,6 +346,27 @@ def test_404s(client: TestClient, world: Path) -> None:
     assert client.get("/api/stores/s1/overview").status_code == 200
 
 
+def test_a_run_where_the_shop_closed_for_good_is_never_its_best(
+    client: TestClient, history: None
+) -> None:
+    path = store.run_dir(2) / "stores.json"
+    results = json.loads(path.read_text())
+    results["s1"]["closedFromDay"] = 8
+    path.write_text(json.dumps(results))
+    body = client.get("/api/stores/s1/overview").json()
+    assert body["bestRun"] != 2
+    assert not any(h["best"] for h in body["history"] if h["run"] == 2)
+
+
+def test_owner_sees_real_customers_not_sim_agents(
+    client: TestClient, history: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(economics, "people_per_agent", lambda: 19.0)
+    body = client.get("/api/stores/s1/overview?run=2").json()
+    assert body["numbers"]["customersPerWeek"] == {"value": 250 * 19, "change": 1.5}
+    assert body["numbers"]["kwhPerWeek"]["value"] == 170.0  # energy is real already
+
+
 # --- POST /api/stores/{storeId}/optimize -----------------------------------------------------
 
 

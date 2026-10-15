@@ -4,18 +4,18 @@
   "notes": [
     "PLACEHOLDER, NOT MEASURED: 5 of 5 venues (measured=false) are hand-written shapes of the hourly pattern Google Popular Times typically shows for the venue type, not data for these venues. They cannot validate the sim: calibration error and report confidence must leave them out.",
     "Scale: 0-100 = share of the venue's busiest hour of the week (Popular Times scale). weekday = mean of the Mon-Fri calendar days, weekend = Sat-Sun; an hour after midnight belongs to the next calendar day (Fri 01:00 counts as Saturday), as in StoreStats.",
-    "s11 Quaker Street Coffee & Bubble Tea (cafe) is the cafe nearest the station; placeholder (weekday commuter rush 08-10 and lunch, weekend brunch peak 11-14).",
-    "s28 The Knave of Clubs (restaurant) is the restaurant nearest the station; placeholder (lunch 12-14 and a bigger dinner peak 19-21, busiest on Saturday).",
-    "s44 Pavilion Bar (bar) is the bar nearest the station; placeholder (after-work rise from 17:00, latest and busiest on Friday and Saturday nights).",
-    "c3 Village Underground (club) is the club nearest Bagel buzz; placeholder (open Thu-Sat 22:00-03:00, peak 01-02 on Friday and Saturday nights).",
-    "s29 Bagel buzz (takeaway) is the takeaway nearest a club (Village Underground, 79 m); placeholder (lunch, dinner 18-21 and an after-club peak 02-04 on Friday and Saturday nights).",
+    "s30 Quaker Street Coffee & Bubble Tea (cafe) is the cafe nearest the station; placeholder (weekday commuter rush 08-10 and lunch, weekend brunch peak 11-14).",
+    "s79 The Knave of Clubs (restaurant) is the restaurant nearest the station; placeholder (lunch 12-14 and a bigger dinner peak 19-21, busiest on Saturday).",
+    "s128 Shoreditch House (bar) is the bar nearest the station; placeholder (after-work rise from 17:00, latest and busiest on Friday and Saturday nights).",
+    "c4 Shoreditch Townhouse (club) is the club nearest Fab Thai Street Food; placeholder (open Thu-Sat 22:00-03:00, peak 01-02 on Friday and Saturday nights).",
+    "s89 Fab Thai Street Food (takeaway) is the takeaway nearest a club (Shoreditch Townhouse, 51 m); placeholder (lunch, dinner 18-21 and an after-club peak 02-04 on Friday and Saturday nights).",
     "Popular Times needs a paid API key: BESTTIME_API_KEY and OUTSCRAPER_API_KEY are not set (SerpAPI is key-gated too and not wired in), so no venue was measured.",
     "London Datastore checked 2026-10-15 (all 1306 datasets): no open hourly high-street footfall for Shoreditch, Hackney or Tower Hamlets. Closest: Google Mobility by Borough (daily % change, All Rights Reserved, ended Oct 2022), the COVID-19 Mobility Report footfall series (daily, London-wide) and LTDS 'Trips made in London by time of day' (London-wide weekday trip starts). GLA High Streets Data Service footfall is not in the open catalogue (only its boundaries, dataset 2rq4w)."
   ],
   "venues": [
     {
       "name": "Typical cafe",
-      "storeId": "s11",
+      "storeId": "s30",
       "type": "cafe",
       "weekday": [
         0.0,
@@ -74,7 +74,7 @@
     },
     {
       "name": "Typical restaurant",
-      "storeId": "s28",
+      "storeId": "s79",
       "type": "restaurant",
       "weekday": [
         0.0,
@@ -133,7 +133,7 @@
     },
     {
       "name": "Typical bar",
-      "storeId": "s44",
+      "storeId": "s128",
       "type": "bar",
       "weekday": [
         14.0,
@@ -192,7 +192,7 @@
     },
     {
       "name": "Typical club",
-      "storeId": "c3",
+      "storeId": "c4",
       "type": "club",
       "weekday": [
         10.0,
@@ -251,7 +251,7 @@
     },
     {
       "name": "Typical late-night takeaway",
-      "storeId": "s29",
+      "storeId": "s89",
       "type": "takeaway",
       "weekday": [
         22.0,

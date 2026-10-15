@@ -70,6 +70,21 @@ not sent as `null`.
   baseline, a bug). `POST /api/stores/{storeId}/optimize`'s 409 trusts the session lock first: a
   live trainer blocks however old its checkpoint, and a checkpoint stamped in the future (clock
   skew) with no live trainer does not.
+- **~200 stores, landmark stores** (`backend/pipeline/osm_map.py`). No shape change: `map.stores`
+  grew from 72 to 209 (`TYPE_TARGETS` cafe 40, restaurant 40, takeaway 32, bar 32, shop 35,
+  offlicence 12, plus 2-6 clubs: now 6), picked by the same spread. On top of those,
+  `LANDMARK_STORES` puts 12 stores inside the landmark buildings: `encode-hub` (Encode Hub, a
+  `cafe`), `artotel-london-hoxton` (The Brush, `restaurant`; Solaya, the rooftop `bar`) and
+  `boxpark-shoreditch` (5 `takeaway` and 4 `shop` units). A landmark store's `buildingId` is the
+  landmark's `buildingId`; several stores share that building, which keeps its own `kind`
+  (`office`/`residential`) and no `storeId`. Every other store still owns exactly one building
+  (`kind: store`/`club`, `storeId` set). No new `StoreType`. **Store ids are renumbered**
+  (`s1`..`s203` by type then name, `c1`..`c6`; building ids shift too), so runs, suggestions,
+  owner events, reports and training configs saved before this change no longer match the map;
+  start a fresh run. Demand grew with the stores so each store keeps its visits per day (~37):
+  `demand.SIM_WEEKDAY_ARRIVALS` 3,500 → 7,400 and `citizens.GENERAL_ARRIVALS_PER_DAY` capped at
+  8,000 (was 4,000). Club crowds keep their old size (`CLUB_SCALE_ARRIVALS` 3,500). A run has
+  ~2.1x the agents, day files up to ~5.4 MB (were ~1.9 MB), sim ~18 s (was ~11 s).
 
 - **Store overview semantics** (`backend/overview.py`). Baseline = the analyst checkpoint's
   `baselineRun`, else the first finished run without a parent. `history` = the baseline plus every

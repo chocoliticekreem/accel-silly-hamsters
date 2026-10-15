@@ -257,6 +257,16 @@ class ApplyResponse(Model):
     queuedRun: int
 
 
+class ExperimentRequest(Model):
+    """POST /api/stores/{storeId}/experiment: the owner's own settings for one run. Unset fields
+    keep the base run's value; baseRun defaults to the latest finished run."""
+
+    open: str | None = None
+    close: str | None = None
+    lighting: list[LightingLevel] | None = Field(default=None, min_length=24, max_length=24)
+    baseRun: int | None = None
+
+
 # --- GET /api/analyst -----------------------------------------------------------------------
 
 

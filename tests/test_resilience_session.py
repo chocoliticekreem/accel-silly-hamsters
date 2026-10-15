@@ -132,6 +132,17 @@ def test_the_api_reconciles_on_startup_and_serves_recovery_counts(sim):
     assert set(body["recoveries"]) >= {"retries", "fallbacks", "repairs", "resumed", "quarantined"}
 
 
+def test_reading_the_session_shows_a_dead_trainer_as_stopped_without_writing(sim):
+    from backend.api.routers.agents import get_session
+
+    save_raw(running_state(iso(-600)))
+    before = store.analyst_state_path().read_bytes()
+    body = json.loads(get_session().body)
+    assert body["state"] == "stopped" and body["stoppedReason"] == "error"
+    assert "ended without stopping" in body["error"]
+    assert store.analyst_state_path().read_bytes() == before  # a GET never writes
+
+
 def test_recovery_events_reach_the_agent_log_without_shop_ids(sim):
     from backend.api.main import app
 
@@ -161,6 +172,7 @@ def test_a_read_only_deployment_never_rewrites_the_checkpoint(sim, monkeypatch):
 
 
 def test_store_optimize_trusts_the_lock_over_timestamps(sim):
+    settings.RUNS_DIR.mkdir(parents=True, exist_ok=True)
     future = running_state(iso(+3 * 3600))
     assert not stores_router._is_running(future)  # skewed clock, nobody holds the lock
     old = running_state(iso(-10 * 3600))

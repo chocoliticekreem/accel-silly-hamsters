@@ -11,12 +11,16 @@ import demandData from "../../../../data/processed/demand.json";
 import { formatHHMM } from "../sim/time";
 import { configForRun, LICENCE, MOCK_RUN_COUNT, notebookLabel, type RunConfig } from "./configs";
 import { generateMap } from "./map";
+import { mockMap } from "./realMap";
+import { demoRoles } from "./roles";
 import { overviewFromParts } from "../api/overviewFallback";
 import { buildInsights } from "./insights";
 import { buildReport, makePdf, suggestionsBetween } from "./report";
 import { simulateRun, type RunResult } from "./simulate";
 
 export const MOCK_SEED = 42;
+/** Runs whose agent days stay in memory at once (the rest are re-simulated when asked for). */
+const DAYS_KEPT = 3;
 const STARTED_AT = Date.parse("2026-10-15T23:00:00Z");
 const MINUTES_PER_RUN = 69; // analyst wall-clock per iteration → ~9h 12m for 8 runs
 const SCALE_NOTE = /1 sim agent ~ ([\d,]+(?:\.\d+)?) real arrivals/.exec(demandData.notes.join(" "));
@@ -32,16 +36,38 @@ export interface MockState {
   decisions: DecisionRequest[];
 }
 
-export function createMockState(): MockState {
-  const map = generateMap(MOCK_SEED);
+/** `map`: the city to simulate (default: the real processed map, mock/realMap.ts; tests can pass the schematic one). */
+export function createMockState(map: CityMap = mockMap(MOCK_SEED)): MockState {
   const configs = new Map<number, RunConfig>();
   const results = new Map<number, RunResult>();
   const config = (run: number) => {
     if (!configs.has(run)) configs.set(run, configForRun(map, run));
     return configs.get(run)!;
   };
+  // Every run's numbers stay cached; its agent days (the bulk of the memory on the real map) only for the
+  // DAYS_KEPT most recently used runs, re-simulated on demand (same seed, so identical).
+  const days = new Map<number, RunResult["days"]>();
+  const keepDays = (run: number, d: RunResult["days"]) => {
+    days.delete(run);
+    days.set(run, d);
+    while (days.size > DAYS_KEPT) days.delete(days.keys().next().value!);
+  };
   const result = (run: number) => {
-    if (!results.has(run)) results.set(run, simulateRun(map, config(run), MOCK_SEED, run));
+    if (!results.has(run)) {
+      const { days: d, ...rest } = simulateRun(map, config(run), MOCK_SEED, run);
+      keepDays(run, d);
+      const slim = rest as RunResult;
+      Object.defineProperty(slim, "days", {
+        enumerable: false,
+        get: () => {
+          let hit = days.get(run);
+          if (!hit) hit = simulateRun(map, config(run), MOCK_SEED, run).days;
+          keepDays(run, hit);
+          return hit;
+        },
+      });
+      results.set(run, slim);
+    }
     return results.get(run)!;
   };
   // additive map fields the real backend serves: licence, current hours, floor area, sources
@@ -71,7 +97,7 @@ export function createMockState(): MockState {
         seed: MOCK_SEED,
         status: "done" as const,
         kpis: k,
-        notebook: `${notebookLabel(run)}${effect}`,
+        notebook: `${notebookLabel(run, map)}${effect}`,
         createdAt: new Date(STARTED_AT + run * MINUTES_PER_RUN * 60_000).toISOString(),
         costPerStoreWeekGbp: Math.round((0.38 + 0.01 * (run % 4)) * 100) / 100,
       };
@@ -81,6 +107,9 @@ export function createMockState(): MockState {
   const bestRun = () => runs().reduce((best, r) => ((r.kpis?.visitsPerKwh ?? 0) > (best.kpis?.visitsPerKwh ?? 0) ? r : best)).run;
   return { map, config, result, runs, bestRun, decisions: [] };
 }
+
+/** The mock on the schematic fallback map (mock/map.ts): the small, fast city the story-level tests pin down. */
+export const schematicMockState = () => createMockState(generateMap(MOCK_SEED));
 
 /** Simulated network latency, so loading states get exercised in mock mode too. */
 const later = <T>(fn: () => T, ms = 60): Promise<T> =>
@@ -173,7 +202,7 @@ export function mockApi(state: MockState = sharedMockState()): Api {
         const used = new Set<string>();
         const venues = (calibrationData.venues as CalibrationVenue[]).flatMap((v) => {
           const pick =
-            (v.type === "takeaway" && map.stores.find((s) => s.name === "Kebab Co")) ||
+            (v.type === "takeaway" && demoRoles(map).takeaway) ||
             map.stores.find((s) => s.type === v.type && !used.has(s.id));
           if (!pick) return [];
           used.add(pick.id);
@@ -274,7 +303,7 @@ export function mockApi(state: MockState = sharedMockState()): Api {
             { at: at(r.run, 20), agent: "analyst", type: "handoff", run: r.run, data: { to: "store_agents" } },
             { at: at(r.run, 24), agent: "store_owner", type: "proposals", run: r.run, data: { mode: "heuristic", stores, suggestions: props + 12 } },
             { at: at(r.run, 25), agent: "store_agents", type: "handoff", run: r.run, data: { to: "analyst", proposals: props + 12, stores } },
-            { at: at(r.run, 30), agent: "analyst", type: "hypothesis", run: r.run, data: { backend: "heuristic", text: `${notebookLabel(next.run)} should lift visits/kWh by about +${Math.max(0.1, gain * 80).toFixed(1)}%`, expectedGain: Math.max(0.001, gain * 0.8), changesCount: props } },
+            { at: at(r.run, 30), agent: "analyst", type: "hypothesis", run: r.run, data: { backend: "heuristic", text: `${notebookLabel(next.run, map)} should lift visits/kWh by about +${Math.max(0.1, gain * 80).toFixed(1)}%`, expectedGain: Math.max(0.001, gain * 0.8), changesCount: props } },
             { at: at(next.run, 2), agent: "analyst", type: "experiment", run: next.run, data: { parentRun: r.run, changesCount: props } },
             { at: at(next.run, 60), agent: "analyst", type: "result", run: next.run, data: { objectiveValue: vpk(next), gain, newBest: vpk(next) > best, notebook: next.notebook, lowGainStreak: gain < 0.02 ? 1 : 0 } },
           );

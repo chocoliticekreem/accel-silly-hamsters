@@ -147,7 +147,10 @@ def _lock_runs_dir() -> IO[str]:
 
 
 def lock_held() -> bool:
-    """True while some live process (this one included) holds runs/training.lock."""
+    """True while some live process (this one included) holds runs/training.lock. Creates
+    nothing: no lock file means nobody holds it."""
+    if not store.training_lock_path().exists():
+        return False
     handle = _try_lock()
     if handle is None:
         return True
@@ -200,6 +203,31 @@ def checkpoint_age_seconds(state: AnalystState) -> float | None:
     return (datetime.now(UTC) - updated).total_seconds()
 
 
+def is_dead(state: AnalystState, grace_seconds: float = 60.0) -> bool:
+    """A "running" checkpoint that no live process owns: the lock is free and the checkpoint is
+    older than grace_seconds (or stamped in the future beyond CLOCK_SKEW_SECONDS)."""
+    if state.state != "running":
+        return False
+    age = checkpoint_age_seconds(state)
+    if age is not None and -CLOCK_SKEW_SECONDS <= age < grace_seconds:
+        return False
+    return not lock_held()
+
+
+def as_stopped(state: AnalystState) -> AnalystState:
+    """`state` as reconcile_stale writes it: stopped, "error", resumable."""
+    return state.model_copy(
+        update={
+            "state": "stopped",
+            "stoppedReason": "error",
+            "error": (
+                f"the process running this session ({state.owner}) ended without stopping "
+                f"(crash, kill or restart); start training to resume after step {state.step}"
+            ),
+        }
+    )
+
+
 def reconcile_stale(grace_seconds: float = 60.0) -> AnalystState | None:
     """A checkpoint reads "running" but no live process holds the lock (the trainer crashed or
     was killed, or the API restarted under it): mark it stopped with stoppedReason "error" so the
@@ -222,11 +250,7 @@ def reconcile_stale(grace_seconds: float = 60.0) -> AnalystState | None:
         state = store.load_analyst_state()  # re-read under the lock
         if state is None or state.state != "running":
             return None
-        state.state, state.stoppedReason = "stopped", "error"
-        state.error = (
-            f"the process running this session ({state.owner}) ended without stopping (crash, "
-            f"kill or restart); start training to resume after step {state.step}"
-        )
+        state = as_stopped(state)
         llm.load_recoveries(state.sessionId, state.recoveries)
         llm.record_recovery(
             "reconcile",
@@ -544,8 +568,12 @@ def _objective_value(state: AnalystState, config: TrainingConfig, run: int) -> f
         return rundata.objective_value(run, config.objective)
     if base is None or run == base:
         return 0.0
-    before, after = rundata.load_stores(base)[sid].kpis, rundata.load_stores(run)[sid].kpis
-    return economics.profit_vs(_shop_type(sid), before, after, economics.area_price_gbp_per_kwh())
+    before, after = rundata.load_stores(base)[sid], rundata.load_stores(run)[sid]
+    if after.closedFromDay is not None:
+        return float("-inf")  # closing for good saves wages; it is never the advice
+    return economics.profit_vs(
+        _shop_type(sid), before.kpis, after.kpis, economics.area_price_gbp_per_kwh()
+    )
 
 
 def _shop_scale(state: AnalystState, config: TrainingConfig) -> float:

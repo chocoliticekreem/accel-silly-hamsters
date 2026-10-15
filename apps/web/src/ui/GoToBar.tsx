@@ -13,6 +13,7 @@ import { enterPlace, goPlace } from "../world/landmarks/actions";
 import { LEVELS } from "../world/landmarks/floors";
 import { placesFor, type Place } from "../world/landmarks/places";
 import "./travel.css";
+import { BusinessesMenuRow } from "./BusinessesChip";
 
 const ICONS: Record<string, typeof MapPin> = {
   encode: Building2,
@@ -193,6 +194,7 @@ export function GoToBar() {
               </div>
             );
           })}
+          <BusinessesMenuRow />
         </div>
       )}
       <FloorStepper list={list} />

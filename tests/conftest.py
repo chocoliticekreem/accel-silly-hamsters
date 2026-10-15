@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend import llm, settings
+from backend import economics, llm, settings
 
 
 @pytest.fixture(autouse=True)
@@ -24,3 +24,9 @@ def _fresh_llm_state():
     yield
     llm.reset_breaker()
     llm.reset_recoveries()
+
+
+@pytest.fixture(autouse=True)
+def _one_person_per_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hand-worked money in tests counts sim visits as people; test_economics_scale opts out."""
+    monkeypatch.setattr(economics, "people_per_agent", lambda: 1.0)

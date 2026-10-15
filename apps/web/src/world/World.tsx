@@ -7,7 +7,10 @@ import { PerformanceMonitor, Stats } from "@react-three/drei";
 import { Suspense, useMemo, useState, type ComponentType } from "react";
 import type { CityMap, RunStores } from "../api/contract";
 import { GraphicsMenu } from "./GraphicsMenu";
-import { ModuleBoundary } from "./ModuleBoundary";
+import { createRenderer } from "./renderer";
+import { ModuleBoundary, ModuleScope } from "./ModuleBoundary";
+import { ContextWatch, FrameGuard, FrameProbe, useGpu, useStagedModules } from "./staging";
+import { ContextLostOverlay } from "../ui/LoadingScreen";
 import { PRESETS, useQuality } from "./quality";
 import { newLive, WorldContext, type WorldCtx } from "./context";
 import { PhysicsLayer } from "./physics/PhysicsLayer";
@@ -22,6 +25,7 @@ import Infill from "./modules/Infill";
 import Construction from "./modules/Construction";
 import Sky from "./modules/Sky";
 import Stores from "./modules/Stores";
+import Businesses from "./modules/Businesses";
 import StreetLights from "./modules/StreetLights";
 import Footfall from "./modules/Footfall";
 import Skyline from "./modules/Skyline";
@@ -68,6 +72,7 @@ export const MODULES: Record<string, ComponentType> = {
   Infill,
   Construction,
   Stores,
+  Businesses,
   HeroLandmarks,
   StreetLights,
   StreetDressing,
@@ -110,6 +115,9 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
   const [stats] = useState(() => new URLSearchParams(window.location.search).has("stats"));
   const [enabled] = useState(enabledModules);
   const modeHides = useModuleHides();
+  // start-up: modules mount a few per frame in priority order (world/staging.tsx); a lost GPU context remounts the Canvas
+  const { mounted, tier } = useStagedModules(enabled.filter((n) => !modeHides.has(n)));
+  const gpuEpoch = useGpu((s) => s.epoch);
   const live = useMemo(() => {
     const l = newLive();
     onLive?.(l);
@@ -122,25 +130,31 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
     <Canvas
+      key={gpuEpoch}
       shadows="percentage"
       dpr={dpr}
       camera={{ position: [190, 105, -230], fov: 42, near: 1, far: 4000 }}
-      gl={{ antialias: false, powerPreference: "high-performance", stencil: false }}
+      gl={createRenderer}
     >
       {/* auto quality: step down when the frame rate sags, back up when there's headroom */}
       <PerformanceMonitor bounds={() => [42, 58]} flipflops={4} onDecline={() => useQuality.getState().step(-1)} onIncline={() => useQuality.getState().step(1)} />
       {stats && <Stats />}
+      <FrameGuard />
+      <ContextWatch />
+      <FrameProbe />
       <WorldContext.Provider value={ctx}>
         {/* physically based sky + aerial perspective share this (Sky drives it from the sim clock) */}
         <AtmosphereRoot>
-        <PhysicsLayer enabled={interactive && cameraGroup === "main"}>
+        <PhysicsLayer enabled={interactive && cameraGroup === "main" && tier >= 2}>
         {Object.entries(MODULES)
-          .filter(([name]) => enabled.includes(name) && !modeHides.has(name))
+          .filter(([name]) => enabled.includes(name) && !modeHides.has(name) && mounted.has(name))
           .map(([name, M]) => (
             <ModuleBoundary key={name} name={name}>
-              <Suspense fallback={null}>
-                <M />
-              </Suspense>
+              <ModuleScope name={name}>
+                <Suspense fallback={null}>
+                  <M />
+                </Suspense>
+              </ModuleScope>
             </ModuleBoundary>
           ))}
         </PhysicsLayer>
@@ -148,6 +162,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
       </WorldContext.Provider>
     </Canvas>
     {interactive && cameraGroup === "main" && <GraphicsMenu />}
+    <ContextLostOverlay />
     </div>
   );
 }

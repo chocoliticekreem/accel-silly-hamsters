@@ -18,7 +18,7 @@ const names = (id: string) => (id === "s1" ? "Kebab Co" : id);
 
 describe("owner labels", () => {
   it("reads like the spec's ticker", () => {
-    expect(momentLabel(shut.t)).toBe("Day 3 · 15:00");
+    expect(momentLabel(shut.t)).toBe("Wed · 15:00");
     expect(weekdayTime(shut.t)).toBe("Wed 15:00");
     expect(actionLabel(shut)).toBe("shut early at 15:00");
     expect(actionLabel({ ...shut, action: "temporary_closure", from: "Friday", to: "Saturday" })).toBe("closed until Saturday");

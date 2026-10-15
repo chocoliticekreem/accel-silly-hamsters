@@ -6,7 +6,8 @@
 // Group names are stable (`landmark-xoyo`, `landmark-artotel`, `landmark-encode`, `landmark-boxpark`) so other
 // modules (interiors, quick travel) can find and hide them.
 import { useFrame } from "@react-three/fiber";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { task, type TaskHandle } from "../../state/loading";
 import { toScene } from "../../sim/geometry";
 import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
@@ -33,22 +34,41 @@ function modelFor(p: LandmarkPlot): HeroModel {
   return m;
 }
 
+type Item = { name: string; object: ReturnType<typeof heroObject>; x: number; z: number; rot: number };
+
+function itemFor(p: LandmarkPlot): Item {
+  const object = heroObject(modelFor(p));
+  object.name = p.name;
+  // Boxpark: 2–3 container rows, stretched in depth to fill a deeper plot
+  if (p.key === "boxpark") object.scale.z = p.d / (boxparkRows(p.d) * BOXPARK_ROW);
+  const [x, z] = toScene(p.x, p.z);
+  return { name: p.name, object, x, z, rot: p.rot };
+}
+
 export default function HeroLandmarks() {
   const { map } = useWorld();
-  const items = useMemo(
-    () =>
-      landmarkPlots(map).map((p) => {
-        const object = heroObject(modelFor(p));
-        object.name = p.name;
-        // Boxpark: 2–3 container rows, stretched in depth to fill a deeper plot
-        if (p.key === "boxpark") object.scale.z = p.d / (boxparkRows(p.d) * BOXPARK_ROW);
-        const [x, z] = toScene(p.x, p.z);
-        return { name: p.name, object, x, z, rot: p.rot };
-      }),
-    [map],
-  );
+  const plots = useMemo(() => landmarkPlots(map), [map]);
+  // one model per frame (the art'otel alone is ~56k triangles): start-up never stalls on all four at once
+  const [items, setItems] = useState<Item[]>([]);
+  /** Built so far (a ref: a frame may run before React has re-rendered with the last one). */
+  const list = useRef<Item[]>([]);
+  const progress = useRef<TaskHandle | null>(null);
+  useEffect(() => {
+    progress.current = task("landmarks", "heroes", 2);
+    list.current = [];
+    setItems([]);
+  }, [plots]);
 
-  useFrame(() => setHeroNight(nightLevel(hourOf(useSim.getState().t))));
+  useFrame(() => {
+    setHeroNight(nightLevel(hourOf(useSim.getState().t)));
+    if (list.current.length < plots.length) {
+      const next = [...list.current, itemFor(plots[list.current.length])];
+      list.current = next;
+      setItems(next);
+      progress.current?.progress(next.length / plots.length);
+      if (next.length === plots.length) progress.current?.done();
+    } else if (!plots.length) progress.current?.done();
+  });
 
   return (
     <group name="hero-landmarks">

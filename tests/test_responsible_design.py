@@ -39,6 +39,7 @@ WRITE_ROUTES = {
     ("POST", "/api/training/start"),
     ("POST", "/api/training/stop"),
     ("POST", "/api/stores/{store_id}/optimize"),
+    ("POST", "/api/stores/{store_id}/experiment"),
 }
 SHOPS = [sid for sid, (_, kind, _, _) in STORES.items() if kind != "club"]
 
@@ -262,7 +263,7 @@ def test_the_report_pdf_says_simulated_not_guaranteed(world: SimpleNamespace) ->
 
 
 def test_reading_any_page_changes_nothing_on_disk(world: SimpleNamespace) -> None:
-    """Nothing changes without an explicit request: six routes write, and no GET writes."""
+    """Nothing changes without an explicit request: seven routes write, and no GET writes."""
     routes = served_routes()
     assert {(method, path) for method, path in routes if method != "GET"} == WRITE_ROUTES
 

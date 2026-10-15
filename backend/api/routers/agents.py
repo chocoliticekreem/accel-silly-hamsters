@@ -112,11 +112,14 @@ def _read(path: Path, run: int | None) -> list[AgentEvent]:
 
 @router.get("/api/agents/session", response_model=AgentSession)
 def get_session():
-    """The analyst checkpoint in full. 404 before the analyst has ever run."""
-    training.reconcile_stale()  # a trainer that died mid-session no longer reads "running"
+    """The analyst checkpoint in full. 404 before the analyst has ever run. A "running"
+    checkpoint whose trainer died reads as stopped ("error"); this GET writes nothing (the API's
+    startup and the next session reconcile the file)."""
     state = store.load_analyst_state()
     if state is None:
         raise HTTPException(404, "no training session yet")
+    if training.is_dead(state):
+        state = training.as_stopped(state)
     # Only the contract's fields: scopeStore and the session's config (its storeIds) stay out of
     # the area view (data firewall: no shop ids in area-level views).
     session = AgentSession.model_validate(state.model_dump(include=set(AgentSession.model_fields)))

@@ -47,7 +47,7 @@ export function OwnerTimeline({ storeId, run: runProp, title = "What I changed t
                   </span>
                   <span className="tl-body">
                     <span className="tl-when mono">
-                      Day {e.day} · {weekdayTime(e.t)}
+                      {weekdayTime(e.t)}
                     </span>
                     <span className="tl-what">{actionLabel(e)}</span>
                     <q className="tl-reason">{e.reason}</q>

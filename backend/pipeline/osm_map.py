@@ -11,8 +11,9 @@ z north):
              largest connected piece kept (the sim builds its walk graph from shared points).
   buildings  axis-aligned boxes with the footprint's area, pulled back off the carriageways,
              at most MAX_BUILDINGS (the largest).
-  stores     ~68 named venues in a balanced type mix plus 2-4 clubs (real nightclubs), each in
-             its own building, with one typical daily window parsed from OSM opening_hours
+  stores     ~190 named venues in a balanced type mix plus 2-6 clubs (real nightclubs), each in
+             its own building, plus LANDMARK_STORES inside the landmark buildings (art'otel,
+             Boxpark, Encode Hub), with one typical daily window parsed from OSM opening_hours
              (else type defaults).
   entries    a street entry on every street that leaves the map edge, Shoreditch High Street
              (st1) and every other railway station inside the bounds (st2, ...); a station in
@@ -92,7 +93,7 @@ APPROX_ORIGIN = (51.5233, -0.0754)  # Shoreditch High Street station, refined fr
 QUERY_MARGIN_M = 150.0
 OVERPASS_TIMEOUT = httpx.Timeout(240.0, connect=15.0)  # the response is tens of MB
 EARTH_RADIUS_M = 6_371_008.8
-MAP_BUILDER_VERSION = 6  # bump when the processing changes, so the pipeline cache rebuilds
+MAP_BUILDER_VERSION = 8  # bump when the processing changes, so the pipeline cache rebuilds
 
 # Street network simplification, in metres.
 JUNCTION_MERGE_M = 12.0  # junction nodes this close become one (dual carriageways, junction boxes)
@@ -149,14 +150,14 @@ WORK_LANDUSE = {"commercial", "retail", "industrial", "railway"}
 
 # Stores.
 TYPE_TARGETS: dict[StoreType, int] = {
-    "cafe": 14,
-    "restaurant": 14,
-    "takeaway": 12,
-    "bar": 12,
-    "shop": 10,
-    "offlicence": 6,
+    "cafe": 40,
+    "restaurant": 40,
+    "takeaway": 32,
+    "bar": 32,
+    "shop": 35,
+    "offlicence": 12,
 }
-MIN_CLUBS, MAX_CLUBS = 2, 4  # late-opening bars are promoted when OSM has too few nightclubs
+MIN_CLUBS, MAX_CLUBS = 2, 6  # late-opening bars are promoted when OSM has too few nightclubs
 # Venues OpenStreetMap still lists that have closed, with the source that says so. OSM lags reality
 # in nightlife; a closed club would fake a crowd at closing time and a demo venue judges can check.
 CLOSED_VENUES: dict[str, str] = {
@@ -1975,6 +1976,13 @@ def build_map(overpass: dict[str, Any], fetched_at: str | None) -> tuple[MapData
         landmark_fps, city, corridors, net, first_index=len(map_buildings) + 1
     )
     map_buildings += list(landmark_buildings.values())
+    regular = [st for st in map_stores if st.type != "club"]
+    landmark_stores, landmark_store_notes, landmark_sources = _landmark_stores(
+        osm, proj, landmark_fps, landmark_buildings, first_number=len(regular) + 1
+    )
+    map_stores = regular + landmark_stores + [st for st in map_stores if st.type == "club"]
+    extra_sources += landmark_sources
+    landmark_notes += landmark_store_notes
     map_buildings += _city_buildings(
         buildings, used, corridors, city, first_index=len(map_buildings) + 1
     )
@@ -2120,6 +2128,87 @@ LANDMARK_BUILDINGS: tuple[LandmarkSpec, ...] = (
         "Shipping-container food and retail market, 2-10 Bethnal Green Road",
     ),
 )
+
+
+@dataclass(frozen=True)
+class LandmarkStoreSpec:
+    """A simulated store inside a landmark building (its MapStore.buildingId is the landmark's
+    building). `osm_key` names the OSM element of the unit (its name, hours and outline), else
+    the store is described here and `source` says where from."""
+
+    landmark_id: str
+    name: str
+    type: StoreType
+    osm_key: str | None = None
+    floor_area_m2: float | None = None  # when OSM has no outline for the unit
+    hours_from_landmark: bool = False  # no unit hours in OSM -> the landmark's opening_hours
+    source: Source | None = None
+
+
+SOLAYA_SOURCE = Source(
+    label="Solaya, the 25th-floor restaurant and bar of art'otel London Hoxton (Hot Dinners, "
+    "July 2025; static reference, checked 2026-10-15)",
+    url="https://www.hot-dinners.com/2025071514342/Gastroblog/Latest-news/"
+    "solaya-rooftop-restaurant-arthotel-hoxton-shoreditch-london",
+)
+# Landmark stores are on top of TYPE_TARGETS: venues inside a landmark's building are never
+# picked by the spread (the landmark keeps its own building), so these put them back as stores.
+LANDMARK_STORES: tuple[LandmarkStoreSpec, ...] = (
+    # Encode Hub is a coworking space (office=coworking, OSM 24/7); its café is what trades with
+    # passers-by, so it is simulated as a cafe on cafe hours, sized to the building's outline.
+    LandmarkStoreSpec("encode-hub", "Encode Hub", "cafe", "way/191324423"),
+    # art'otel: The Brush, the ground-floor grand café-restaurant (OSM), and Solaya on the roof.
+    LandmarkStoreSpec(
+        "artotel-london-hoxton", "The Brush", "restaurant", "node/14106027984", floor_area_m2=300
+    ),
+    LandmarkStoreSpec(
+        "artotel-london-hoxton", "Solaya", "bar", floor_area_m2=400, source=SOLAYA_SOURCE
+    ),
+    # Boxpark Shoreditch: container units mapped in OSM, on Boxpark's hours when a unit has none.
+    LandmarkStoreSpec(
+        "boxpark-shoreditch", "Beatbox", "takeaway", "way/637312524", hours_from_landmark=True
+    ),
+    LandmarkStoreSpec(
+        "boxpark-shoreditch", "Greekos Gyros", "takeaway", "way/637312528", hours_from_landmark=True
+    ),
+    LandmarkStoreSpec(
+        "boxpark-shoreditch",
+        "Black Bear Burger",
+        "takeaway",
+        "way/744553833",
+        hours_from_landmark=True,
+    ),
+    LandmarkStoreSpec(
+        "boxpark-shoreditch",
+        "Thunderbird Strip Shack",
+        "takeaway",
+        "way/744553830",
+        hours_from_landmark=True,
+    ),
+    LandmarkStoreSpec(
+        "boxpark-shoreditch",
+        "Satay Street Thai",
+        "takeaway",
+        "way/813652259",
+        hours_from_landmark=True,
+    ),
+    LandmarkStoreSpec(
+        "boxpark-shoreditch", "Avirex", "shop", "way/637312531", hours_from_landmark=True
+    ),
+    LandmarkStoreSpec(
+        "boxpark-shoreditch", "Aigoo", "shop", "way/637312543", hours_from_landmark=True
+    ),
+    LandmarkStoreSpec(
+        "boxpark-shoreditch",
+        "After School Cookie Club",
+        "shop",
+        "way/637312565",
+        hours_from_landmark=True,
+    ),
+    LandmarkStoreSpec(
+        "boxpark-shoreditch", "Lavender Flowers", "shop", "way/637312551", hours_from_landmark=True
+    ),
+)
 STATION_NOTES: dict[str, str] = {
     STATION_NAME: "London Overground (Windrush line), on the viaduct; the map origin",
     "Old Street": "Northern line (underground) and Great Northern, under Old Street roundabout",
@@ -2185,6 +2274,62 @@ def _landmark_buildings(
         building_id = f"b{first_index + len(out)}"
         out[landmark_id] = _make_building(building_id, kind, box, height)
     return out, sources
+
+
+def _landmark_stores(
+    osm: OsmData,
+    proj: Projection,
+    landmark_fps: dict[str, Footprint],
+    landmark_buildings: dict[str, Building],
+    first_number: int,
+) -> tuple[list[MapStore], list[str], list[Source]]:
+    """MapStores for LANDMARK_STORES (s{first_number}, ...) inside their landmark's building.
+    Several stores share that building, which keeps its own kind and no storeId (osmId: the
+    unit, else the landmark's building). A spec whose landmark or OSM unit is missing is
+    skipped with a note."""
+    elements = {key: (tags, ring) for key, tags, _, ring in _venue_elements(osm, proj)}
+    for fp in landmark_fps.values():
+        elements.setdefault(fp.key, (fp.tags, fp.ring))
+    stores: list[MapStore] = []
+    notes: list[str] = []
+    sources: list[Source] = []
+    for spec in LANDMARK_STORES:
+        building = landmark_buildings.get(spec.landmark_id)
+        if building is None:
+            notes.append(f"landmark store {spec.name!r}: no {spec.landmark_id} building")
+            continue
+        tags: dict[str, str] = {}
+        ring: list[Point] | None = None
+        if spec.osm_key is not None:
+            if spec.osm_key not in elements:
+                notes.append(f"landmark store {spec.name!r}: {spec.osm_key} not in OSM")
+                continue
+            tags, ring = elements[spec.osm_key]
+        hours_tag = tags.get("opening_hours") if spec.landmark_id != "encode-hub" else None
+        if hours_tag is None and spec.hours_from_landmark:
+            hours_tag = landmark_fps[spec.landmark_id].tags.get("opening_hours")
+        trading = parse_opening_hours(hours_tag) or DEFAULT_HOURS[spec.type]
+        area = spec.floor_area_m2 or (_polygon_area(ring) if ring else building.w * building.d)
+        stores.append(
+            MapStore(
+                id=f"s{first_number + len(stores)}",
+                name=spec.name,
+                type=spec.type,
+                buildingId=building.id,
+                licensedHours=hours(_licence(spec.type, trading)),
+                defaultHours=hours(trading),
+                floorArea=clamp_floor_area(area),
+                osmId=spec.osm_key or landmark_fps[spec.landmark_id].key,
+            )
+        )
+        if spec.source is not None:
+            sources.append(spec.source)
+    if stores:
+        notes.append(
+            "landmark stores: "
+            + ", ".join(f"{st.id} {st.name} ({st.type}, {st.buildingId})" for st in stores)
+        )
+    return stores, notes, sources
 
 
 def _station_doors(osm: OsmData, proj: Projection, station: Station) -> list[Point]:
@@ -2372,6 +2517,7 @@ def _pipeline_inputs() -> dict[str, Any]:
         "query": overpass_query(),
         "bounds": BOUNDS.model_dump(),
         "landmarks": [spec.name for spec in LANDMARK_BUILDINGS],
+        "landmarkStores": [(s.landmark_id, s.name, s.type, s.osm_key) for s in LANDMARK_STORES],
         "entrances": sorted(ENTRANCE_STATIONS),
         "maxBuildings": MAX_BUILDINGS,
         "targets": TYPE_TARGETS,
