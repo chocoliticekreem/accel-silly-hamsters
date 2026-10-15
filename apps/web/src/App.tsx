@@ -28,6 +28,8 @@ import { Dropdown, DropdownItem } from "./ui/Dropdown";
 import { InterveneMenu } from "./ui/InterveneMenu";
 import { PersonCard } from "./ui/PersonCard";
 import World from "./world/World";
+import { LoadingScreen } from "./ui/LoadingScreen";
+import { seal } from "./state/loading";
 
 const VIEW_LABEL: Record<string, string> = { history: "History", agents: "Agents", area: "Area energy", busy: "Busy times", compare: "Before vs after" };
 
@@ -71,10 +73,28 @@ export default function App() {
     if (pick !== s.run) s.setRun(pick);
   }, [runs, analyst, analystSettled]);
 
-  if (error) return <div className="splash">Map unavailable · {error.message}</div>;
-  if (!map) return <div className="splash">Shoreditch · loading</div>;
+  useEffect(() => {
+    if (map || error) seal("map");
+  }, [map, error]);
+
+  // the loading screen stays the first child in every branch, so it survives the map arriving
+  if (error)
+    return (
+      <>
+        <LoadingScreen />
+        <div className="splash">Map unavailable · {error.message}</div>
+      </>
+    );
+  if (!map)
+    return (
+      <>
+        <LoadingScreen />
+      </>
+    );
 
   return (
+    <>
+    <LoadingScreen />
     <main className="app">
       <div className="stage">{compare ? <CompareView /> : <World map={map} run={run} stores={stores} />}</div>
 
@@ -129,5 +149,6 @@ export default function App() {
         <Toast />
       </div>
     </main>
+    </>
   );
 }

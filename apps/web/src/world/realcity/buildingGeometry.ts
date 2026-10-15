@@ -59,6 +59,16 @@ export class MeshBuilder {
     this.idx[this.ni++] = flip ? c : b;
     this.idx[this.ni++] = flip ? b : c;
   }
+  /** Trimmed copies of the arrays (each with its own buffer, so they can be transferred out of a worker). */
+  arrays() {
+    return {
+      pos: this.pos.slice(0, this.nv * 3),
+      nor: this.nor.slice(0, this.nv * 3),
+      col: this.col.slice(0, this.nv * 3),
+      win: this.win.slice(0, this.nv * 4),
+      idx: this.idx.slice(0, this.ni),
+    };
+  }
   geometry(): BufferGeometry {
     const g = new BufferGeometry();
     g.setAttribute("position", new BufferAttribute(this.pos.slice(0, this.nv * 3), 3));

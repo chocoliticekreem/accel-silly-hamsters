@@ -1,6 +1,7 @@
 // Real backend client. Every path matches docs/FRONTEND_PROMPT.md.
 import { ApiError, type AgentEvent, type Api, type AnalystStatus, type OwnerEvent, type StreetEvent } from "./contract";
 import { overviewFromParts } from "./overviewFallback";
+import { bytesListener, readJson } from "../state/loading";
 
 export function httpApi(base: string): Api {
   const root = base.replace(/\/$/, "");
@@ -8,7 +9,8 @@ export function httpApi(base: string): Api {
   async function get<T>(path: string): Promise<T> {
     const res = await fetch(`${root}${path}`);
     if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
-    return res.json() as Promise<T>;
+    // the loading screen follows the big start-up downloads (map, the day's agents) byte by byte
+    return readJson<T>(res, bytesListener(path));
   }
 
   /** GET that treats 404 as "not available" (optional endpoints, runs without a file). */

@@ -45,6 +45,7 @@ import { glowTexture } from "../textures";
 import { useRealCity, useRealCityData, type RealCity } from "../realcity/data";
 import { banglaLampGeometry, banglaLanternGeometry, bikeGeometry, stallAwningGeometry, stallFrameGeometry, standGeometry } from "../spitalfields/props";
 import { boxCaster, buildingsNear, crossings, inArea, kerbRuns, onOtherRoad, realCaster } from "../spitalfields/street";
+import { fetchJsonTracked } from "../../state/loading";
 
 interface AreaData {
   heroes: { church?: Ring; market?: Ring; station?: Ring; masjid?: Ring; boiler?: Ring };
@@ -572,8 +573,7 @@ export default function Spitalfields() {
   const [data, setData] = useState<AreaData | null>(null);
   useEffect(() => {
     let live = true;
-    fetch(`${import.meta.env.BASE_URL}areas/spitalfields.json`)
-      .then((res) => (res.ok ? res.json() : null))
+    fetchJsonTracked(`${import.meta.env.BASE_URL}areas/spitalfields.json`, "landmarks", "spitalfields", { optional: true })
       .then((d) => live && d && setData(d as AreaData))
       .catch(() => {});
     return () => {

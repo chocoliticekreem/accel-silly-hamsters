@@ -1,5 +1,6 @@
 // The real Hoxton from OpenStreetMap (public/areas/hoxton.json, written once by tools/areas/fetch-hoxton.mjs).
 // Contract coords (x east, z north, metres), same projection as the backend map. © OpenStreetMap contributors (ODbL).
+import { fetchJsonTracked } from "../../state/loading";
 
 export type P2 = [number, number];
 
@@ -80,10 +81,7 @@ let cache: Promise<HoxtonData> | null = null;
 
 export function loadHoxton(): Promise<HoxtonData> {
   if (!cache) {
-    cache = fetch(`${import.meta.env.BASE_URL}areas/hoxton.json`).then((r) => {
-      if (!r.ok) throw new Error(`hoxton.json ${r.status}`);
-      return r.json() as Promise<HoxtonData>;
-    });
+    cache = fetchJsonTracked<HoxtonData>(`${import.meta.env.BASE_URL}areas/hoxton.json`, "landmarks", "hoxton").then((d) => d!);
     cache.catch(() => (cache = null));
   }
   return cache;
