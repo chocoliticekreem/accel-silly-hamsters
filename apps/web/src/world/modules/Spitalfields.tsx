@@ -42,8 +42,9 @@ import { makeWalker, pace, turnout, weekdayOf, type Walker, type Zone } from "..
 import { banglaArch, christChurch, inRing, liverpoolStreet, marketHall, minaret, trumanBrewery, type HeroKits, type Ring } from "../spitalfields/heroes";
 import { flatPolygon, Kit, Pools, Quads } from "../spitalfields/kit";
 import { glowTexture } from "../textures";
+import { useRealCity, useRealCityData, type RealCity } from "../realcity/data";
 import { banglaLampGeometry, banglaLanternGeometry, bikeGeometry, stallAwningGeometry, stallFrameGeometry, standGeometry } from "../spitalfields/props";
-import { buildingsNear, castToFacade, crossings, inArea, kerbRuns, onOtherRoad } from "../spitalfields/street";
+import { boxCaster, buildingsNear, crossings, inArea, kerbRuns, onOtherRoad, realCaster } from "../spitalfields/street";
 
 interface AreaData {
   heroes: { church?: Ring; market?: Ring; station?: Ring; masjid?: Ring; boiler?: Ring };
@@ -139,7 +140,9 @@ function mat(x: number, z: number, fx: number, fz: number, y = 0, s = 1, sx = s,
   return o3.matrix.clone();
 }
 
-export function build(map: CityMap, data: AreaData) {
+export function build(map: CityMap, data: AreaData, real: RealCity | null = null) {
+  // the real OSM city (Real* modules) draws the ground, trees, pavements, kerbs and crossings itself: leave them to it
+  const cast = real ? realCaster(real.buildings) : boxCaster(map);
   const r = rng(1729);
     const inBuilding = (x: number, z: number, pad = 0.3) => buildingsNear(map, x, z).some((b) => Math.abs(x - b.x) < b.w / 2 + pad && Math.abs(z - b.z) < b.d / 2 + pad);
   const pools = new Pools();
@@ -173,9 +176,9 @@ export function build(map: CityMap, data: AreaData) {
         const nx = pt.dz * side;
         const nz = -pt.dx * side;
         if (onOtherRoad(map, pt.x + nx * (s.width / 2 + 2), pt.z + nz * (s.width / 2 + 2), s, 0.5)) continue;
-        const f = castToFacade(map, pt.x, pt.z, nx, nz, 16);
-        if (!f || f.room < 1.6 || f.b.h < 5) continue;
-        if (f.b.id === lastB && d - lastD < 13) continue;
+        const f = cast(pt.x, pt.z, nx, nz, 16);
+        if (!f || f.room < 1.6 || f.h < 5) continue;
+        if (f.id === lastB && d - lastD < 13) continue;
         const banglatown = pt.z < -300;
         const w = Math.min(banglatown ? 6.2 : 5.5, 2 * f.room - 0.5);
         const near = named.find((p) => Math.hypot(p.p[0] - f.x, p.p[1] - f.z) < 9);
@@ -184,7 +187,7 @@ export function build(map: CityMap, data: AreaData) {
         const hn = [...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
         const style = banglatown ? SIGN_STYLES[hn % SIGN_STYLES.length] : NORTH_STYLES[hn % NORTH_STYLES.length];
         signSpots.push({ x: f.x, z: f.z, nx: f.nx, nz: f.nz, w, name, style });
-        lastB = f.b.id;
+        lastB = f.id;
         lastD = d;
       }
     }
@@ -271,10 +274,10 @@ export function build(map: CityMap, data: AreaData) {
         if (r() < 0.25) continue;
         const nx = pt.dz * side;
         const nz = -pt.dx * side;
-        const f = castToFacade(map, pt.x, pt.z, nx, nz, 14);
-        if (!f || f.room < 1.8 || f.b.h < y0 + 3) continue;
+        const f = cast(pt.x, pt.z, nx, nz, 14);
+        if (!f || f.room < 1.8 || f.h < y0 + 3) continue;
         const w = Math.min(9, 2 * f.room - 0.6);
-        const h = Math.min(f.b.h - y0 - 1, w * (0.6 + r() * 0.5), 8);
+        const h = Math.min(f.h - y0 - 1, w * (0.6 + r() * 0.5), 8);
         if (h < 2) continue;
         const [x, z] = toScene(f.x, f.z);
         const tile: UvRect = murals.tiles[Math.floor(r() * murals.tiles.length)];
@@ -284,7 +287,7 @@ export function build(map: CityMap, data: AreaData) {
 
   // --- ground: OSM parks, churchyards, squares, car parks ------------------------------------------------------
   const groundParts: BufferGeometry[] = [];
-  for (const a of data.areas) {
+  for (const a of real ? [] : data.areas) {
     const st = AREA_STYLE[a.k];
     if (!st) continue;
     const ring = a.r.map(([x, z]) => toScene(x, z));
@@ -325,20 +328,22 @@ export function build(map: CityMap, data: AreaData) {
     o3.updateMatrix();
     strips.push({ m: o3.matrix.clone(), c });
   };
-  const brickNarrow = (x: number, z: number) => inArea(x, z) && z < -60 && z > -665;
-  for (const k of kerbRuns(map, areaStreets.filter((s) => !narrow(s)), () => -0.15)) strip(k.x, k.z, k.dx, k.dz, k.len, 0.3, 0.2, 0.1, KERB);
-  for (const s of brick) {
-    for (const k of kerbRuns(map, [s], () => PAVE_W / 2)) if (brickNarrow(k.x, k.z)) strip(k.x, k.z, k.dx, k.dz, k.len, PAVE_W, 0.19, 0.095, PAVE);
-    for (const k of kerbRuns(map, [s], () => PAVE_W + 0.15)) if (brickNarrow(k.x, k.z)) strip(k.x, k.z, k.dx, k.dz, k.len, 0.3, 0.22, 0.11, KERB);
-    for (const k of kerbRuns(map, [s], () => -0.15)) if (!brickNarrow(k.x, k.z)) strip(k.x, k.z, k.dx, k.dz, k.len, 0.3, 0.2, 0.1, KERB);
-  }
-  const crossingPts = data.points.filter((p) => p.k === "crossing").map((p) => p.p);
-  for (const c of crossings(map, crossingPts)) {
-    const isBrick = brick.some((s) => closestOnStreet(s, c.x, c.z)[2] < 1);
-    const half = c.width / 2 - (isBrick ? PAVE_W : 0) - 0.3;
-    const nx = c.dz;
-    const nz = -c.dx;
-    for (let a = -half + 0.3; a <= half - 0.3; a += 1.1) strip(c.x + nx * a, c.z + nz * a, c.dx, c.dz, 3, 0.55, 0.02, c.top + 0.012, STRIPE);
+  if (!real) {
+    const brickNarrow = (x: number, z: number) => inArea(x, z) && z < -60 && z > -665;
+    for (const k of kerbRuns(map, areaStreets.filter((s) => !narrow(s)), () => -0.15)) strip(k.x, k.z, k.dx, k.dz, k.len, 0.3, 0.2, 0.1, KERB);
+    for (const s of brick) {
+      for (const k of kerbRuns(map, [s], () => PAVE_W / 2)) if (brickNarrow(k.x, k.z)) strip(k.x, k.z, k.dx, k.dz, k.len, PAVE_W, 0.19, 0.095, PAVE);
+      for (const k of kerbRuns(map, [s], () => PAVE_W + 0.15)) if (brickNarrow(k.x, k.z)) strip(k.x, k.z, k.dx, k.dz, k.len, 0.3, 0.22, 0.11, KERB);
+      for (const k of kerbRuns(map, [s], () => -0.15)) if (!brickNarrow(k.x, k.z)) strip(k.x, k.z, k.dx, k.dz, k.len, 0.3, 0.2, 0.1, KERB);
+    }
+    const crossingPts = data.points.filter((p) => p.k === "crossing").map((p) => p.p);
+    for (const c of crossings(map, crossingPts)) {
+      const isBrick = brick.some((s) => closestOnStreet(s, c.x, c.z)[2] < 1);
+      const half = c.width / 2 - (isBrick ? PAVE_W : 0) - 0.3;
+      const nx = c.dz;
+      const nz = -c.dx;
+      for (let a = -half + 0.3; a <= half - 0.3; a += 1.1) strip(c.x + nx * a, c.z + nz * a, c.dx, c.dz, 3, 0.55, 0.02, c.top + 0.012, STRIPE);
+    }
   }
 
   // --- trees, benches, bins, cycle stands, Santander docks --------------------------------------------------
@@ -352,7 +357,7 @@ export function build(map: CityMap, data: AreaData) {
   for (const p of data.points) {
     const [x, z] = p.p;
     if (p.k === "tree") {
-      if (!free(x, z, 0.6)) continue;
+      if (real || !free(x, z, 0.6)) continue;
       const s = 0.85 + r() * 0.45;
       const m = mat(x, z, Math.cos(r() * 6.28), Math.sin(r() * 6.28), 0, s);
       trees.push({ m, c: new Color().setHSL(0.22 + r() * 0.08, 0.25, 0.75 + r() * 0.25) });
@@ -575,7 +580,10 @@ export default function Spitalfields() {
       live = false;
     };
   }, []);
-  const built = useMemo(() => (data ? build(map, data) : null), [map, data]);
+  const realData = useRealCityData();
+  const realDrawn = useRealCity((s) => s.drawn);
+  const real = realDrawn ? realData : null;
+  const built = useMemo(() => (data ? build(map, data, real) : null), [map, data, real]);
   if (!built) return null;
   return <SpitalfieldsScene built={built} />;
 }
