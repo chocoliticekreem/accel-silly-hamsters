@@ -2,13 +2,16 @@
 // one-line lab notebook. Click a point or a notebook row → replay that run.
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useState } from "react";
-import { useAnalyst, useCalibration, useRuns } from "../state/data";
+import { useAnalyst, useCalibration, useRuns, useSummary } from "../state/data";
 import { useSim } from "../state/store";
 import { CalibrationPanel } from "./CalibrationPanel";
+import { DaysChart } from "./DaysChart";
 import { fmtNum, STOP_LABELS } from "./format";
 import { Icon } from "./icons";
 
 const LAMP = "#ffc857";
+type Tab = "runs" | "days" | "calibration";
+const TAB_LABEL: Record<Tab, string> = { runs: "Runs", days: "Days", calibration: "Calibration" };
 
 export function HistoryPanel() {
   const runs = useRuns().data ?? [];
@@ -20,25 +23,32 @@ export function HistoryPanel() {
   const data = done;
   const cost = runs.at(-1)?.costPerStoreWeekGbp;
   const hasCalibration = !!useCalibration().data;
-  const [tab, setTab] = useState<"runs" | "calibration">("runs");
+  // per-day KPIs (owners learning inside the run); older backends don't send them, so the tab hides
+  const baseRun = analyst?.baselineRun ?? done[0]?.run ?? null;
+  const otherBase = baseRun != null && baseRun !== current ? baseRun : null;
+  const curDays = useSummary(current).data?.daily;
+  const baseDays = useSummary(otherBase).data?.daily;
+  const hasDays = !!curDays?.length;
+  const tabs: Tab[] = ["runs", ...(hasDays ? (["days"] as const) : []), ...(hasCalibration ? (["calibration"] as const) : [])];
+  const [tab, setTab] = useState<Tab>("runs");
 
   return (
     <aside className="history panel" aria-label="Training history">
       <header className="card-head">
         <div>
           <h2>Training history</h2>
-          <div className="card-sub">visits / kWh per run · same seed, same 14 days</div>
+          <div className="card-sub">{tab === "days" && hasDays ? `visits / kWh per day · run ${current} · owners adapting` : "visits / kWh per run · same seed, same 14 days"}</div>
         </div>
         <button className="icon-btn" onClick={() => useSim.getState().openPanel(null)} aria-label="Close">
           <Icon name="close" />
         </button>
       </header>
 
-      {hasCalibration && (
+      {tabs.length > 1 && (
         <div className="tabs" role="tablist">
-          {(["runs", "calibration"] as const).map((t) => (
+          {tabs.map((t) => (
             <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-              {t === "runs" ? "Runs" : "Calibration"}
+              {TAB_LABEL[t]}
             </button>
           ))}
         </div>
@@ -46,6 +56,8 @@ export function HistoryPanel() {
 
       {tab === "calibration" && hasCalibration ? (
         <CalibrationPanel />
+      ) : tab === "days" && curDays?.length ? (
+        <DaysChart run={current} days={curDays} baseRun={otherBase} baseDays={otherBase ? baseDays : null} />
       ) : (
       <>
       <div className="chart">
