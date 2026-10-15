@@ -259,7 +259,8 @@ export default function RealBuildings() {
     tick.current = 1.5;
     const boxes: Box3[] = [];
     scene.traverse((o) => {
-      if (o.name.startsWith("landmark-") && o.visible) boxes.push(new Box3().setFromObject(o));
+      // hidden ones too: an open landmark interior hides its hero shell, and the real polygon must stay hidden
+      if (o.name.startsWith("landmark-")) boxes.push(new Box3().setFromObject(o));
     });
     const key = boxes.map((b) => `${b.min.x.toFixed(0)},${b.min.z.toFixed(0)},${b.max.x.toFixed(0)},${b.max.z.toFixed(0)}`).join("|");
     if (key === heroKey.current) return;
@@ -292,7 +293,7 @@ export default function RealBuildings() {
           raycast={noRaycast}
         />
       ))}
-      {station && <Station b={station} streets={map.streets} />}
+      {station && <Station b={station} map={map} />}
     </group>
   );
 }

@@ -8,15 +8,17 @@
 import { BufferAttribute, BufferGeometry, Color, MeshStandardMaterial, ShapeUtils, Vector2 } from "three";
 import type { P } from "./data";
 
+// All between -1 and 0: after a basement pit (Landmarks, renderOrder -3) and its punch plane (-1), so the pit shows
+// through the street only inside its opening, and before everything else (0).
 export const LAYER = {
-  base: -100,
-  land: -96,
-  paving: -92,
-  asphalt: -88,
-  islands: -86,
-  ballast: -85,
-  markings: -82,
-  depth: -70,
+  base: -0.95,
+  land: -0.9,
+  paving: -0.85,
+  asphalt: -0.8,
+  islands: -0.78,
+  ballast: -0.76,
+  markings: -0.7,
+  depth: -0.5,
 } as const;
 
 /** A material for one painter layer (vertex coloured, no depth write). */
