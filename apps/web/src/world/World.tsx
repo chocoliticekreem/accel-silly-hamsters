@@ -7,6 +7,7 @@ import { Suspense, useMemo, useState, type ComponentType } from "react";
 import type { CityMap, RunStores } from "../api/contract";
 import { ModuleBoundary } from "./ModuleBoundary";
 import { newLive, WorldContext, type WorldCtx } from "./context";
+import { PhysicsLayer } from "./physics/PhysicsLayer";
 import Agents from "./modules/Agents";
 import Buildings from "./modules/Buildings";
 import CameraRig from "./modules/CameraRig";
@@ -107,6 +108,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
       <PerformanceMonitor onIncline={() => setDpr(Math.min(2, window.devicePixelRatio))} onDecline={() => setDpr(1)} />
       <AdaptiveDpr pixelated />
       <WorldContext.Provider value={ctx}>
+        <PhysicsLayer enabled={interactive && cameraGroup === "main"}>
         {Object.entries(MODULES)
           .filter(([name]) => enabled.includes(name) && !modeHides.has(name))
           .map(([name, M]) => (
@@ -116,6 +118,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
               </Suspense>
             </ModuleBoundary>
           ))}
+        </PhysicsLayer>
       </WorldContext.Provider>
     </Canvas>
   );
