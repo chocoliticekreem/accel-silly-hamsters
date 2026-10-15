@@ -1,13 +1,15 @@
 // Module: HeroLandmarks (decorative). Places the procedural Shoreditch hero landmarks (world/models/landmarks.ts):
-// XOYO, art'otel, Encode Hub, Boxpark and the Old Street roundabout. A landmark goes where `map.landmarks` says
-// (optional, additive: { id, x, z, rotation? } in contract coords) or else at its real OSM position. It turns
-// its street face toward Shoreditch High St station (snapped to a quarter turn) so the default camera sees it.
-// Group names are stable (`landmark-xoyo`, `landmark-artotel`, `landmark-encode`, `landmark-boxpark`,
-// `landmark-oldstreet`) so other modules (interiors, quick travel) can find and hide them.
+// XOYO, art'otel, Encode Hub and Boxpark, at the positions sim/london.ts resolveLandmarks gives (map.landmarks,
+// else real OSM fallbacks; XOYO sits on its club building). When a landmark stands on one of the map's buildings
+// the model is aligned and scaled to cover that footprint. Street faces turn toward Shoreditch High St station.
+// (Old Street has its own module; the landmark-oldstreet model stays available in world/models.)
+// Group names are stable (`landmark-xoyo`, `landmark-artotel`, `landmark-encode`, `landmark-boxpark`) so other
+// modules (interiors, quick travel) can find and hide them.
 import { useFrame } from "@react-three/fiber";
 import { useMemo } from "react";
 import type { CityMap } from "../../api/contract";
 import { toScene } from "../../sim/geometry";
+import { resolveLandmarks, type LandmarkKey } from "../../sim/london";
 import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
@@ -16,61 +18,52 @@ import { heroGroup } from "../hero";
 import { heroModel } from "../models";
 import { setHeroNight } from "../models/materials";
 
-interface MapLandmark {
-  id: string;
-  x: number;
-  z: number;
-  /** Scene rotation about y (radians); the model's street face is +z before rotation. */
-  rotation?: number;
-}
-
-/** Real OSM positions in contract coords (x east, z north). `nudge` moves off map buildings if they overlap. */
-const FALLBACK: { name: string; match: RegExp; x: number; z: number; nudge: boolean }[] = [
-  { name: "landmark-xoyo", match: /xoyo/i, x: -786, z: 248, nudge: false }, // store c4, building b72
-  { name: "landmark-artotel", match: /art.?otel/i, x: -601, z: 339, nudge: false },
-  { name: "landmark-encode", match: /encode/i, x: -645, z: 481, nudge: false },
-  { name: "landmark-oldstreet", match: /old.?street/i, x: -880, z: 255, nudge: false },
-  { name: "landmark-boxpark", match: /boxpark/i, x: -124, z: 26, nudge: false },
+/** Fallback contract positions (x east, z north) when neither the map nor resolveLandmarks knows the place. */
+const SPOTS: { name: string; key: LandmarkKey | "xoyo"; x: number; z: number }[] = [
+  { name: "landmark-xoyo", key: "xoyo", x: -786, z: 248 }, // store c4, building b72 (Cowper St)
+  { name: "landmark-artotel", key: "artotel", x: -601, z: 339 },
+  { name: "landmark-encode", key: "encode", x: -645, z: 481 },
+  { name: "landmark-boxpark", key: "boxpark", x: -124, z: 26 },
 ];
 
-function footprintFree(map: CityMap, x: number, z: number, hw: number, hd: number) {
-  return !map.buildings.some((b) => Math.abs(x - b.x) < hw + b.w / 2 - 1 && Math.abs(z - b.z) < hd + b.d / 2 - 1);
+interface Placed {
+  name: string;
+  x: number;
+  z: number;
+  rot: number;
+  scale: [number, number, number];
 }
 
-/** Nearest spot (spiral search, up to ~150 m) where the footprint doesn't overlap a map building. */
-function nudge(map: CityMap, x: number, z: number, hw: number, hd: number): [number, number] {
-  if (footprintFree(map, x, z, hw, hd)) return [x, z];
-  for (let r = 10; r <= 150; r += 10)
-    for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * Math.PI * 2;
-      const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
-      if (footprintFree(map, px, pz, hw, hd)) return [px, pz];
-    }
-  return [x, z];
-}
-
-function place(map: CityMap) {
-  const listed = (map as CityMap & { landmarks?: MapLandmark[] }).landmarks ?? [];
+function place(map: CityMap): Placed[] {
+  const lms = resolveLandmarks(map);
   const station = map.entryPoints.find((e) => e.kind === "station" && /shoreditch/i.test(e.name ?? "")) ??
     map.entryPoints.find((e) => e.kind === "station") ?? { x: 0, z: 0 };
-  return FALLBACK.map((f) => {
-    const hit = listed.find((l) => f.match.test(l.id));
-    const size = heroModel(f.name).size;
-    let x = hit?.x ?? f.x;
-    let z = hit?.z ?? f.z;
-    // contract → scene, then face the station (scene rotation y = atan2(dx, dz) points +z at it)
-    const [sx0, sz0] = toScene(station.x, station.z);
-    let [sx, sz] = toScene(x, z);
-    let rot = hit?.rotation ?? Math.atan2(sx0 - sx, sz0 - sz);
-    // snap to the nearest quarter turn so footprints stay axis-aligned with the nudge test
-    if (hit?.rotation === undefined) rot = Math.round(rot / (Math.PI / 2)) * (Math.PI / 2);
-    if (!hit && f.nudge) {
+  const [sx0, sz0] = toScene(station.x, station.z);
+  return SPOTS.map((spot) => {
+    const lm = lms.find((l) => l.key === spot.key);
+    // the map building this landmark stands on, if any (XOYO's club building, Boxpark's container block)
+    const xoyoStore = spot.key === "xoyo" ? map.stores.find((s) => /xoyo/i.test(s.name) || s.id === "c4") : undefined;
+    const bid = lm?.buildingId ?? xoyoStore?.buildingId ?? (spot.key === "xoyo" ? "b72" : undefined);
+    const b = bid ? map.buildings.find((x) => x.id === bid) : undefined;
+    const cx = b?.x ?? lm?.x ?? spot.x;
+    const cz = b?.z ?? lm?.z ?? spot.z;
+    const [x, z] = toScene(cx, cz);
+    // street face toward the station, snapped to a quarter turn
+    let rot = Math.round(Math.atan2(sx0 - x, sz0 - z) / (Math.PI / 2)) * (Math.PI / 2);
+    const size = heroModel(spot.name).size;
+    let scale: [number, number, number] = [1, 1, 1];
+    if (b) {
+      // stand on the building: long axes aligned, footprint covering it, at least as tall
+      const modelLongX = size[0] >= size[2];
+      const bLongX = b.w >= b.d;
       const quarter = Math.abs(Math.round(rot / (Math.PI / 2))) % 2 === 1;
-      const [hw, hd] = quarter ? [size[2] / 2, size[0] / 2] : [size[0] / 2, size[2] / 2];
-      [x, z] = nudge(map, x, z, hw, hd);
-      [sx, sz] = toScene(x, z);
+      if (modelLongX !== quarter !== bLongX) rot += Math.PI / 2;
+      const q = Math.abs(Math.round(rot / (Math.PI / 2))) % 2 === 1;
+      const [fw, fd] = q ? [b.d, b.w] : [b.w, b.d];
+      const sxz = Math.max(0.6, Math.min(1.6, Math.max((fw + 1) / size[0], (fd + 1) / size[2])));
+      scale = [sxz, Math.max(1, (b.h + 0.5) / size[1]), sxz];
     }
-    return { name: f.name, x: sx, z: sz, rot };
+    return { name: spot.name, x, z, rot, scale };
   });
 }
 
@@ -83,7 +76,7 @@ export default function HeroLandmarks() {
   return (
     <group name="hero-landmarks">
       {items.map((it) => (
-        <primitive key={it.name} object={it.object} position={[it.x, 0, it.z]} rotation={[0, it.rot, 0]} />
+        <primitive key={it.name} object={it.object} position={[it.x, 0, it.z]} rotation={[0, it.rot, 0]} scale={it.scale} />
       ))}
     </group>
   );
