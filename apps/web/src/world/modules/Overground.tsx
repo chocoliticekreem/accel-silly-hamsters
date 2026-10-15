@@ -176,7 +176,7 @@ function MinorStation({ route, stop }: { route: OvergroundRoute; stop: Stop }) {
           <Roundel y={6.4} scale={0.62} />
         </group>
       ))}
-      <Html position={[0, DECK_Y + 14, 0]} center distanceFactor={160} zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}>
+      <Html position={[0, DECK_Y + 14, 0]} center distanceFactor={320} zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}>
         <div className="map-label">{stop.name} · Overground</div>
       </Html>
     </group>
