@@ -12,24 +12,25 @@ function path(ys: number[]) {
   return ys.map((y, h) => `${h ? "L" : "M"}${((h + 0.5) / 24) * W},${H - (y / 100) * (H - 2) - 1}`).join(" ");
 }
 
-function Row({ v, sim, name }: { v: CalibrationVenue; sim: number[] | undefined; name: string }) {
+function Row({ v, sim, name, onMap }: { v: CalibrationVenue; sim: number[] | undefined; name: string; onMap: boolean }) {
   const target = blendedTarget(v);
   const simCurve = sim && toPeak100(sim);
   const gap = simCurve && meanGap(simCurve, target);
   return (
     <li>
-      <button className="calib-row" onClick={() => useSim.getState().selectStore(v.storeId)}>
+      <button className="calib-row" disabled={!onMap} onClick={() => useSim.getState().selectStore(v.storeId)}>
         <div className="calib-name">
-          <b>{name}</b>
+          <b>{onMap ? name : v.storeId}</b>
           <span className="muted">{v.name}</span>
           {!v.measured && <span className="tag tag-warn">placeholder</span>}
+          {!onMap && <span className="tag">not on this map</span>}
         </div>
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-label={`${name}: sim vs target by hour`}>
           <path d={`${path(target)} L${W},${H} L0,${H} Z`} className="calib-target-area" />
           <path d={path(target)} className="calib-target" />
           {simCurve && <path d={path(simCurve)} className="calib-sim" />}
         </svg>
-        <span className="calib-gap mono">{gap === undefined ? "…" : `±${Math.round(gap)}`}</span>
+        <span className="calib-gap mono">{!onMap ? "—" : gap === undefined ? "…" : `±${Math.round(gap)}`}</span>
       </button>
     </li>
   );
@@ -43,6 +44,7 @@ export function CalibrationPanel() {
   if (!calib) return <div className="empty">No calibration data yet</div>;
   const placeholders = calib.venues.filter((v) => !v.measured).length;
   const name = (id: string) => map?.stores.find((s) => s.id === id)?.name ?? id;
+  const onMap = (id: string) => !map || map.stores.some((s) => s.id === id);
 
   return (
     <div className="calib">
@@ -62,7 +64,7 @@ export function CalibrationPanel() {
       )}
       <ul className="calib-list">
         {calib.venues.map((v) => (
-          <Row key={v.storeId} v={v} sim={stores?.[v.storeId]?.visitsByHour} name={name(v.storeId)} />
+          <Row key={v.storeId} v={v} sim={stores?.[v.storeId]?.visitsByHour} name={name(v.storeId)} onMap={onMap(v.storeId)} />
         ))}
       </ul>
     </div>
