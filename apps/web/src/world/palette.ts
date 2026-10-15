@@ -38,7 +38,7 @@ export const STORE_COLORS: Record<StoreType, { body: string; awning: string; ico
 };
 
 export const BUILDING_COLORS: Record<BuildingKind, string> = {
-  residential: "#a39388",
+  residential: "#9a5b45",
   office: "#9fb0c4",
   station: "#c9ced6",
   store: "#e0d6c8",

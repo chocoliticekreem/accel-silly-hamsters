@@ -11,7 +11,7 @@ export const FLOOR_H = 3.5;
 const px = 32;
 
 /** Wall + glass map, and an emissive mask where ~40% of windows are lit (variant = different lit pattern). */
-export function windowTextures(wall: string, variant: number): { map: Texture; emissive: Texture } {
+export function windowTextures(wall: string, variant: number, frame?: string): { map: Texture; emissive: Texture } {
   const r = rng(1000 + variant);
   const mk = (draw: (g: CanvasRenderingContext2D) => void) => {
     const c = document.createElement("canvas");
@@ -38,6 +38,11 @@ export function windowTextures(wall: string, variant: number): { map: Texture; e
   const map = mk((g) => {
     g.fillStyle = wall;
     g.fillRect(0, 0, g.canvas.width, g.canvas.height);
+    if (frame) {
+      // white-painted sash frames around each pane: the London terrace look
+      g.fillStyle = frame;
+      for (let i = 0; i < TILE_COLS; i++) for (let j = 0; j < TILE_ROWS; j++) g.fillRect(i * px + 5, j * px + 6, px - 10, px - 9);
+    }
     cells(g, () => "#5d6b80");
   });
   const emissive = mk((g) => {

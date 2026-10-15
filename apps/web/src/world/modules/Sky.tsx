@@ -17,7 +17,8 @@ export default function Sky() {
 
   useMemo(() => {
     scene.background = new Color("#121a2e");
-    scene.fog = new Fog("#121a2e", 450, 1300);
+    // far enough that the City skyline (1–2 km south-west) sits in soft haze, not in a void
+    scene.fog = new Fog("#121a2e", 700, 3200);
   }, [scene]);
 
   useFrame(() => {

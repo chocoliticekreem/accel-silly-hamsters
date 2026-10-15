@@ -1,6 +1,6 @@
 // Module: Ground. A soft grass apron beyond the map, the pavement slab inside the bounds, and a few cartoon trees.
 import { useMemo } from "react";
-import { Object3D } from "three";
+import { IcosahedronGeometry, Object3D } from "three";
 import { toScene } from "../../sim/geometry";
 import { useWorld } from "../context";
 import { GROUND } from "../palette";
@@ -15,6 +15,7 @@ export default function Ground() {
   const [cx, cz] = toScene((minX + maxX) / 2, (minZ + maxZ) / 2);
 
   // trees on the grass apron around the map edge (deterministic ring)
+  // round-crowned trees (London planes), lifted onto their trunks by the geometry offset below
   const trees = useMemo(() => {
     const o = new Object3D();
     const out: { matrix: Object3D["matrix"] }[] = [];
@@ -24,7 +25,7 @@ export default function Ground() {
       const x = cx + Math.cos(a) * r * (1 + 0.05 * Math.sin(i));
       const z = cz + Math.sin(a) * r;
       const s = 0.8 + ((i * 53) % 10) / 15;
-      o.position.set(x, 8 * s, z);
+      o.position.set(x, 0, z);
       o.scale.setScalar(s);
       o.updateMatrix();
       out.push({ matrix: o.matrix.clone() });
@@ -32,23 +33,25 @@ export default function Ground() {
     return out;
   }, [w, d, cx, cz]);
 
+  const crown = useMemo(() => new IcosahedronGeometry(5.5, 1).scale(1, 0.85, 1).translate(0, 9, 0), []);
+
   return (
     <group name="ground">
       <mesh rotation-x={-Math.PI / 2} position={[cx, -0.2, cz]} receiveShadow>
-        <planeGeometry args={[w * 4, d * 4]} />
+        {/* wide enough to sit under the City skyline backdrop */}
+        <planeGeometry args={[w * 12, d * 12]} />
         <meshStandardMaterial color={GROUND.grass} roughness={1} />
       </mesh>
       <mesh rotation-x={-Math.PI / 2} position={[cx, 0, cz]} receiveShadow>
         <planeGeometry args={[w + 16, d + 16]} />
         <meshStandardMaterial color={GROUND.pavement} roughness={0.95} />
       </mesh>
-      <instancedMesh args={[undefined, undefined, trees.length]} castShadow ref={(m) => {
+      <instancedMesh args={[crown, undefined, trees.length]} castShadow ref={(m) => {
           if (!m) return;
           trees.forEach((t, i) => m.setMatrixAt(i, t.matrix));
           m.instanceMatrix.needsUpdate = true;
         }}>
-        <coneGeometry args={[6, 16, 7]} />
-        <meshStandardMaterial color="#5f7d64" flatShading roughness={1} />
+        <meshStandardMaterial color="#62875a" flatShading roughness={1} />
       </instancedMesh>
     </group>
   );
