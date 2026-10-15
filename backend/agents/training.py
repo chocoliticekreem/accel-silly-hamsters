@@ -626,7 +626,7 @@ def _commit_choice(
 
 
 # One-shop sessions test ideas down to this estimated loss; the patience rule ends the exploring.
-EXPLORE_GBP_PER_WEEK = 40.0
+EXPLORE_GBP_PER_WEEK = 200.0
 
 
 def _choose_for_store(

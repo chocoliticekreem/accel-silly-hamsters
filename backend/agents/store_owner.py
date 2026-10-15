@@ -61,7 +61,7 @@ QUIET_FOOTFALL_SHARE = 0.5  # a night hour is quiet below half the store's mean 
 MIN_GAIN = 0.001  # ignore changes estimated under +0.1% on the objective
 # A one-shop session also tests ideas estimated slightly negative: the estimate is rough and the
 # 14 simulated days decide; the patience rule stops it once nothing beats the best run.
-EXPLORE_MIN_GAIN = -0.05
+EXPLORE_MIN_GAIN = -0.25
 DEFAULT_FLOOR_AREA_M2 = 80.0  # only when neither map.json nor the building footprint has one
 HISTORY_RUNS = 8
 REASON_WORDS = 15
