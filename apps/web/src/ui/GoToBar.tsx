@@ -34,6 +34,7 @@ function places(map: CityMap | null): Place[] {
     { key: "oldstreet", label: "Old Street", Icon: MapPin, dist: 240, ...at("oldstreet", -880, 255) },
     { key: "boxpark", label: "Boxpark", Icon: ShoppingBag, dist: 160, ...at("boxpark", -124, 26) },
     { key: "station", label: "Shoreditch High St", Icon: TrainFront, dist: 220, x: 0, z: 0 },
+    { key: "hoxton", label: "Hoxton", Icon: TrainFront, dist: 220, x: -82, z: 927 },
   ];
 }
 
