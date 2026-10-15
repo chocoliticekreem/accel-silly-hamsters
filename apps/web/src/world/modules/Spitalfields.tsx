@@ -28,6 +28,7 @@ import {
 } from "three";
 import type { CityMap, Street } from "../../api/contract";
 import { rng } from "../../mock/rng";
+import { GOODSYARD_AREA, inPoly } from "../../sim/areaKeepouts";
 import { closestOnStreet, toScene } from "../../sim/geometry";
 import { newPoint, polyline } from "../../sim/polyline";
 import { nightLevel } from "../../sim/sky";
@@ -346,7 +347,8 @@ export function build(map: CityMap, data: AreaData) {
   const bins: Inst[] = [];
   const stands: Inst[] = [];
   const bikes: Inst[] = [];
-  const free = (x: number, z: number, pad = 0.3) => inArea(x, z) && !inBuilding(x, z, pad) && !onOtherRoad(map, x, z, null, pad);
+  // (the Goodsyard site north of the area is ShoreditchStation's)
+  const free = (x: number, z: number, pad = 0.3) => inArea(x, z) && !inPoly(x, z, GOODSYARD_AREA) && !inBuilding(x, z, pad) && !onOtherRoad(map, x, z, null, pad);
   for (const p of data.points) {
     const [x, z] = p.p;
     if (p.k === "tree") {

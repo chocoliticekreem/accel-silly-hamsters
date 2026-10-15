@@ -4,6 +4,7 @@
 // so the store card's "Back outside" button and the Interiors module agree with this slice.
 import { create } from "zustand";
 import { useSafety } from "./safety";
+import { useSim } from "./store";
 
 interface TravelState {
   /** Key of the place last travelled to (world/landmarks/places), or null. */
@@ -18,6 +19,8 @@ interface TravelState {
   storeId: string | null;
   /** The "Go to" menu is open (number keys travel while it is). */
   menuOpen: boolean;
+  /** WASD free camera (world/modules/FreeCam) instead of the orbit camera. */
+  freecam: boolean;
 
   go: (key: string) => void;
   enter: (key: string, opts: { floors: number; floor?: number; storeId?: string | null }) => void;
@@ -25,6 +28,7 @@ interface TravelState {
   setFloor: (floor: number) => void;
   stepFloor: (delta: number) => void;
   setMenu: (open: boolean) => void;
+  setFreecam: (on: boolean) => void;
 }
 
 export const useTravel = create<TravelState>((set, get) => ({
@@ -34,6 +38,7 @@ export const useTravel = create<TravelState>((set, get) => ({
   floorCount: 0,
   storeId: null,
   menuOpen: false,
+  freecam: false,
 
   go: (focusPlace) => {
     if (get().interiorOpen && get().focusPlace !== focusPlace) get().exit();
@@ -49,8 +54,11 @@ export const useTravel = create<TravelState>((set, get) => ({
     if (!interiorOpen) return;
     set({ interiorOpen: false, storeId: null });
     if (storeId && useSafety.getState().insideId === storeId) useSafety.getState().setInside(null);
+    // leaving XOYO closes its store card too (Esc no longer reaches the playback hotkeys' deselect)
+    if (storeId && useSim.getState().selectedStoreId === storeId) useSim.getState().selectStore(null);
   },
   setFloor: (floor) => set({ floor: Math.max(0, Math.min(get().floorCount - 1, floor)) }),
   stepFloor: (delta) => get().setFloor(get().floor + delta),
   setMenu: (menuOpen) => set({ menuOpen }),
+  setFreecam: (freecam) => set({ freecam }),
 }));

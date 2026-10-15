@@ -6,7 +6,9 @@ import { useEffect, useMemo } from "react";
 import { BoxGeometry, MeshStandardMaterial } from "three";
 import type { Building } from "../../api/contract";
 import { REPLACED_BUILDINGS } from "../../sim/areaKeepouts";
+import { clearKeepouts } from "../../sim/footprints";
 import { toScene } from "../../sim/geometry";
+import { landmarkHostIds, landmarkKeepouts } from "../models/plots";
 import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
@@ -66,7 +68,8 @@ export default function Buildings() {
         }),
       ]),
     ) as Record<(typeof kinds)[number], MeshStandardMaterial[]>;
-    const items = map.buildings
+    // no generic box inside a hero landmark: hosts dropped, neighbours cut back to the landmark footprint
+    const items = clearKeepouts(map.buildings, landmarkKeepouts(map), landmarkHostIds(map))
       .filter((b) => (b.kind === "residential" || b.kind === "office") && !REPLACED_BUILDINGS.has(b.id) && !buildingKeptOut(b))
       .map((raw) => {
         const b = unclash(raw);
