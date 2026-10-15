@@ -7,7 +7,9 @@
 // Drawn, never counted: KPIs come only from the sim.
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
-import { CapsuleGeometry, Color, DynamicDrawUsage, MeshStandardMaterial, Object3D, type InstancedMesh } from "three";
+import { createPeople, SKIN_TONES, TROUSERS } from "../people";
+import { useEffect } from "react";
+import { Color } from "three";
 import type { CityMap } from "../../api/contract";
 import { rng, weighted, type Rng } from "../../mock/rng";
 import { toScene } from "../../sim/geometry";
@@ -100,14 +102,15 @@ interface Walker {
   side: number;
   speed: number;
   color: Color;
+  trousers: Color;
+  skin: Color;
+  stride: number;
 }
 
-const o = new Object3D();
 const pt = newPoint();
 
 export default function Footfall() {
   const { map, live } = useWorld();
-  const mesh = useRef<InstancedMesh>(null);
   const shown = useRef(MIN_WALKERS);
 
   const world = useMemo(() => {
@@ -139,18 +142,17 @@ export default function Footfall() {
       side: (r() < 0.5 ? -1 : 1) * (6 + r() * 1.6),
       speed: PACE * (0.8 + r() * 0.4),
       color: colors.through[0],
+      trousers: TROUSERS[Math.floor(r() * TROUSERS.length)],
+      skin: SKIN_TONES[Math.floor(r() * SKIN_TONES.length)],
+      stride: r() * Math.PI * 2,
     }));
     return { walkers, assign };
   }, [map]);
 
-  const { geo, mat } = useMemo(
-    () => ({ geo: new CapsuleGeometry(0.42, 0.9, 3, 6).translate(0, 0.9, 0), mat: new MeshStandardMaterial({ roughness: 0.6, emissive: "#ffffff", emissiveIntensity: 0.06 }) }),
-    [],
-  );
+  const people = useMemo(() => createPeople(MAX_WALKERS, { emissive: 0.06 }), []);
+  useEffect(() => () => people.dispose(), [people]);
 
   useFrame(({ clock }, delta) => {
-    const m = mesh.current;
-    if (!m) return;
     const hour = hourOf(useSim.getState().t);
     // ease toward the data-driven head count so the crowd swells and thins instead of popping
     const target = Math.min(MAX_WALKERS, Math.max(MIN_WALKERS, live.onStreet * PEOPLE_PER_AGENT));
@@ -170,32 +172,12 @@ export default function Footfall() {
       }
       w.path.at(w.s, w.side, pt);
       const [x, z] = toScene(pt.x, pt.z);
-      o.position.set(x, Math.abs(Math.sin(time * 9 + i)) * 0.12, z);
-      o.rotation.set(0, Math.atan2(pt.dx, -pt.dz), 0);
-      o.scale.setScalar(3);
-      o.updateMatrix();
-      m.setMatrixAt(k, o.matrix);
-      m.setColorAt(k, w.color);
+      const phase = time * 7 * (w.speed / PACE) + w.stride;
+      people.set(k, x, Math.abs(Math.sin(phase)) * 0.06, z, Math.atan2(pt.dx, -pt.dz), phase, true, 2.3, w.color, w.trousers, w.skin);
       k++;
     }
-    m.count = k;
-    m.instanceMatrix.needsUpdate = true;
-    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    people.commit(k);
   });
 
-  return (
-    <instancedMesh
-      ref={(m) => {
-        mesh.current = m;
-        if (m) {
-          m.instanceMatrix.setUsage(DynamicDrawUsage);
-          m.setColorAt(0, new Color());
-          m.count = 0;
-        }
-      }}
-      args={[geo, mat, MAX_WALKERS]}
-      frustumCulled={false}
-      name="footfall"
-    />
-  );
+  return <primitive object={people.group} name="footfall" />;
 }

@@ -1,9 +1,9 @@
-// Module: Agents. Every citizen as a little capsule coloured by persona, played back from day keyframes.
-// One InstancedMesh; each frame we sample every agent at `t` (linear interpolation, hidden inside stores),
-// pack the visible ones into the instance buffer and count who is inside which store (live.occupancy).
+// Module: Agents. Every sim citizen as a little person (shirt = persona colour), played back from day keyframes.
+// Each frame we sample every agent at `t` (linear interpolation, hidden inside stores), write the visible ones
+// into the shared people meshes, and count who is inside which store (live.occupancy).
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
-import { CapsuleGeometry, Color, DynamicDrawUsage, MeshStandardMaterial, Object3D, type InstancedMesh } from "three";
+import { useEffect, useMemo } from "react";
+import { Color, type MeshStandardMaterial } from "three";
 import { toScene } from "../../sim/geometry";
 import { sampleAgent } from "../../sim/interp";
 import { nightLevel } from "../../sim/sky";
@@ -12,33 +12,40 @@ import { useDayAgents } from "../../state/data";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { personaColor } from "../palette";
+import { createPeople, SKIN_TONES, TROUSERS } from "../people";
 
 const CAPACITY = 4000;
-const SCALE = 3; // cartoon scale: readable from the default camera
+/** Sim agents are a touch bigger than the background crowd so the sample stands out. */
+const SCALE = 2.7;
+
+function hash(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
 
 export default function Agents() {
   const { run, live } = useWorld();
   const day = useSim((s) => dayOf(s.t));
   const agents = useDayAgents(run, day);
-  const mesh = useRef<InstancedMesh>(null);
+  const people = useMemo(() => createPeople(CAPACITY, { emissive: 0.1 }), []);
+  useEffect(() => () => people.dispose(), [people]);
 
-  const { geo, mat } = useMemo(
-    () => ({
-      geo: new CapsuleGeometry(0.55, 1.1, 4, 8).translate(0, 1.1, 0),
-      mat: new MeshStandardMaterial({ roughness: 0.7, emissive: "#ffffff", emissiveIntensity: 0 }),
-    }),
-    [],
+  const looks = useMemo(
+    () =>
+      agents.map((a) => {
+        const h = hash(a.id.split("~")[0]);
+        return { shirt: new Color(personaColor(a.persona)), trousers: TROUSERS[h % TROUSERS.length], skin: SKIN_TONES[(h >> 3) % SKIN_TONES.length], stride: (h % 628) / 100 };
+      }),
+    [agents],
   );
-  const colors = useMemo(() => agents.map((a) => new Color(personaColor(a.persona))), [agents]);
-  const o = useMemo(() => new Object3D(), []);
 
   useFrame(({ clock }) => {
-    const m = mesh.current;
-    if (!m) return;
     const t = useSim.getState().t;
-    const bob = clock.elapsedTime * 9;
+    const time = clock.elapsedTime;
     // a faint self-glow at night so people stay readable against dark streets
-    mat.emissiveIntensity = 0.28 * nightLevel(hourOf(t));
+    const mat = (people.group.children[0] as unknown as { material: MeshStandardMaterial }).material;
+    mat.emissiveIntensity = 0.1 + 0.3 * nightLevel(hourOf(t));
     live.occupancy.clear();
     let n = 0;
     for (let i = 0; i < agents.length && n < CAPACITY; i++) {
@@ -52,34 +59,15 @@ export default function Agents() {
       const s = sampleAgent(a, t);
       if (!s.visible) continue;
       const [x, z] = toScene(s.x, s.z);
-      o.position.set(x, s.moving ? Math.abs(Math.sin(bob + i)) * 0.35 : 0, z);
-      o.rotation.set(0, s.heading, s.moving ? Math.sin(bob + i) * 0.12 : 0);
-      o.scale.setScalar(SCALE);
-      o.updateMatrix();
-      m.setMatrixAt(n, o.matrix);
-      m.setColorAt(n, colors[i]);
+      const look = looks[i];
+      const phase = time * 8 + look.stride;
+      // sampleAgent's heading is in contract coords (atan2(dx, dz)); the scene flips z
+      people.set(n, x, s.moving ? Math.abs(Math.sin(phase)) * 0.08 : 0, z, Math.PI - s.heading, phase, s.moving, SCALE, look.shirt, look.trousers, look.skin);
       n++;
     }
-    m.count = n;
+    people.commit(n);
     live.onStreet = n;
-    m.instanceMatrix.needsUpdate = true;
-    if (m.instanceColor) m.instanceColor.needsUpdate = true;
   });
 
-  return (
-    <instancedMesh
-      ref={(m) => {
-        mesh.current = m;
-        if (m) {
-          m.instanceMatrix.setUsage(DynamicDrawUsage);
-          m.setColorAt(0, new Color()); // allocate instanceColor
-          m.count = 0;
-        }
-      }}
-      args={[geo, mat, CAPACITY]}
-      castShadow
-      frustumCulled={false}
-      name="agents"
-    />
-  );
+  return <primitive object={people.group} name="agents" />;
 }
