@@ -10,6 +10,7 @@ import { H_STREETS, V_STREETS } from "./map";
 import { aggregateDaily } from "./daily";
 import { OwnerBook, type DayStats } from "./owners";
 import { generateStreetEvents, storeStreets } from "./streetEvents";
+import { applyIncidents, generateIncidents } from "./incidents";
 import { between, intBetween, pick, rng, seedOf, weighted, type Rng } from "./rng";
 
 export const WALK_M_PER_MIN = 45; // an amble, not a commute sprint
@@ -336,10 +337,11 @@ const at = (day: number, hour: number) => (day - 1) * MINUTES_PER_DAY + hour * 6
 function nightOut(ctx: Ctx, a: Agent, day: number, r: Rng) {
   if (a.t < at(day, 23) && r() < 0.45) visitOne(ctx, a, { prefs: { bar: 2, offlicence: 0.6 }, outside: 0.8 }, r, 0.8);
   // the club: in until close-ish
-  const club = ctx.stores.filter((s) => s.type === "club");
-  const target = pick(r, club);
-  walkTo(a, target.loc);
-  if (isOpen(ctx, target, a.t) || a.t < at(day, 22)) {
+  // only clubs open tonight (a licence review can shut one: docs/INCIDENTS.md)
+  const club = ctx.stores.filter((s) => s.type === "club" && ctx.book.span(ctx.book.shops[s.idx], day));
+  const target = club.length ? pick(r, club) : null;
+  if (target) walkTo(a, target.loc);
+  if (target && (isOpen(ctx, target, a.t) || a.t < at(day, 22))) {
     if (!isOpen(ctx, target, a.t)) wait(a, at(day, 22) - a.t + between(r, 0, 10));
     const tIn = round(a.t);
     wait(a, Math.max(30, minutesToClose(ctx, target, a.t) - between(r, 0, 50)));
@@ -515,6 +517,7 @@ export function streetEventsFor(map: CityMap, seed: number): StreetEvent[] {
 export function simulateRun(map: CityMap, cfg: RunConfig, seed: number, run = 1): RunResult {
   const street = streetEventsFor(map, seed);
   const ctx = context(map, cfg, street, run);
+  applyIncidents(ctx.book, ctx.streetCuts, generateIncidents(map, seed));
   const regs = regulars(ctx, seed);
   const days: DayData[] = [];
   for (let day = 1; day <= DAYS_PER_RUN; day++) {
@@ -567,7 +570,7 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number, run = 1)
       lighting: [...c.lighting],
       kpis,
       visitsByHour: byHour.get(s.id)!.map((n) => round2(n / DAYS_PER_RUN)),
-      ...(s.type === "club" ? {} : { schedule: structuredClone(shop.src.schedule), closedFromDay: shop.src.closedFromDay }),
+      ...(s.type === "club" ? (shop.src.schedule.length > 1 ? { schedule: structuredClone(shop.src.schedule) } : {}) : { schedule: structuredClone(shop.src.schedule), closedFromDay: shop.src.closedFromDay }),
     };
     if (s.type !== "club") {
       totalVisits += kpis.visits;
