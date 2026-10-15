@@ -6,6 +6,7 @@ import { useEffect, useMemo } from "react";
 import { Color, InstancedMesh, MeshStandardMaterial, Object3D, type BufferGeometry, type Matrix4 } from "three";
 import type { CityMap } from "../../api/contract";
 import { rng } from "../../mock/rng";
+import { inAreaKeepout } from "../../sim/areaKeepouts";
 import { closestOnStreet, toScene } from "../../sim/geometry";
 import { newPoint, polyline } from "../../sim/polyline";
 import { useWorld } from "../context";
@@ -18,6 +19,7 @@ const SHELTER_SPACING = 160;
 type Kind = "tree" | "kiosk" | "pillar" | "bench" | "bin" | "shelter";
 
 function free(map: CityMap, x: number, z: number, self: CityMap["streets"][number] | null, pad = 1) {
+  if (inAreaKeepout(x, z)) return false; // an area module dresses its own streets
   if (map.streets.some((o) => o !== self && closestOnStreet(o, x, z)[2] < o.width / 2 + pad)) return false;
   return !map.buildings.some((b) => Math.abs(x - b.x) < b.w / 2 + 0.5 && Math.abs(z - b.z) < b.d / 2 + 0.5);
 }

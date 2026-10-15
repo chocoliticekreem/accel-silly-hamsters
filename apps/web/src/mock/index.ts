@@ -6,6 +6,8 @@ import { OPTIMISE_MS, optimiseProgress } from "./optimise";
 import calibrationData from "../../../../data/processed/calibration.json";
 // The pipeline's live London carbon and price profile, so mock area totals use real numbers.
 import energyData from "../../../../data/processed/energy.json";
+// The pipeline's demand data, for the people-per-agent scale its notes state.
+import demandData from "../../../../data/processed/demand.json";
 import { formatHHMM } from "../sim/time";
 import { configForRun, LICENCE, MOCK_RUN_COUNT, notebookLabel, type RunConfig } from "./configs";
 import { generateMap } from "./map";
@@ -17,6 +19,9 @@ import { simulateRun, type RunResult } from "./simulate";
 export const MOCK_SEED = 42;
 const STARTED_AT = Date.parse("2026-10-15T23:00:00Z");
 const MINUTES_PER_RUN = 69; // analyst wall-clock per iteration → ~9h 12m for 8 runs
+const SCALE_NOTE = /1 sim agent ~ ([\d,]+(?:\.\d+)?) real arrivals/.exec(demandData.notes.join(" "));
+/** Real people per sim agent, read the way the backend reads it (backend/api/footfall.py): the scale demand.json's notes state. */
+export const MOCK_PEOPLE_PER_AGENT = SCALE_NOTE ? Number(SCALE_NOTE[1].replace(/,/g, "")) : null;
 
 export interface MockState {
   map: CityMap;
@@ -200,6 +205,7 @@ export function mockApi(state: MockState = sharedMockState()): Api {
           daily: r.daily,
         };
       }),
+    footfall: (run) => later(() => ({ run, onStreetByDayHour: state.result(run).onStreetByDayHour })),
     insights: (storeId, run) =>
       later(() => {
         const best = state.bestRun();
@@ -283,7 +289,7 @@ export function mockApi(state: MockState = sharedMockState()): Api {
       }),
     ownerEvents: (run) => later(() => state.result(run).ownerEvents),
     streetEvents: (run) => later(() => state.result(run).streetEvents),
-    health: () => later(() => ({ ok: true, simVersion: "mock", mapSource: "sample" as const, realRuns: MOCK_RUN_COUNT })),
+    health: () => later(() => ({ ok: true, simVersion: "mock", mapSource: "sample" as const, realRuns: MOCK_RUN_COUNT, peoplePerAgent: MOCK_PEOPLE_PER_AGENT })),
     decision: (req) =>
       later(() => {
         state.decisions.push(req);
