@@ -21,6 +21,7 @@ from backend.contract import (
     BuildingKind,
     EntryPoint,
     HoursWindow,
+    Landmark,
     MapData,
     MapStore,
     Source,
@@ -29,7 +30,8 @@ from backend.contract import (
 )
 from backend.pipeline.common import write_processed
 
-HALF_SIZE_M = 250.0
+HALF_SIZE_M = 250.0  # the schematic fallback stays the original 500 m square (osm_map.MAP_BOUNDS
+# is the OSM map's rectangle)
 BOUNDS = Bounds(minX=-HALF_SIZE_M, maxX=HALF_SIZE_M, minZ=-HALF_SIZE_M, maxZ=HALF_SIZE_M)
 STATION_NAME = "Shoreditch High Street"
 
@@ -324,6 +326,16 @@ def fallback_map() -> MapData:
     ]
     door_x, door_z = _J["station_door"]
     entry_points.append(EntryPoint(id="st1", kind="station", name=STATION_NAME, x=door_x, z=door_z))
+    landmark = Landmark(
+        id="shoreditch-high-street",
+        name=STATION_NAME,
+        kind="station",
+        buildingId=f"b{station_index}",
+        x=sx,
+        z=sz,
+        h=DEFAULT_HEIGHT_M["station"],
+        note="Schematic station (hand-written fallback layout)",
+    )
     return MapData(
         bounds=BOUNDS,
         streets=streets,
@@ -331,6 +343,7 @@ def fallback_map() -> MapData:
         stores=stores,
         entryPoints=entry_points,
         sources=[FALLBACK_SOURCE],
+        landmarks=[landmark],
     )
 
 

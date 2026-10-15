@@ -12,6 +12,9 @@ not sent as `null`.
 | --- | --- |
 | `GET /api/map` → `stores[]` | Optional `licensedHours` `{open, close}`, `defaultHours` `{open, close}`, `floorArea` (m²) and `osmId`. |
 | `GET /api/map` | `sources`: `[{label, url, fetchedAt?}]`, citations for the map data. |
+| `GET /api/map` | Optional `landmarks`: `[{id, name, kind, buildingId, x, z, h, note?}]`, named real places to label or render specially. `kind` is `venue` \| `hotel` \| `station` \| `market` \| `landmark`; `buildingId` is the map building that is the place, or `null` (Old Street station is underground); `x`/`z` in map metres; `h` = the building's height in metres (where to hang a label; `0` = street level). The OSM map has `shoreditch-high-street` (station, the origin), `old-street` (station), `encode-hub` (venue, the hackathon), `artotel-london-hoxton` (hotel, 92.2 m) and `boxpark-shoreditch` (market); the fallback map only the station. Absent in maps built before it was added. |
+| `GET /api/map` → `bounds` | No longer a square around the origin: the OSM map is the rectangle `minX -1050, maxX 300, minZ -300, maxZ 650` (Old Street roundabout to Brick Lane, Quaker Street to Hoxton). The origin is still Shoreditch High Street station. The hand-written fallback keeps ±250 m. |
+| `GET /api/map` → `entryPoints` | Several `kind: "station"` entries: `st1` is Shoreditch High Street; `st2`... are Old Street's street entrances, all named `"Old Street"`. Group station entries by `name`. |
 | Suggestions (`GET /api/runs/{run}/suggestions`, report `changes`) | Optional `confidence` (`low` \| `medium` \| `high`) and `reason` (one line). |
 | `GET /api/stores/{storeId}/report` | `note`, always present (default `"Simulated, not guaranteed."`). `evidence[]` items may carry `fetchedAt`. |
 | `pdfUrl` | Format `/files/reports/{run}/{storeId}.pdf` (the sample shows `/files/reports/s3.pdf`), relative to the API origin. `null` when no PDF was written. |
