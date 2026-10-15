@@ -33,6 +33,8 @@ import { Legend } from "./ui/Legend";
 import { PlaybackBar } from "./ui/PlaybackBar";
 import { OwnerReport } from "./ui/OwnerReport";
 import { StoreCard } from "./ui/StoreCard";
+import { BusinessCard } from "./ui/BusinessCard";
+import { BusinessesChip } from "./ui/BusinessesChip";
 import { Toast } from "./ui/Toast";
 import { SafetyToggle } from "./ui/SafetyToggle";
 import { Headline } from "./ui/Headline";
@@ -106,6 +108,7 @@ export default function App() {
               <Icon name="bolt" size={14} /> Area
             </button>
             <SafetyToggle />
+            <BusinessesChip />
             {dataTag && <span className="chip chip-mock" title={health ? `map: ${health.mapSource} · real runs: ${health.realRuns}` : undefined}>{dataTag}</span>}
           </div>
           {!compare && <HeatmapToggle />}
@@ -114,6 +117,7 @@ export default function App() {
         {panel === "area" && <AreaPanel />}
         {panel === "agents" && <AgentsPanel />}
         {!compare && <StoreCard />}
+        {!compare && <BusinessCard />}
         {panel === "report" && <OwnerReport />}
         <CityFeedMount />
         <div className="bottom">

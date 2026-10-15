@@ -1,0 +1,141 @@
+/* Business card (ui/BusinessCard) and the Businesses chip: real OSM businesses the sim doesn't model. */
+.biz-note {
+  margin: 2px 0 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed var(--line-strong);
+}
+.biz-note b {
+  color: var(--text);
+  font-weight: 600;
+}
+.biz-hours {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.biz-hours > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+.biz-hours dt {
+  color: var(--muted);
+}
+.biz-hours dd {
+  margin: 0;
+  text-align: right;
+}
+.biz-est {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--lamp);
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 200, 87, 0.4);
+}
+.biz-curve {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  align-items: end;
+  gap: 2px;
+  height: 56px;
+  padding: 6px 6px 0;
+  border-radius: 10px 10px 0 0;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-bottom: none;
+}
+.biz-curve i {
+  display: block;
+  border-radius: 2px 2px 0 0;
+  background: color-mix(in srgb, var(--lamp) 45%, transparent);
+}
+.biz-curve i.now {
+  background: var(--lamp);
+}
+.biz-curve-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 2px 6px 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  border-radius: 0 0 10px 10px;
+  border: 1px solid var(--line);
+  border-top: none;
+}
+.biz-card .mini-kpis {
+  grid-template-columns: repeat(3, 1fr);
+}
+.biz-unit {
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.biz-units {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+.biz-units li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+.biz-units .muted {
+  font-family: var(--mono);
+  color: var(--faint);
+}
+.biz-contact {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.biz-contact > * {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.biz-contact a {
+  color: var(--text);
+  text-decoration: none;
+}
+.biz-contact a:hover {
+  text-decoration: underline;
+}
+.biz-go {
+  width: 100%;
+  margin-top: 12px;
+}
+.biz-label {
+  font-size: 12px;
+  padding: 4px 9px;
+}
+.biz-label-near {
+  font-weight: 600;
+  opacity: 0.85;
+}
+.chip .chip-count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+}
