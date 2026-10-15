@@ -1,0 +1,124 @@
+{
+  "sources": [
+    {
+      "label": "NESO Carbon Intensity API (CC BY 4.0), London regionid 13, half-hourly estimates 2026-09-17 to 2026-09-30",
+      "url": "https://api.carbonintensity.org.uk/regional/intensity/2026-09-17T00:00Z/2026-10-01T00:00Z/regionid/13",
+      "fetchedAt": "2026-10-15T09:07:04Z"
+    },
+    {
+      "label": "NESO Carbon Intensity API (CC BY 4.0), London regionid 13, half-hourly estimates 2026-10-01 to 2026-10-14",
+      "url": "https://api.carbonintensity.org.uk/regional/intensity/2026-10-01T00:00Z/2026-10-15T00:00Z/regionid/13",
+      "fetchedAt": "2026-10-15T09:07:06Z"
+    },
+    {
+      "label": "DESNZ ND-NEED 2026, England and Wales (published 30 Sep 2026): median electricity intensity by building use from metered 2024 consumption",
+      "url": "https://assets.publishing.service.gov.uk/media/6abcf5f355bc01d752a7f136/nd-need-2026-report.pdf"
+    },
+    {
+      "label": "CIBSE TM46:2008 Energy benchmarks (typical electricity and fossil, kWh/m2 GIA per year)",
+      "url": "https://www.cibse.org/knowledge-research/knowledge-portal/tm46-energy-benchmarks"
+    },
+    {
+      "label": "Clark (2013) What Colour is Your Building?, Appendix C, Tables C.4, C.6 and C.10: reproduces the TM46:2008 rows used here",
+      "url": "https://bluepools.co.uk/SiteAssets/AHU%27s/Energy%20Consumption%20Data.pdf"
+    },
+    {
+      "label": "DESNZ QEP table 3.4.2: prices of fuels purchased by non-domestic consumers in the UK, including CCL (published 29 Sep 2026)",
+      "url": "https://www.gov.uk/government/statistical-data-sets/gas-and-electricity-prices-in-the-non-domestic-sector"
+    }
+  ],
+  "fallback": false,
+  "notes": [
+    "carbonGPerKwh: live. Mean of 1344 half-hourly London (regionid 13) estimates, 2026-09-17 to 2026-10-14 (UTC days), grouped by Europe/London clock hour: lowest 94.8 g at 13:00, highest 187.8 g at 18:00. Regional values are NESO model estimates (the API's 'forecast'; no regional 'actual' is published).",
+    "cafe: 160 kWh/m2/yr (ND-NEED 2026 Hospitality median, metered 2024); open 07:00-18:00 (11 h) on 365 days = 4015 h/yr (assumption); standby share 0.2 (display chillers and fridges stay on overnight; the espresso machine is on a timer) -> 0.0322 kWh/m2 per open hour, 0.0064 closed; 100 m2 on an open day = 43.8 kWh before facade lighting.",
+    "restaurant: 160 kWh/m2/yr (ND-NEED 2026 Hospitality median, metered 2024); open 12:00-23:00 (11 h) on 365 days = 4015 h/yr (assumption); standby share 0.15 (only the walk-in fridge and freezer run while kitchen and dining room are off) -> 0.0338 kWh/m2 per open hour, 0.0051 closed; 100 m2 on an open day = 43.8 kWh before facade lighting.",
+    "takeaway: 310 kWh/m2/yr (TM46 Small food store: TM46 has no takeaway category and this is the closest all-electric, refrigerated counter-service format); open 11:00-23:00 (12 h) on 365 days = 4380 h/yr (assumption); standby share 0.3 (fridges, freezers and drinks chillers on a small floor area) -> 0.0544 kWh/m2 per open hour, 0.0163 closed; 100 m2 on an open day = 84.9 kWh before facade lighting.",
+    "bar: 160 kWh/m2/yr (ND-NEED 2026 Hospitality median, metered 2024); open 16:00-00:00 (8 h) on 365 days = 2920 h/yr (assumption); standby share 0.25 (cellar cooling and bottle fridges run around the clock) -> 0.0365 kWh/m2 per open hour, 0.0091 closed; 100 m2 on an open day = 43.8 kWh before facade lighting.",
+    "shop: 108 kWh/m2/yr (ND-NEED 2026 Shops median, metered 2024); open 10:00-19:00 (9 h) on 365 days = 3285 h/yr (assumption); standby share 0.2 (a mix of corner shops with drinks chillers and non-food shops with little left on) -> 0.0247 kWh/m2 per open hour, 0.0049 closed; 100 m2 on an open day = 29.6 kWh before facade lighting.",
+    "offlicence: 310 kWh/m2/yr (TM46 Small food store); open 08:00-23:00 (15 h) on 365 days = 5475 h/yr (assumption); standby share 0.4 (glass-door drinks chillers dominate the load and never switch off) -> 0.0457 kWh/m2 per open hour, 0.0183 closed; 100 m2 on an open day = 84.9 kWh before facade lighting.",
+    "club: 150 kWh/m2/yr (TM46 Entertainment halls, the closest category for a late-night music venue); open 22:00-03:00 (5 h) on 156 days = 780 h/yr (assumption); standby share 0.1 (cellar cooling and bar fridges against a large sound, lighting and ventilation load; 3 club nights a week) -> 0.0951 kWh/m2 per open hour, 0.0095 closed; 100 m2 on an open day = 65.6 kWh before facade lighting.",
+    "kWh/m2 derivation: E = annual electricity intensity, H = typical open hours per year, f = standby share (closed-hours load / open-hours load). open = E / (H + f x (8760 - H)) and standby = f x open, so a store kept to its typical hours uses exactly E a year; dividing E by H alone would count the closed-hours load twice. Each extra open hour costs (open - standby) per m2.",
+    "Cross-check, CIBSE TM46:2008 typical electricity (kWh/m2 GIA/yr): Restaurant 90 and Bar or pub 130 (both assume gas cooking and heating: fossil 370 and 350), General retail 165, Small food store 310, Entertainment halls 150. TM46 Restaurant would put a 100 m2 cafe at ~25 kWh/day, below an all-electric espresso cafe, so cafes, restaurants and bars use the metered ND-NEED hospitality median (ND-NEED publishes no split within hospitality).",
+    "Benchmarks cover a building's whole electricity use including its lighting. Facade and window lighting (lightingKw) is added on top, so stores with lights on most hours model slightly above their benchmark.",
+    "Floor area bases differ: ND-NEED divides by VOA floor area, TM46 by gross internal area, and map.json floor areas come from footprints. Clark (2013) puts the spread between measurement bases at up to ~25%, inside the benchmark uncertainty.",
+    "lightingKw (assumption: LED fittings on a typical small shopfront, independent of floor area): off = 0; low 0.25 kW = illuminated fascia sign 0.10 + window display dimmed 0.15; high 0.60 kW = sign 0.10 + window display at full 0.30 + facade wall-washers and canopy 0.20. Older halogen fittings would draw 2-3x more.",
+    "priceGbpPerKwh: flat \u00a30.3201/kWh, the midpoint of DESNZ QEP 3.4.2 2025 annual non-domestic electricity prices incl. CCL, excl. VAT: Very Small band (0-20 MWh/yr) 34.93 p/kWh and Small band (20-499 MWh/yr) 29.09 p/kWh, because the modelled independents straddle the 20 MWh/yr boundary. These are average delivered prices (standing charges spread per kWh), so the unit rate a saved kWh avoids is somewhat lower. DESNZ publishes no time-of-day split, hence flat. DESNZ flags the Very Small series as subject to revision.",
+    "EPC: the non-domestic EPC register (epc.opendatacommunities.org) now redirects to get-energy-performance-data.communities.gov.uk, whose API needs a GOV.UK One Login bearer token (checked 2026-10-15; this build has none), so it is not used. Non-domestic EPCs are modelled asset ratings, not metered use, so metered ND-NEED medians are the closer source.",
+    "fallback describes the carbon profile only: True means the API could not be used and the snapshot was written. Intensities, lighting and price are published figures plus the assumptions stated here in every build."
+  ],
+  "kwhPerM2PerOpenHour": {
+    "cafe": 0.03223,
+    "restaurant": 0.03385,
+    "takeaway": 0.05444,
+    "bar": 0.03653,
+    "shop": 0.02466,
+    "offlicence": 0.04566,
+    "club": 0.09506
+  },
+  "standbyKwhPerM2PerHour": {
+    "cafe": 0.00645,
+    "restaurant": 0.00508,
+    "takeaway": 0.01633,
+    "bar": 0.00913,
+    "shop": 0.00493,
+    "offlicence": 0.01826,
+    "club": 0.00951
+  },
+  "lightingKw": {
+    "off": 0.0,
+    "low": 0.25,
+    "high": 0.6
+  },
+  "carbonGPerKwh": [
+    151.2,
+    144.0,
+    140.5,
+    140.1,
+    144.3,
+    153.2,
+    165.3,
+    166.9,
+    150.8,
+    130.0,
+    110.0,
+    99.3,
+    96.1,
+    94.8,
+    99.6,
+    117.3,
+    145.6,
+    172.2,
+    187.8,
+    184.9,
+    177.4,
+    168.0,
+    158.6,
+    157.4
+  ],
+  "priceGbpPerKwh": [
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201
+  ]
+}

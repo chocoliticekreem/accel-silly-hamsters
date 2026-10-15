@@ -1,0 +1,1082 @@
+{
+  "sources": [
+    {
+      "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+      "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+    },
+    {
+      "label": "TfL open data: station entries/exits and night services",
+      "url": "https://tfl.gov.uk/info-for/open-data-users/"
+    },
+    {
+      "label": "Time Out London: the 20 best things to do in Shoreditch",
+      "url": "https://www.timeout.com/london/things-to-do/shoreditch-area-guide",
+      "fetchedAt": "2026-10-15T08:55:47Z"
+    },
+    {
+      "label": "Time Out London: the best bars in Shoreditch",
+      "url": "https://www.timeout.com/london/bars-pubs/shoreditch-bars",
+      "fetchedAt": "2026-10-15T08:55:49Z"
+    },
+    {
+      "label": "Time Out London: 10 best clubs and nightlife venues in Shoreditch",
+      "url": "https://www.timeout.com/london/clubs-nightlife/shoreditch-clubs",
+      "fetchedAt": "2026-10-15T08:55:51Z"
+    }
+  ],
+  "fallback": true,
+  "notes": [
+    "fallback: no LLM synthesis ran (no Claude API credentials), so every archetype and number is hand-written in backend/pipeline/personas.py (ARCHETYPES); none is measured, and calibration should tune them.",
+    "The numbers are the builder's judgement, informed by facts in the cited pages: Time Out for the venue mix and opening patterns, ONS Time Use and TfL for daily timing.",
+    "returningProb is high for daily routines (residents, commuters, office and shift workers) and ~0 for tourists; lightingSensitivity is highest for night-time and unfamiliar visitors; storePrefs, stopsPerTrip, dwellMinutes and entryKinds are per-archetype judgement.",
+    "Time Out London: robots.txt checked; 3 of 3 Shoreditch guide pages fetched (scrape cache data/raw/timeout/) and cited.",
+    "Reddit r/london, r/AskLondon, r/londonsocialclub: not collected; REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET are not set (the PRAW path runs once both are).",
+    "Google Maps, Yelp and TripAdvisor reviews: not collected; their terms of use forbid scraping.",
+    "ONS Time Use and TfL open data: cited as the public basis for daily timing (work and meal times, rail peaks, Friday/Saturday night trains); not fetched or fitted.",
+    "share = share of weekday arrivals into the area; on Sat/Sun weight it by weekendMultiplier and renormalise.",
+    "activeHours = arrival weight by clock hour, normalised to sum 1 for each persona.",
+    "weekendMultiplier applies to Sat/Sun clock days, so Friday-night hours after midnight count as Saturday.",
+    "Implied returning share of weekday arrivals (sum of share x returningProb): 0.58.",
+    "morning-commuter: weekday rail peaks 07-09 and 17-19 through Shoreditch High St (TfL); coffee to go, often no stop at all; weekdays only, so weekend 0.25",
+    "office-worker: works in the area's offices: lunch peak 12-14 and after-work 17-19 (ONS daily routines); the same routine every weekday, so returning 0.85",
+    "remote-worker: laptop workers in cafes 09-17 with long dwell (Time Out: a late-night bar serves them breakfast from 8am; a pay-by-the-hour venue runs 8am-6pm); daytime, so lighting barely matters",
+    "local-resident: lives nearby and walks in: evening grocery and off-licence runs 17-21, more at weekends; habit over lights; the most regular group",
+    "tourist: visitors for markets, museums, galleries and food 10-19 (Time Out area guide), busiest at weekends; one-off (0.02 covers multi-night hotel stays); a lit front signals open to strangers",
+    "weekend-shopper: Londoners at markets and independent shops 10-17, mostly Sat/Sun (Time Out: Columbia Road flower market Sundays 8am-3pm, Brick Lane Market); several shops plus a cafe",
+    "after-work-drinker: office crowd in bars 17-23 (Time Out: a 5-8pm happy hour; a pub that fills with nearby tech workers from 7pm); bar first, takeaway later; regular haunts, so returning 0.55",
+    "evening-diner: dinner 18-22 with a drink before or after (the Time Out area guide lists destination restaurants); more at weekends; occasional repeat visits",
+    "night-owl: club-goers arriving 21-02, busiest at weekends (Time Out: XOYO draws crowds every weekend; late-night bars and a pub-club with a late licence); Fri/Sat night trains (TfL); pre-drinks, the club, then late food (takeaway 0.9); drawn to lit, open fronts",
+    "late-shift-worker: hospitality, cleaning and care staff finishing 22-02 or starting 05-07; quick food on the way home by night bus; regular shifts, so returning 0.8",
+    "student-creative: art and design students and studio workers on loose hours 11-01 (Time Out area guide: galleries, gig venues, arty pubs); cheap cafes, bars and takeaways; half are regulars"
+  ],
+  "personas": [
+    {
+      "id": "morning-commuter",
+      "label": "Morning commuter",
+      "share": 0.14,
+      "returningProb": 0.85,
+      "activeHours": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0382,
+        0.1527,
+        0.2544,
+        0.1272,
+        0.0254,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0382,
+        0.1272,
+        0.1527,
+        0.0636,
+        0.0204,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "weekendMultiplier": 0.25,
+      "storePrefs": {
+        "cafe": 1.0,
+        "restaurant": 0.05,
+        "takeaway": 0.5,
+        "bar": 0.05,
+        "shop": 0.3,
+        "offlicence": 0.15,
+        "club": 0.0
+      },
+      "lightingSensitivity": 0.25,
+      "stopsPerTrip": [
+        0.0,
+        1.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          3,
+          10
+        ],
+        "restaurant": [
+          45,
+          90
+        ],
+        "takeaway": [
+          2,
+          6
+        ],
+        "bar": [
+          30,
+          90
+        ],
+        "shop": [
+          2,
+          8
+        ],
+        "offlicence": [
+          2,
+          8
+        ],
+        "club": [
+          90,
+          240
+        ]
+      },
+      "entryKinds": {
+        "station": 0.85,
+        "street": 0.15
+      },
+      "evidence": [
+        {
+          "label": "TfL open data: station entries/exits and night services",
+          "url": "https://tfl.gov.uk/info-for/open-data-users/"
+        },
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        }
+      ]
+    },
+    {
+      "id": "office-worker",
+      "label": "Office worker",
+      "share": 0.16,
+      "returningProb": 0.85,
+      "activeHours": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0105,
+        0.0525,
+        0.042,
+        0.021,
+        0.042,
+        0.1891,
+        0.2103,
+        0.084,
+        0.042,
+        0.042,
+        0.105,
+        0.0945,
+        0.042,
+        0.0168,
+        0.0063,
+        0.0,
+        0.0
+      ],
+      "weekendMultiplier": 0.15,
+      "storePrefs": {
+        "cafe": 0.8,
+        "restaurant": 0.7,
+        "takeaway": 0.8,
+        "bar": 0.5,
+        "shop": 0.4,
+        "offlicence": 0.1,
+        "club": 0.0
+      },
+      "lightingSensitivity": 0.3,
+      "stopsPerTrip": [
+        1.0,
+        2.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          5,
+          20
+        ],
+        "restaurant": [
+          30,
+          60
+        ],
+        "takeaway": [
+          3,
+          10
+        ],
+        "bar": [
+          45,
+          120
+        ],
+        "shop": [
+          5,
+          20
+        ],
+        "offlicence": [
+          2,
+          8
+        ],
+        "club": [
+          90,
+          240
+        ]
+      },
+      "entryKinds": {
+        "station": 0.6,
+        "street": 0.4
+      },
+      "evidence": [
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        },
+        {
+          "label": "TfL open data: station entries/exits and night services",
+          "url": "https://tfl.gov.uk/info-for/open-data-users/"
+        }
+      ]
+    },
+    {
+      "id": "remote-worker",
+      "label": "Remote worker",
+      "share": 0.06,
+      "returningProb": 0.6,
+      "activeHours": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.004,
+        0.0299,
+        0.0996,
+        0.1594,
+        0.1394,
+        0.1195,
+        0.1195,
+        0.1195,
+        0.0996,
+        0.0598,
+        0.0299,
+        0.0139,
+        0.006,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "weekendMultiplier": 0.5,
+      "storePrefs": {
+        "cafe": 1.0,
+        "restaurant": 0.4,
+        "takeaway": 0.4,
+        "bar": 0.15,
+        "shop": 0.25,
+        "offlicence": 0.1,
+        "club": 0.0
+      },
+      "lightingSensitivity": 0.2,
+      "stopsPerTrip": [
+        1.0,
+        2.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          60,
+          180
+        ],
+        "restaurant": [
+          30,
+          60
+        ],
+        "takeaway": [
+          3,
+          10
+        ],
+        "bar": [
+          30,
+          90
+        ],
+        "shop": [
+          5,
+          20
+        ],
+        "offlicence": [
+          2,
+          8
+        ],
+        "club": [
+          90,
+          240
+        ]
+      },
+      "entryKinds": {
+        "street": 0.6,
+        "station": 0.4
+      },
+      "evidence": [
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        },
+        {
+          "label": "Time Out London: 10 best clubs and nightlife venues in Shoreditch",
+          "url": "https://www.timeout.com/london/clubs-nightlife/shoreditch-clubs",
+          "fetchedAt": "2026-10-15T08:55:51Z"
+        }
+      ]
+    },
+    {
+      "id": "local-resident",
+      "label": "Local resident",
+      "share": 0.11,
+      "returningProb": 0.95,
+      "activeHours": [
+        0.0047,
+        0.0016,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0032,
+        0.0237,
+        0.0316,
+        0.0237,
+        0.0237,
+        0.0316,
+        0.0395,
+        0.0395,
+        0.0316,
+        0.0316,
+        0.0474,
+        0.0948,
+        0.1422,
+        0.1578,
+        0.1264,
+        0.079,
+        0.0474,
+        0.019
+      ],
+      "weekendMultiplier": 1.3,
+      "storePrefs": {
+        "cafe": 0.4,
+        "restaurant": 0.3,
+        "takeaway": 0.5,
+        "bar": 0.3,
+        "shop": 0.8,
+        "offlicence": 1.0,
+        "club": 0.05
+      },
+      "lightingSensitivity": 0.3,
+      "stopsPerTrip": [
+        1.0,
+        2.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          10,
+          30
+        ],
+        "restaurant": [
+          45,
+          90
+        ],
+        "takeaway": [
+          3,
+          10
+        ],
+        "bar": [
+          30,
+          90
+        ],
+        "shop": [
+          5,
+          15
+        ],
+        "offlicence": [
+          2,
+          6
+        ],
+        "club": [
+          90,
+          240
+        ]
+      },
+      "entryKinds": {
+        "street": 0.9,
+        "station": 0.1
+      },
+      "evidence": [
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        }
+      ]
+    },
+    {
+      "id": "tourist",
+      "label": "Tourist / day-tripper",
+      "share": 0.11,
+      "returningProb": 0.02,
+      "activeHours": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0042,
+        0.0209,
+        0.0557,
+        0.0975,
+        0.1253,
+        0.1394,
+        0.1393,
+        0.1253,
+        0.0975,
+        0.0696,
+        0.0487,
+        0.0348,
+        0.0209,
+        0.0139,
+        0.0056,
+        0.0014
+      ],
+      "weekendMultiplier": 1.8,
+      "storePrefs": {
+        "cafe": 0.7,
+        "restaurant": 0.8,
+        "takeaway": 0.4,
+        "bar": 0.6,
+        "shop": 0.9,
+        "offlicence": 0.1,
+        "club": 0.1
+      },
+      "lightingSensitivity": 0.6,
+      "stopsPerTrip": [
+        2.0,
+        4.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          15,
+          45
+        ],
+        "restaurant": [
+          60,
+          105
+        ],
+        "takeaway": [
+          3,
+          10
+        ],
+        "bar": [
+          30,
+          75
+        ],
+        "shop": [
+          10,
+          30
+        ],
+        "offlicence": [
+          2,
+          8
+        ],
+        "club": [
+          90,
+          240
+        ]
+      },
+      "entryKinds": {
+        "station": 0.7,
+        "street": 0.3
+      },
+      "evidence": [
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        },
+        {
+          "label": "Time Out London: the 20 best things to do in Shoreditch",
+          "url": "https://www.timeout.com/london/things-to-do/shoreditch-area-guide",
+          "fetchedAt": "2026-10-15T08:55:47Z"
+        }
+      ]
+    },
+    {
+      "id": "weekend-shopper",
+      "label": "Weekend shopper",
+      "share": 0.05,
+      "returningProb": 0.2,
+      "activeHours": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0081,
+        0.0484,
+        0.0968,
+        0.1452,
+        0.1611,
+        0.1613,
+        0.1452,
+        0.1129,
+        0.0726,
+        0.0323,
+        0.0129,
+        0.0032,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "weekendMultiplier": 3.5,
+      "storePrefs": {
+        "cafe": 0.7,
+        "restaurant": 0.5,
+        "takeaway": 0.3,
+        "bar": 0.3,
+        "shop": 1.0,
+        "offlicence": 0.1,
+        "club": 0.0
+      },
+      "lightingSensitivity": 0.4,
+      "stopsPerTrip": [
+        2.0,
+        4.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          15,
+          40
+        ],
+        "restaurant": [
+          45,
+          90
+        ],
+        "takeaway": [
+          3,
+          10
+        ],
+        "bar": [
+          30,
+          90
+        ],
+        "shop": [
+          10,
+          40
+        ],
+        "offlicence": [
+          2,
+          8
+        ],
+        "club": [
+          90,
+          240
+        ]
+      },
+      "entryKinds": {
+        "station": 0.6,
+        "street": 0.4
+      },
+      "evidence": [
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        },
+        {
+          "label": "Time Out London: the 20 best things to do in Shoreditch",
+          "url": "https://www.timeout.com/london/things-to-do/shoreditch-area-guide",
+          "fetchedAt": "2026-10-15T08:55:47Z"
+        }
+      ]
+    },
+    {
+      "id": "after-work-drinker",
+      "label": "After-work drinker",
+      "share": 0.09,
+      "returningProb": 0.55,
+      "activeHours": [
+        0.0092,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0069,
+        0.0229,
+        0.1144,
+        0.2059,
+        0.2288,
+        0.1831,
+        0.1259,
+        0.0686,
+        0.0343
+      ],
+      "weekendMultiplier": 0.9,
+      "storePrefs": {
+        "cafe": 0.05,
+        "restaurant": 0.4,
+        "takeaway": 0.5,
+        "bar": 1.0,
+        "shop": 0.05,
+        "offlicence": 0.3,
+        "club": 0.15
+      },
+      "lightingSensitivity": 0.6,
+      "stopsPerTrip": [
+        1.0,
+        3.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          10,
+          30
+        ],
+        "restaurant": [
+          40,
+          80
+        ],
+        "takeaway": [
+          3,
+          10
+        ],
+        "bar": [
+          45,
+          150
+        ],
+        "shop": [
+          5,
+          20
+        ],
+        "offlicence": [
+          2,
+          8
+        ],
+        "club": [
+          90,
+          240
+        ]
+      },
+      "entryKinds": {
+        "station": 0.5,
+        "street": 0.5
+      },
+      "evidence": [
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        },
+        {
+          "label": "Time Out London: the best bars in Shoreditch",
+          "url": "https://www.timeout.com/london/bars-pubs/shoreditch-bars",
+          "fetchedAt": "2026-10-15T08:55:49Z"
+        },
+        {
+          "label": "Time Out London: 10 best clubs and nightlife venues in Shoreditch",
+          "url": "https://www.timeout.com/london/clubs-nightlife/shoreditch-clubs",
+          "fetchedAt": "2026-10-15T08:55:51Z"
+        }
+      ]
+    },
+    {
+      "id": "evening-diner",
+      "label": "Evening diner",
+      "share": 0.08,
+      "returningProb": 0.3,
+      "activeHours": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0221,
+        0.0221,
+        0.0,
+        0.0,
+        0.0,
+        0.0552,
+        0.1657,
+        0.2764,
+        0.2486,
+        0.1381,
+        0.0552,
+        0.0166
+      ],
+      "weekendMultiplier": 1.4,
+      "storePrefs": {
+        "cafe": 0.1,
+        "restaurant": 1.0,
+        "takeaway": 0.2,
+        "bar": 0.6,
+        "shop": 0.05,
+        "offlicence": 0.1,
+        "club": 0.05
+      },
+      "lightingSensitivity": 0.5,
+      "stopsPerTrip": [
+        1.0,
+        2.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          10,
+          30
+        ],
+        "restaurant": [
+          60,
+          120
+        ],
+        "takeaway": [
+          3,
+          10
+        ],
+        "bar": [
+          30,
+          75
+        ],
+        "shop": [
+          5,
+          20
+        ],
+        "offlicence": [
+          2,
+          8
+        ],
+        "club": [
+          90,
+          240
+        ]
+      },
+      "entryKinds": {
+        "station": 0.55,
+        "street": 0.45
+      },
+      "evidence": [
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        },
+        {
+          "label": "Time Out London: the 20 best things to do in Shoreditch",
+          "url": "https://www.timeout.com/london/things-to-do/shoreditch-area-guide",
+          "fetchedAt": "2026-10-15T08:55:47Z"
+        }
+      ]
+    },
+    {
+      "id": "night-owl",
+      "label": "Night owl (clubber)",
+      "share": 0.09,
+      "returningProb": 0.35,
+      "activeHours": [
+        0.2217,
+        0.1478,
+        0.0739,
+        0.0246,
+        0.0074,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0074,
+        0.0246,
+        0.0739,
+        0.1724,
+        0.2463
+      ],
+      "weekendMultiplier": 2.5,
+      "storePrefs": {
+        "cafe": 0.05,
+        "restaurant": 0.15,
+        "takeaway": 0.9,
+        "bar": 0.7,
+        "shop": 0.05,
+        "offlicence": 0.6,
+        "club": 1.0
+      },
+      "lightingSensitivity": 0.9,
+      "stopsPerTrip": [
+        1.0,
+        3.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          10,
+          30
+        ],
+        "restaurant": [
+          45,
+          90
+        ],
+        "takeaway": [
+          5,
+          15
+        ],
+        "bar": [
+          30,
+          90
+        ],
+        "shop": [
+          5,
+          20
+        ],
+        "offlicence": [
+          2,
+          6
+        ],
+        "club": [
+          120,
+          300
+        ]
+      },
+      "entryKinds": {
+        "station": 0.6,
+        "street": 0.4
+      },
+      "evidence": [
+        {
+          "label": "TfL open data: station entries/exits and night services",
+          "url": "https://tfl.gov.uk/info-for/open-data-users/"
+        },
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        },
+        {
+          "label": "Time Out London: the 20 best things to do in Shoreditch",
+          "url": "https://www.timeout.com/london/things-to-do/shoreditch-area-guide",
+          "fetchedAt": "2026-10-15T08:55:47Z"
+        },
+        {
+          "label": "Time Out London: the best bars in Shoreditch",
+          "url": "https://www.timeout.com/london/bars-pubs/shoreditch-bars",
+          "fetchedAt": "2026-10-15T08:55:49Z"
+        },
+        {
+          "label": "Time Out London: 10 best clubs and nightlife venues in Shoreditch",
+          "url": "https://www.timeout.com/london/clubs-nightlife/shoreditch-clubs",
+          "fetchedAt": "2026-10-15T08:55:51Z"
+        }
+      ]
+    },
+    {
+      "id": "late-shift-worker",
+      "label": "Late-shift worker",
+      "share": 0.04,
+      "returningProb": 0.8,
+      "activeHours": [
+        0.2085,
+        0.1458,
+        0.0833,
+        0.0417,
+        0.0312,
+        0.0625,
+        0.0833,
+        0.0417,
+        0.0104,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0104,
+        0.0312,
+        0.0833,
+        0.1667
+      ],
+      "weekendMultiplier": 1.1,
+      "storePrefs": {
+        "cafe": 0.5,
+        "restaurant": 0.1,
+        "takeaway": 1.0,
+        "bar": 0.15,
+        "shop": 0.3,
+        "offlicence": 0.7,
+        "club": 0.0
+      },
+      "lightingSensitivity": 0.7,
+      "stopsPerTrip": [
+        0.0,
+        1.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          5,
+          20
+        ],
+        "restaurant": [
+          45,
+          90
+        ],
+        "takeaway": [
+          3,
+          12
+        ],
+        "bar": [
+          30,
+          90
+        ],
+        "shop": [
+          5,
+          20
+        ],
+        "offlicence": [
+          2,
+          6
+        ],
+        "club": [
+          90,
+          240
+        ]
+      },
+      "entryKinds": {
+        "street": 0.7,
+        "station": 0.3
+      },
+      "evidence": [
+        {
+          "label": "TfL open data: station entries/exits and night services",
+          "url": "https://tfl.gov.uk/info-for/open-data-users/"
+        },
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        }
+      ]
+    },
+    {
+      "id": "student-creative",
+      "label": "Student / creative",
+      "share": 0.07,
+      "returningProb": 0.5,
+      "activeHours": [
+        0.0301,
+        0.0151,
+        0.006,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0075,
+        0.0151,
+        0.0452,
+        0.0678,
+        0.0753,
+        0.0753,
+        0.0678,
+        0.0602,
+        0.0678,
+        0.0753,
+        0.0828,
+        0.0903,
+        0.0904,
+        0.0753,
+        0.0527
+      ],
+      "weekendMultiplier": 1.2,
+      "storePrefs": {
+        "cafe": 0.9,
+        "restaurant": 0.35,
+        "takeaway": 0.7,
+        "bar": 0.8,
+        "shop": 0.5,
+        "offlicence": 0.5,
+        "club": 0.2
+      },
+      "lightingSensitivity": 0.5,
+      "stopsPerTrip": [
+        1.0,
+        3.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          30,
+          120
+        ],
+        "restaurant": [
+          45,
+          90
+        ],
+        "takeaway": [
+          3,
+          10
+        ],
+        "bar": [
+          45,
+          120
+        ],
+        "shop": [
+          5,
+          20
+        ],
+        "offlicence": [
+          2,
+          8
+        ],
+        "club": [
+          90,
+          240
+        ]
+      },
+      "entryKinds": {
+        "street": 0.6,
+        "station": 0.4
+      },
+      "evidence": [
+        {
+          "label": "ONS Time Use in the UK: daily routines (paid work, meals, travel, socialising)",
+          "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/personalandhouseholdfinances/incomeandwealth/bulletins/timeuseintheuk/latest"
+        },
+        {
+          "label": "Time Out London: the 20 best things to do in Shoreditch",
+          "url": "https://www.timeout.com/london/things-to-do/shoreditch-area-guide",
+          "fetchedAt": "2026-10-15T08:55:47Z"
+        },
+        {
+          "label": "Time Out London: the best bars in Shoreditch",
+          "url": "https://www.timeout.com/london/bars-pubs/shoreditch-bars",
+          "fetchedAt": "2026-10-15T08:55:49Z"
+        }
+      ]
+    }
+  ]
+}
