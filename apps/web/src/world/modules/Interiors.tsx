@@ -19,6 +19,7 @@ import { useSim } from "../../state/store";
 import { beat, LANDMARK_NAMES, localFrame, toWorld, venueNight, type LocalFrame } from "../clubs";
 import { useWorld } from "../context";
 import { fightRing, lerp2, planFor, type InteriorPlan, type Slot } from "../interiors/layout";
+import { placesFor } from "../landmarks/places";
 import { createPeople, SKIN_TONES, TROUSERS } from "../people";
 import { STORE_COLORS } from "../palette";
 
@@ -124,7 +125,8 @@ function Walls({ f, plan, color }: { f: LocalFrame; plan: InteriorPlan; color: s
   );
 }
 
-function ClubFit({ plan, open }: { plan: InteriorPlan; open: RefObject<boolean> }) {
+/** The club fit-out (dancefloor tiles, DJ booth, lasers, bar, cloakroom); also XOYO's basement in Landmarks. */
+export function ClubFit({ plan, open }: { plan: InteriorPlan; open: RefObject<boolean> }) {
   const fl = plan.floor!;
   const cols = Math.max(2, Math.round(fl.w / 1.8));
   const rows = Math.max(2, Math.round(fl.d / 1.8));
@@ -333,5 +335,7 @@ export default function Interiors() {
   useAutoOpen();
   const id = useSafety((s) => s.insideId);
   const store = map.stores.find((s) => s.id === id && map.buildings.some((b) => b.id === s.buildingId));
-  return store ? <Interior key={store.id} store={store} /> : null;
+  // landmarks with floors (XOYO) are drawn by the Landmarks module instead
+  const multiFloor = useMemo(() => new Set(placesFor(map).flatMap((p) => (p.interior && p.storeId ? [p.storeId] : []))), [map]);
+  return store && !multiFloor.has(store.id) ? <Interior key={store.id} store={store} /> : null;
 }

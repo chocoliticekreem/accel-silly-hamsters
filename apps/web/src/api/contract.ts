@@ -223,7 +223,7 @@ export interface AnalystStatus {
   iterations: number;
   bestRun: number | null;
   /** budget = spend cap reached (hard stop); error = the session crashed and can resume. */
-  stoppedReason: "threshold" | "max_runs" | "budget" | "error" | null;
+  stoppedReason: "threshold" | "max_runs" | "budget" | "error" | "stopped" | null;
   /** The session's untouched starting run (compare mode's left side). */
   baselineRun?: number | null;
 }
@@ -314,6 +314,17 @@ export interface Health {
   /** "sample" = hand-made demo map; "processed" = the real pipeline output. */
   mapSource: "processed" | "sample" | "missing";
   realRuns: number;
+  /** Additive: real people one sim citizen stands for (the pipeline's demand scale). Absent until the pipeline has run. */
+  peoplePerAgent?: number | null;
+}
+
+// ---------- GET /api/runs/{run}/footfall (additive) ----------
+// The street crowd behind the background walkers. Area totals only: no store or agent ids.
+
+export interface RunFootfall {
+  run: number;
+  /** [day - 1][hour]: mean sim citizens on the street (between first and last keyframe, not inside a store) over that clock hour. */
+  onStreetByDayHour: number[][];
 }
 
 // ---------- GET /api/stores/{storeId}/insights?run={run} (additive) ----------
@@ -432,7 +443,7 @@ export interface AgentSession {
   lowGainStreak: number;
   /** Last completed step, for resume: start | baseline | proposed | chosen | ran | scored | ... */
   step: string;
-  stoppedReason?: "threshold" | "max_runs" | "budget" | "error" | null;
+  stoppedReason?: "threshold" | "max_runs" | "budget" | "error" | "stopped" | null;
   spentGbp: number;
   error?: string | null;
 }
@@ -514,6 +525,8 @@ export interface Api {
   calibration(): Promise<Calibration | null>;
   /** null when the run has no summary (404). */
   summary(run: number): Promise<RunAreaSummary | null>;
+  /** null when the run has no day files yet or the backend doesn't serve footfall (404). */
+  footfall(run: number): Promise<RunFootfall | null>;
   /** null when the backend has no health endpoint. */
   health(): Promise<Health | null>;
   /** null for clubs, runs without store stats, or a backend without insights (404). */

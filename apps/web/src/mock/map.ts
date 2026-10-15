@@ -2,6 +2,7 @@
 // ~25 stores, 2 clubs, 1 station, 4 street entry points. Seeded, so it's the same city every reload.
 import type { Building, BuildingKind, CityMap, EntryPoint, Store, StoreType, Street } from "../api/contract";
 import { frontage } from "../sim/geometry";
+import { LANDMARK_FALLBACKS } from "../sim/london";
 import { between, pick, rng } from "./rng";
 
 export const HALF = 250;
@@ -174,7 +175,9 @@ export function generateMap(seed = 42): CityMap {
     { id: "st1", kind: "station", name: "Shoreditch High St", x: 0, z: 0 },
   ];
 
-  return { bounds: { minX: -HALF, maxX: HALF, minZ: -HALF, maxZ: HALF }, streets, buildings, stores, entryPoints };
+  // the real-world landmarks just outside the cartoon map (art'otel, Encode Hub), so the landmark layers have data
+  const landmarks = LANDMARK_FALLBACKS.filter((l) => l.kind !== "station");
+  return { bounds: { minX: -HALF, maxX: HALF, minZ: -HALF, maxZ: HALF }, streets, buildings, stores, entryPoints, landmarks };
 }
 
 function round(n: number) {

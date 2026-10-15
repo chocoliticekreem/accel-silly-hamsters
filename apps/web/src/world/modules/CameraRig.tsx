@@ -20,9 +20,12 @@ interface Shared {
 const groups = new Map<string, Shared>();
 let rigSeq = 0;
 
-// From the north-east looking south-west: Shoreditch in front, the City of London skyline behind it.
-const HOME_POS = new Vector3(190, 105, -230);
-const HOME_TARGET = new Vector3(-10, 0, 20);
+// From the north-east looking south-west over Hoxton, Shoreditch and Old Street (the playable focus), with the
+// Overground viaduct curving through and the City of London skyline behind.
+const HOME_POS = new Vector3(150, 330, -700);
+const HOME_TARGET = new Vector3(-380, 0, -260);
+const SMALL_HOME_POS = new Vector3(190, 105, -230);
+const SMALL_HOME_TARGET = new Vector3(-10, 0, 20);
 const FOCUS_DIST = 150;
 /** Angle from straight down when focusing a store (radians); ~32°. */
 const FOCUS_POLAR = 0.55;
@@ -35,11 +38,15 @@ export default function CameraRig() {
   const shared = useMemo(() => {
     if (!groups.has(cameraGroup)) {
       const url = camFromUrl();
-      groups.set(cameraGroup, { leader: null, position: url ? new Vector3(...url.position) : HOME_POS.clone(), target: url ? new Vector3(...url.target) : HOME_TARGET.clone() });
+      // the focus shot needs the 1.5 km real map; the small mock map keeps the close-up of its centre
+      const b = map.bounds;
+      const focus = b.minX <= -380 && b.maxZ >= 260;
+      const home = focus ? { p: HOME_POS, t: HOME_TARGET } : { p: SMALL_HOME_POS, t: SMALL_HOME_TARGET };
+      groups.set(cameraGroup, { leader: null, position: url ? new Vector3(...url.position) : home.p.clone(), target: url ? new Vector3(...url.target) : home.t.clone() });
     }
     return groups.get(cameraGroup)!;
-  }, [cameraGroup]);
-  const fly = useRef<{ target: Vector3; position: Vector3; k: number } | null>(null);
+  }, [cameraGroup, map]);
+  const fly = useRef<{ target: Vector3; position: Vector3; k: number; from?: { target: Vector3; position: Vector3 } } | null>(null);
   const selected = useSim((s) => s.selectedStoreId);
 
   // start where the group is (so a compare view opens on the same shot)
@@ -77,17 +84,19 @@ export default function CameraRig() {
       const target = new Vector3(x, req.y ?? 0, z);
       const off = camera.position.clone().sub(controls.target);
       const azimuth = Math.atan2(off.x, off.z);
-      const polar = 0.95;
+      const polar = req.polar ?? 0.95;
       const dir = new Vector3(Math.sin(polar) * Math.sin(azimuth), Math.cos(polar), Math.sin(polar) * Math.cos(azimuth));
-      fly.current = { target, position: target.clone().add(dir.multiplyScalar(req.dist)), k: 0 };
+      fly.current = { target, position: req.position ? new Vector3(...req.position) : target.clone().add(dir.multiplyScalar(req.dist)), k: 0 };
       shared.leader = id;
     }
     const f = fly.current;
     if (f) {
-      f.k = Math.min(1, f.k + delta * 1.6);
-      const e = 1 - Math.pow(1 - f.k, 3);
-      controls.target.lerp(f.target, e * 0.25);
-      camera.position.lerp(f.position, e * 0.25);
+      // ~1 s eased from where the camera was, independent of frame rate
+      f.from ??= { target: controls.target.clone(), position: camera.position.clone() };
+      f.k = Math.min(1, f.k + Math.min(delta, 0.1));
+      const e = f.k < 0.5 ? 4 * f.k ** 3 : 1 - Math.pow(-2 * f.k + 2, 3) / 2;
+      controls.target.lerpVectors(f.from.target, f.target, e);
+      camera.position.lerpVectors(f.from.position, f.position, e);
       if (f.k >= 1) fly.current = null;
       controls.update();
     }

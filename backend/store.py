@@ -27,6 +27,7 @@ from backend.schemas import (
     EnergyFile,
     NotebookEntry,
     PersonasFile,
+    TrainingConfig,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -170,6 +171,40 @@ def load_analyst_state() -> AnalystState | None:
 def save_analyst_state(state: AnalystState) -> None:
     state.updatedAt = now_iso()
     write_json(analyst_state_path(), state)
+
+
+def training_config_path() -> Path:
+    return settings.RUNS_DIR / "training_config.json"
+
+
+def load_training_config() -> TrainingConfig:
+    """The saved training config; the defaults (from settings) when none was saved."""
+    data = read_json(training_config_path())
+    return TrainingConfig.model_validate(data) if data else TrainingConfig()
+
+
+def save_training_config(config: TrainingConfig) -> None:
+    write_json(training_config_path(), config)
+
+
+def training_lock_path() -> Path:
+    """Locked (flock) by the process running a training session, for as long as it runs."""
+    return settings.RUNS_DIR / "training.lock"
+
+
+def training_stop_path() -> Path:
+    """Present while a stop was requested: training stops at its next step boundary."""
+    return settings.RUNS_DIR / "training_stop.flag"
+
+
+def set_training_stop() -> None:
+    path = training_stop_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(now_iso() + "\n")
+
+
+def clear_training_stop() -> None:
+    training_stop_path().unlink(missing_ok=True)
 
 
 def decisions_path() -> Path:

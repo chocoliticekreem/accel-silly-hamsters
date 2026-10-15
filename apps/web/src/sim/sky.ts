@@ -71,12 +71,45 @@ export function nightLevel(hour: number): number {
 }
 const scratch = createSkySample();
 
-/** Sun direction: rises east (+x) at 06:00, sets west at 20:00, leans south (-z). Moon-ish from the other side at night. */
+/**
+ * Where the sun really is (unit vector, scene axes: +x east, +z south, +y up). Rises in the east-south-east at
+ * 06:00, peaks ~55° over the south at 13:00 and sets west-south-west at 20:00 (below the horizon at night), so
+ * from the default north-east camera the evening sun sinks behind the City skyline. Elevation hugs the horizon
+ * for longer than a pure sine: long golden hours.
+ */
+export function sunDirection(hour: number, out: [number, number, number] = [0, 0, 0]): [number, number, number] {
+  const h = ((hour % 24) + 24) % 24;
+  const k = (h - 6) / 14; // 0 sunrise .. 1 sunset (outside = below horizon)
+  const az = 0.6 + 1.9 * k; // radians from east, round through south
+  const s = Math.sin(Math.PI * k);
+  const el = s > 0 ? 0.96 * Math.pow(s, 1.6) : -0.25 * Math.min(1, -s * 4);
+  const c = Math.cos(el);
+  out[0] = Math.cos(az) * c;
+  out[1] = Math.sin(el);
+  out[2] = Math.sin(az) * c;
+  return out;
+}
+
+/** The moon: up from 20:00 to 06:00 on the opposite arc, ~40° high at its peak. */
+export function moonDirection(hour: number, out: [number, number, number] = [0, 0, 0]): [number, number, number] {
+  const h = ((hour % 24) + 24) % 24;
+  const k = (((h - 20) % 24) + 24) % 24 / 10; // 0 moonrise .. 1 moonset
+  const az = 0.5 + 2.1 * Math.min(1, k);
+  const el = k <= 1 ? 0.7 * Math.sin(Math.PI * k) : -0.2;
+  const c = Math.cos(el);
+  out[0] = Math.cos(az) * c;
+  out[1] = Math.sin(el);
+  out[2] = Math.sin(az) * c;
+  return out;
+}
+
+/** Key light position (sun by day, moon by night), never lower than ~12° so shadows stay readable. */
 export function sunPosition(hour: number, radius = 400): [number, number, number] {
   const h = ((hour % 24) + 24) % 24;
   const day = h >= 6 && h <= 20;
-  const phi = day ? (Math.PI * (h - 6)) / 14 : (Math.PI * ((h - 20 + 24) % 24)) / 10;
-  const y = Math.max(0.25, Math.sin(phi));
-  const x = Math.cos(phi) * (day ? 1 : -1);
-  return [x * radius, y * radius, -0.5 * radius];
+  const d = day ? sunDirection(h) : moonDirection(h);
+  const y = Math.max(0.21, d[1]);
+  const flat = Math.hypot(d[0], d[2]) || 1;
+  const r = Math.sqrt(1 - y * y) / flat;
+  return [d[0] * r * radius, y * radius, d[2] * r * radius];
 }

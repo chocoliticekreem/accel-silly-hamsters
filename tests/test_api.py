@@ -13,7 +13,9 @@ import json
 import re
 import shutil
 import sys
+import threading
 import types
+from collections.abc import Iterator
 from functools import cache as memoize
 from pathlib import Path
 from typing import Any
@@ -21,13 +23,18 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
+from test_agents_fakesim import FakeSim, setup_world  # pytest puts tests/ on sys.path
+from test_agents_training import lock_held_elsewhere
 
 from backend import cache, settings, store
+from backend.agents import training
 from backend.api import apply
 from backend.api.main import app
+from backend.api.routers import training as training_router
 from backend.contract import (
     AnalystStatus,
     DayData,
+    Kpis,
     MapData,
     RunListItem,
     StoreReport,
@@ -38,10 +45,12 @@ from backend.schemas import (
     AnalystState,
     CalibrationFile,
     CalibrationVenue,
+    Levers,
     NotebookEntry,
     RunConfig,
     RunSummary,
     StoreConfig,
+    TrainingConfig,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -53,6 +62,7 @@ MAP_EXTRAS = frozenset({"sources", "licensedHours", "defaultHours", "floorArea",
 RUN_EXTRAS = frozenset({"costPerStoreWeekGbp"})  # in the contract text, not its sample JSON
 SUGGESTION_EXTRAS = frozenset({"confidence", "reason"})
 REPORT_EXTRAS = frozenset({"note", "fetchedAt"}) | SUGGESTION_EXTRAS
+ANALYST_EXTRAS = frozenset({"baselineRun"})
 NO_EXTRAS: frozenset[str] = frozenset()
 
 
@@ -118,7 +128,7 @@ def test_key_check_catches_drift() -> None:
 
 def test_every_allowed_extra_is_documented() -> None:
     changes = (ROOT / "backend" / "CONTRACT_CHANGES.md").read_text()
-    for key in MAP_EXTRAS | RUN_EXTRAS | REPORT_EXTRAS:
+    for key in MAP_EXTRAS | RUN_EXTRAS | REPORT_EXTRAS | ANALYST_EXTRAS:
         assert f"`{key}`" in changes, key
     assert "none are breaking" in changes.lower()
 
@@ -135,9 +145,17 @@ def test_every_contract_endpoint_is_served() -> None:
     additive = {
         "GET /files/reports/{run}/{storeId}.pdf",
         "GET /api/runs/{run}/summary",
+        "GET /api/runs/{run}/footfall",
         "GET /api/notebook",
         "GET /api/health",
+        "GET /api/training",
+        "PUT /api/training/config",
+        "POST /api/training/start",
+        "POST /api/training/stop",
     }
+    changes = (ROOT / "backend" / "CONTRACT_CHANGES.md").read_text()
+    for endpoint in additive:
+        assert f"New `{endpoint}`" in changes, endpoint
     for endpoint in [*contract_samples(), *additive]:
         method, path = endpoint.split(" ", 1)
         assert f"{method} {normalise(path)}" in served, endpoint
@@ -342,6 +360,8 @@ def test_run_day_is_the_file_on_disk(client: TestClient, runs_dir: Path) -> None
         ("/api/runs/9/stores", 404),
         ("/api/runs/9/suggestions", 404),
         ("/api/runs/9/summary", 404),
+        ("/api/runs/9/footfall", 404),
+        ("/api/runs/x/footfall", 422),
         ("/api/stores/s3/report?run=9", 404),
         ("/api/stores/s3/report?run=latest", 422),
         ("/api/stores/nope/report", 404),
@@ -434,6 +454,259 @@ def test_notebook(client: TestClient) -> None:
     entry = NotebookEntry(run=3, line="Opened Cafe till 03:00", objectiveValue=2.1, at="t")
     store.append_notebook(entry)
     assert client.get("/api/notebook").json() == [entry.model_dump(mode="json")]
+
+
+def kpis(visits_per_kwh: float) -> Kpis:
+    return Kpis(visits=1000, kwh=1000 / visits_per_kwh, visitsPerKwh=visits_per_kwh, returnRate=0.3)
+
+
+def test_analyst_without_a_session_reads_the_real_runs(client: TestClient, runs_dir: Path) -> None:
+    for run, value in ((4, 1.0), (5, 1.4), (7, 1.2)):
+        add_run(runs_dir, run)
+        store.update_index(run, kpis=kpis(value), createdAt=f"2026-10-14T2{run - 4}:00:00Z")
+    add_run(runs_dir, 8, status="queued")
+    store.update_index(8, kpis=None)
+    body = client.get("/api/analyst").json()
+    AnalystStatus.model_validate(body)
+    assert body == {
+        "state": "stopped",
+        "startedAt": "2026-10-14T20:00:00Z",  # the first real run's createdAt
+        "iterations": 0,
+        "bestRun": 5,  # best visitsPerKwh among finished real runs
+        "stoppedReason": None,
+        "baselineRun": 4,
+    }
+    assert_keys_match(body, sample("GET /api/analyst"), ANALYST_EXTRAS)
+
+
+def test_analyst_baseline_comes_from_the_session_else_the_first_real_run(
+    client: TestClient, runs_dir: Path
+) -> None:
+    state = AnalystState(
+        sessionId="s",
+        state="stopped",
+        startedAt="t",
+        updatedAt="t",
+        backend="heuristic",
+        fresh=False,
+        seed=42,
+        baselineRun=3,
+        bestRun=9,
+        iterations=4,
+        stoppedReason="stopped",
+    )
+    store.save_analyst_state(state)
+    body = client.get("/api/analyst").json()
+    assert (body["baselineRun"], body["bestRun"], body["stoppedReason"]) == (3, 9, "stopped")
+    add_run(runs_dir, 6)
+    store.save_analyst_state(state.model_copy(update={"baselineRun": None}))  # just started
+    assert client.get("/api/analyst").json()["baselineRun"] == 6
+
+
+# --- training controls: GET /api/training, PUT config, POST start / stop -------------------
+
+
+def test_training_overview(client: TestClient, runs_dir: Path) -> None:
+    body = client.get("/api/training").json()
+    assert set(body) == {"config", "options", "status", "running"}
+    assert TrainingConfig.model_validate(body["config"]) == TrainingConfig()
+    assert body["running"] is False
+    assert body["status"] == client.get("/api/analyst").json()
+    options = body["options"]
+    objectives = ["visitsPerKwh", "netValueGbp", "visits", "storeProfitGbp"]
+    assert options["objective"] == {"values": objectives}
+    assert options["threshold"] == {"min": 0.0, "max": 1.0}
+    assert options["patience"] == {"min": 1}
+    assert options["maxRuns"] == {"min": 2, "max": 50}
+    assert options["maxStoresPerIteration"] == {"min": 1, "max": 24}
+    assert options["maxChangesPerStore"] == {"min": 1, "max": 2}
+    assert options["sessionBudgetUsd"] == {"min": 0.01, "max": settings.SPEND_CAP_USD}
+    assert options["levers"] == {"values": ["hours", "lighting"], "minEnabled": 1}
+    assert [s["id"] for s in options["storeIds"]["stores"]] == ["s1", "s2", "s3", "s4"]  # no club
+    assert options["analystBackend"]["values"] == ["auto", "heuristic", "messages", "managed"]
+    assert options["storeAgents"]["values"] == ["auto", "heuristic", "batch"]
+
+
+def test_put_training_config_validates_and_saves(client: TestClient, runs_dir: Path) -> None:
+    write_processed_map(runs_dir)  # storeIds are checked against the processed map
+    body = {"objective": "netValueGbp", "threshold": 0.01, "storeIds": ["s3"]}
+    body["levers"] = {"hours": True, "lighting": False}
+    response = client.put("/api/training/config", json=body)
+    assert response.status_code == 200
+    saved = TrainingConfig.model_validate(response.json())
+    assert saved == TrainingConfig(
+        objective="netValueGbp", threshold=0.01, storeIds=["s3"], levers=Levers(lighting=False)
+    )
+    assert store.load_training_config() == saved
+    assert client.get("/api/training").json()["config"] == response.json()
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"threshold": 2},
+        {"maxRuns": 1},
+        {"maxChangesPerStore": 3},
+        {"levers": {"hours": False, "lighting": False}},
+        {"storeIds": []},
+        {"storeIds": ["zz"]},
+        {"storeIds": ["c1"]},
+        {"sessionBudgetUsd": 1000},
+        {"objective": "kwh"},
+        {"turbo": True},
+    ],
+)
+def test_put_training_config_rejects_bad_values(
+    client: TestClient, runs_dir: Path, body: dict[str, Any]
+) -> None:
+    write_processed_map(runs_dir)
+    assert client.put("/api/training/config", json=body).status_code == 422
+    assert not store.training_config_path().exists()
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("PUT", "/api/training/config", {}),
+        ("PUT", "/api/training/config", {"threshold": 2}),  # read-only wins over a bad body
+        ("POST", "/api/training/start", {}),
+        ("POST", "/api/training/start", {"config": {"maxRuns": 1}}),
+        ("POST", "/api/training/stop", None),
+    ],
+)
+def test_training_writes_are_403_on_a_read_only_deployment(
+    client: TestClient,
+    runs_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    path: str,
+    body: dict[str, Any] | None,
+) -> None:
+    monkeypatch.setattr(settings, "READ_ONLY", True)
+    response = client.request(method, path, json=body)
+    assert response.status_code == 403
+    assert response.json()["detail"].startswith("read-only deployment")
+    assert not store.training_config_path().exists() and not store.training_stop_path().exists()
+    assert client.get("/api/training").status_code == 200  # reads still work
+
+
+def test_start_needs_the_pipelines_map(client: TestClient, runs_dir: Path) -> None:
+    response = client.post("/api/training/start")
+    assert response.status_code == 503
+    assert "run the pipeline" in response.json()["detail"]
+    assert store.load_analyst_state() is None
+
+
+@pytest.fixture
+def trainer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[tuple[TestClient, FakeSim]]:
+    """The API on the agents' fake sim, so POST /api/training/start really trains (offline)."""
+    sim = setup_world(tmp_path, monkeypatch)
+    yield TestClient(app), sim
+    wait_for_training()  # before monkeypatch restores RUNS_DIR under a running session
+
+
+def wait_for_training() -> None:
+    thread = training_router._thread
+    if thread is not None:
+        thread.join(timeout=60)
+        assert not thread.is_alive()
+
+
+def test_start_trains_in_the_background_with_the_body_config(
+    trainer: tuple[TestClient, FakeSim],
+) -> None:
+    client, _ = trainer
+    config = {"maxRuns": 2, "levers": {"hours": True, "lighting": False}}
+    response = client.post("/api/training/start", json={"config": config, "fresh": True})
+    assert response.status_code == 200
+    assert response.json()["state"] == "running"
+    wait_for_training()
+    status = client.get("/api/analyst").json()
+    assert status == {
+        "state": "stopped",
+        "startedAt": status["startedAt"],
+        "iterations": 2,
+        "bestRun": 2,
+        "stoppedReason": "max_runs",
+        "baselineRun": 1,
+    }
+    overview = client.get("/api/training").json()
+    assert overview["running"] is False
+    assert overview["config"] == TrainingConfig.model_validate(config).model_dump(mode="json")
+    state = store.load_analyst_state()
+    assert state is not None and state.fresh and state.config == TrainingConfig(**config)
+
+
+def test_one_session_at_a_time_and_stop_asks_it_to_stop(
+    trainer: tuple[TestClient, FakeSim], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = trainer
+    release = threading.Event()
+    real_run = training.run
+
+    def held_run(session: training.Session) -> AnalystState:
+        release.wait(timeout=30)
+        return real_run(session)
+
+    monkeypatch.setattr(training, "run", held_run)
+    try:
+        assert client.post("/api/training/start").status_code == 200
+        assert client.get("/api/training").json()["running"] is True
+        assert client.post("/api/training/start").status_code == 409
+        assert client.put("/api/training/config", json={"threshold": 0.01}).status_code == 409
+        stop = client.post("/api/training/stop")
+        assert stop.status_code == 200
+        assert stop.json()["state"] == "running"  # it stops at the next step boundary
+        assert training.stop_requested()
+    finally:
+        release.set()
+    wait_for_training()
+    status = client.get("/api/analyst").json()
+    assert (status["state"], status["stoppedReason"]) == ("stopped", "stopped")
+    assert not training.stop_requested()
+    assert client.put("/api/training/config", json={"threshold": 0.01}).status_code == 200
+
+
+def test_start_refuses_a_session_another_process_is_running(
+    trainer: tuple[TestClient, FakeSim],
+) -> None:
+    client, sim = trainer
+    now = store.now_iso()
+    cli_session = AnalystState(
+        sessionId="cli-sess",
+        state="running",
+        startedAt=now,
+        updatedAt=now,
+        backend="heuristic",
+        fresh=False,
+        seed=42,
+        owner="laptop:4242",
+    )
+    store.save_analyst_state(cli_session)
+    store.set_training_stop()  # the CLI session's pending stop request
+    with lock_held_elsewhere(store.training_lock_path()):  # e.g. `cli train` in a terminal
+        response = client.post("/api/training/start", json={"config": {"maxRuns": 3}})
+    assert response.status_code == 409
+    assert response.json()["detail"].startswith(
+        "session cli-sess (laptop:4242) is still running in another process"
+    )
+    assert store.training_stop_path().exists() and sim.simulations == 0
+    assert not store.training_config_path().exists()  # a refused start saves nothing
+    assert store.load_analyst_state() == cli_session
+
+
+@pytest.mark.parametrize(
+    "body", [{"config": {"maxRuns": 1}}, {"config": {"storeIds": ["c1"]}}, {"fresh": "x"}]
+)
+def test_start_with_a_bad_config_starts_nothing(
+    trainer: tuple[TestClient, FakeSim], body: dict[str, Any]
+) -> None:
+    client, sim = trainer
+    assert client.post("/api/training/start", json=body).status_code == 422
+    assert store.load_analyst_state() is None and sim.simulations == 0
+    assert not store.training_config_path().exists()
 
 
 # --- GET /api/stores/{storeId}/report and the PDF -------------------------------------------

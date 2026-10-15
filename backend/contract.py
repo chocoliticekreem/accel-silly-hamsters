@@ -9,7 +9,7 @@ Time: t = sim minutes since Day 1 00:00. 14 days = 20160.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,6 +17,7 @@ LightingLevel = Literal["off", "low", "high"]
 BuildingKind = Literal["store", "club", "office", "residential", "station"]
 StoreType = Literal["cafe", "restaurant", "takeaway", "bar", "shop", "offlicence", "club"]
 EntryKind = Literal["street", "station"]
+LandmarkKind = Literal["venue", "hotel", "station", "market", "landmark"]
 Confidence = Literal["low", "medium", "high"]
 
 DAYS = 14
@@ -86,6 +87,19 @@ class EntryPoint(Model):
     z: float
 
 
+class Landmark(Model):
+    """A named real place the frontend labels or renders specially (additive)."""
+
+    id: str
+    name: str
+    kind: LandmarkKind
+    buildingId: str | None = None  # the map building that is this place; null = no building
+    x: float
+    z: float
+    h: float  # height in metres to hang a label at (the building's height; 0 = street level)
+    note: str | None = Optional()
+
+
 class MapData(Model):
     bounds: Bounds
     streets: list[Street]
@@ -94,6 +108,8 @@ class MapData(Model):
     entryPoints: list[EntryPoint]
     # Additive: citations for where the map came from.
     sources: list[Source] = Field(default_factory=list)
+    # Additive: named real places (venue, hotel, stations, market); omitted when unset.
+    landmarks: list[Landmark] | None = Optional()
 
 
 # --- GET /api/runs --------------------------------------------------------------------------
@@ -164,6 +180,20 @@ class DayData(Model):
     agents: list[DayAgent]
 
 
+# --- GET /api/runs/{run}/footfall -----------------------------------------------------------
+# Additive: the street crowd behind the frontend's background walkers (backend/api/footfall.py).
+# Area totals only: no store or agent ids.
+
+HourValues = Annotated[list[float], Field(min_length=24, max_length=24)]
+
+
+class RunFootfall(Model):
+    run: int
+    # [day - 1][hour]: mean sim agents on the street (between their first and last keyframe, not
+    # inside a store) over that clock hour of that day. x peoplePerAgent (GET /api/health) = people.
+    onStreetByDayHour: list[HourValues] = Field(min_length=DAYS, max_length=DAYS)
+
+
 # --- GET /api/runs/{run}/suggestions --------------------------------------------------------
 
 
@@ -208,7 +238,9 @@ class AnalystStatus(Model):
     startedAt: str | None
     iterations: int
     bestRun: int | None
-    stoppedReason: Literal["threshold", "max_runs", "budget", "error"] | None
+    stoppedReason: Literal["threshold", "max_runs", "budget", "error", "stopped"] | None
+    # Additive: the session's baseline run, compare mode's left side (see CONTRACT_CHANGES.md).
+    baselineRun: int | None = Optional()
 
 
 # --- GET /api/stores/{storeId}/report?run={run} ---------------------------------------------
@@ -393,7 +425,7 @@ class AgentSession(Model):
     runsThisSession: list[int] = Field(default_factory=list)
     lowGainStreak: int = 0
     step: str = "start"
-    stoppedReason: Literal["threshold", "max_runs", "budget", "error"] | None = None
+    stoppedReason: Literal["threshold", "max_runs", "budget", "error", "stopped"] | None = None
     spentGbp: float = 0.0
     error: str | None = None
 

@@ -2630,3 +2630,51 @@ button.chip:disabled {
     animation: none;
   }
 }
+
+/* Go-to bar: teleport to landmarks, always visible top-centre */
+.goto-bar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line);
+  pointer-events: auto;
+  max-width: calc(100vw - 32px);
+  overflow-x: auto;
+}
+.goto-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 6px;
+}
+.goto-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: 600 13px var(--font);
+  cursor: pointer;
+}
+.goto-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.goto-hero {
+  background: var(--lamp);
+  color: var(--ink);
+  border-color: var(--lamp);
+}
+.goto-hero:hover { background: #ffd877; }

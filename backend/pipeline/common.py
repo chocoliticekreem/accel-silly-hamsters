@@ -28,6 +28,7 @@ def fetch(
     data: dict | None = None,
     headers: dict | None = None,
     as_json: bool = True,
+    timeout: httpx.Timeout | None = None,
 ) -> tuple[Any, str]:
     """GET/POST through the scrape cache (data/raw/{source}/). Returns (body, fetchedAt).
 
@@ -45,7 +46,7 @@ def fetch(
             params=params,
             data=data,
             headers={"User-Agent": USER_AGENT, **(headers or {})},
-            timeout=TIMEOUT,
+            timeout=timeout or TIMEOUT,
             follow_redirects=True,
         )
         response.raise_for_status()
