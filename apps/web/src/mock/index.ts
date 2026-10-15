@@ -1,6 +1,8 @@
 // mockApi(): the full backend contract served from memory. Same interface as http.ts.
 // Runs are simulated lazily and cached; everything is deterministic (seed 42).
-import type { AnalystStatus, Api, CityMap, DecisionRequest, RunSummary } from "../api/contract";
+import type { AnalystStatus, Api, Calibration, CalibrationVenue, CityMap, DecisionRequest, RunSummary } from "../api/contract";
+// The backend pipeline's calibration targets (placeholder shapes until Popular Times is measured).
+import calibrationData from "../../../../data/processed/calibration.json";
 import { formatHHMM } from "../sim/time";
 import { configForRun, LICENCE, MOCK_RUN_COUNT, notebookLabel, type RunConfig } from "./configs";
 import { generateMap } from "./map";
@@ -145,6 +147,20 @@ export function mockApi(state: MockState = createMockState()): Api {
         }
         report = { ...report, pdfUrl: pdfUrls.get(key) ?? `/files/reports/${storeId}.pdf` };
         return report;
+      }),
+    // the backend's targets, re-pointed at the mock store of the same type (the demo takeaway for takeaways)
+    calibration: () =>
+      later<Calibration>(() => {
+        const used = new Set<string>();
+        const venues = (calibrationData.venues as CalibrationVenue[]).flatMap((v) => {
+          const pick =
+            (v.type === "takeaway" && map.stores.find((s) => s.name === "Kebab Co")) ||
+            map.stores.find((s) => s.type === v.type && !used.has(s.id));
+          if (!pick) return [];
+          used.add(pick.id);
+          return [{ ...v, storeId: pick.id }];
+        });
+        return { venues, fallback: calibrationData.fallback, notes: calibrationData.notes };
       }),
     decision: (req) =>
       later(() => {

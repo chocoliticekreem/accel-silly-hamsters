@@ -1,8 +1,10 @@
 // History: the main KPI (visits/kWh) across runs, a dashed line where training stopped, and the analyst's
 // one-line lab notebook. Click a point or a notebook row → replay that run.
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { useAnalyst, useRuns } from "../state/data";
+import { useState } from "react";
+import { useAnalyst, useCalibration, useRuns } from "../state/data";
 import { useSim } from "../state/store";
+import { CalibrationPanel } from "./CalibrationPanel";
 import { fmtNum } from "./format";
 import { Icon } from "./icons";
 
@@ -17,6 +19,8 @@ export function HistoryPanel() {
   const stopRun = analyst?.state === "stopped" && analyst.iterations > 0 ? (done.at(-1)?.run ?? null) : null;
   const data = done;
   const cost = runs.at(-1)?.costPerStoreWeekGbp;
+  const hasCalibration = !!useCalibration().data;
+  const [tab, setTab] = useState<"runs" | "calibration">("runs");
 
   return (
     <aside className="history panel" aria-label="Training history">
@@ -30,6 +34,20 @@ export function HistoryPanel() {
         </button>
       </header>
 
+      {hasCalibration && (
+        <div className="tabs" role="tablist">
+          {(["runs", "calibration"] as const).map((t) => (
+            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
+              {t === "runs" ? "Runs" : "Calibration"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === "calibration" && hasCalibration ? (
+        <CalibrationPanel />
+      ) : (
+      <>
       <div className="chart">
         <ResponsiveContainer width="100%" height={170}>
           <LineChart data={data} margin={{ top: 22, right: 18, bottom: 0, left: -18 }}>
@@ -83,6 +101,8 @@ export function HistoryPanel() {
         ))}
       </ol>
       {cost !== undefined && <div className="foot-note">£{cost.toFixed(2)} / store-week · agent spend</div>}
+      </>
+      )}
     </aside>
   );
 }
