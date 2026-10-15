@@ -336,13 +336,46 @@ export function encodeHub(o: { w?: number; d?: number } = {}): HeroModel {
   k.slab("solid", -W / 2 - 0.1, W / 2 + 0.1, 13.0, 13.4, fz - 0.1, fz + 0.3, STONE);
   k.slab("brick", -W / 2, W / 2, 13.4, 14.2, fz - 0.3, fz + 0.05, BRICK);
   k.slab("solid", -W / 2 - 0.05, W / 2 + 0.05, 14.2, 14.35, fz - 0.35, fz + 0.12, STONE);
-  // slate roof behind the parapet + chimney stacks
-  const roof = new Shape();
-  roof.moveTo(-D / 2 + 0.3, 0);
-  roof.lineTo(D / 2 - 0.5, 0);
-  roof.lineTo(0, 3.2);
-  roof.closePath();
-  k.extrude("solid", roof, W - 0.6, [-W / 2 + 0.3, 13.4, 0], "#4b4f58", [0, Math.PI / 2, 0]);
+  // roof terrace behind the parapet: timber decking, glass balustrade, pergola with string lights, planters, seating
+  const RY = 13.4;
+  k.slab("solid", -W / 2 + 0.2, W / 2 - 0.2, RY, RY + 0.12, -D / 2 + 0.2, D / 2 - 0.4, "#8a6a4a"); // decking
+  for (let z = -D / 2 + 0.6; z < D / 2 - 0.5; z += 0.5) k.slab("solid", -W / 2 + 0.25, W / 2 - 0.25, RY + 0.12, RY + 0.13, z, z + 0.04, "#6e5238");
+  // glass balustrade on the three open sides (the street side has the brick parapet)
+  for (const x of [-W / 2 + 0.25, W / 2 - 0.25]) k.slab("glass", x - 0.03, x + 0.03, RY + 0.12, RY + 1.2, -D / 2 + 0.25, D / 2 - 0.5, "#9fc4d6");
+  k.slab("glass", -W / 2 + 0.25, W / 2 - 0.25, RY + 0.12, RY + 1.2, -D / 2 + 0.22, -D / 2 + 0.28, "#9fc4d6");
+  for (const x of [-W / 2 + 0.25, W / 2 - 0.25]) k.slab("metal", x - 0.05, x + 0.05, RY + 1.18, RY + 1.24, -D / 2 + 0.25, D / 2 - 0.5, "#2a2d31");
+  // pergola: four posts and two beams over the middle of the deck
+  const pz0 = -D * 0.25, pz1 = D * 0.18, px = W / 2 - 0.7;
+  for (const x of [-px, px]) for (const z of [pz0, pz1]) k.box("metal", 0.12, 2.6, 0.12, x, RY + 1.42, z, "#1d2023");
+  for (const x of [-px, px]) k.slab("metal", x - 0.07, x + 0.07, RY + 2.66, RY + 2.8, pz0 - 0.1, pz1 + 0.1, "#1d2023");
+  for (let z = pz0; z <= pz1 + 0.01; z += (pz1 - pz0) / 4) k.slab("metal", -px - 0.05, px + 0.05, RY + 2.8, RY + 2.88, z - 0.04, z + 0.04, "#1d2023");
+  // string lights: warm bulbs sagging between the beams, zig-zag across the deck
+  for (let i = 0; i <= 8; i++) {
+    const t = i / 8;
+    const z = pz0 + (pz1 - pz0) * t;
+    for (let j = 0; j <= 6; j++) {
+      const u = j / 6;
+      const x = -px + 2 * px * u;
+      const sag = Math.sin(u * Math.PI) * 0.45;
+      k.box("glow", 0.09, 0.09, 0.09, x, RY + 2.62 - sag, z, i % 2 ? "#ffd68a" : "#fff0c8");
+    }
+  }
+  // seating: two benches and a tall table with stools; planters with grasses along the back
+  for (const x of [-W / 2 + 0.8, W / 2 - 0.8]) {
+    k.slab("solid", x - 0.25, x + 0.25, RY + 0.12, RY + 0.55, pz0 + 0.3, pz1 - 0.3, "#5c4330");
+    k.slab("solid", x - 0.3, x + 0.3, RY + 0.55, RY + 0.62, pz0 + 0.2, pz1 - 0.2, "#7a5a3e");
+  }
+  k.cyl("solid", 0.45, 0.45, 0.06, 12, [0, RY + 1.1, (pz0 + pz1) / 2], "#2c2f34");
+  k.cyl("metal", 0.05, 0.05, 1.0, 6, [0, RY + 0.6, (pz0 + pz1) / 2], "#2c2f34");
+  for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) k.cyl("solid", 0.18, 0.18, 0.72, 8, [Math.cos(a) * 0.75, RY + 0.48, (pz0 + pz1) / 2 + Math.sin(a) * 0.75], "#29f0c6");
+  for (let x = -W / 2 + 0.8; x <= W / 2 - 0.8; x += Math.max(1.2, (W - 1.6) / 3)) {
+    k.rbox("solid", 1.0, 0.55, 0.6, x, RY + 0.4, D / 2 - 1.0, "#2b2f35", 0.05);
+    k.blob("solid", 0.42, 1, [x, RY + 0.95, D / 2 - 1.0], r() > 0.5 ? "#5d9a45" : "#6aa64f");
+  }
+  // stair overrun (the way up) at the back corner
+  k.slab("brick", -W / 2 + 0.3, -W / 2 + 2.0, RY, RY + 2.6, D / 2 - 2.6, D / 2 - 0.4, BRICK);
+  k.slab("solid", -W / 2 + 0.2, -W / 2 + 2.1, RY + 2.6, RY + 2.75, D / 2 - 2.7, D / 2 - 0.3, STONE);
+  k.slab("glow", -W / 2 + 0.6, -W / 2 + 1.7, RY + 0.2, RY + 2.2, D / 2 - 2.62, D / 2 - 2.58, "#ffe6bf"); // lit door
   for (const x of [-W / 2 + 0.6, W / 2 - 0.6]) {
     k.slab("brick", x - 0.5, x + 0.5, 13.4, 17.6, -D / 2 + 1, -D / 2 + 3.4, "#7f4f3a");
     k.slab("solid", x - 0.6, x + 0.6, 17.6, 17.8, -D / 2 + 0.9, -D / 2 + 3.5, STONE);

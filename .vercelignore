@@ -1,0 +1,9 @@
+node_modules
+apps
+.venv
+.claude
+data/raw
+data/cache
+tests
+runs/_archive
+runs/training.lock

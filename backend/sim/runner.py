@@ -153,8 +153,9 @@ def execute_run(
         else:
             out = engine.simulate(world, stores, seed)
         results = kpi_model.build_results(world, stores, out)
-        for day in engine.day_payloads(out.trips, world.stores):
-            store.write_json(directory / "days" / f"{day['day']}.json", day)
+        if settings.WRITE_DAY_FILES:
+            for day in engine.day_payloads(out.trips, world.stores):
+                store.write_json(directory / "days" / f"{day['day']}.json", day)
         store.write_json(
             directory / "stores.json", {sid: dump(r) for sid, r in results.stores.items()}
         )

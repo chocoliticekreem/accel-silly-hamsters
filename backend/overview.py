@@ -299,7 +299,9 @@ def store_overview(map_data: MapData, store_id: str, run: int | None = None) -> 
         changes = config_diff(before, shop.config.stores[store_id])
         if changes:
             history.append(_HistoryRow(shop, profit(shop), changes))
-    best = max(history, key=lambda h: h.profit) if len(history) > 1 else None  # first on ties
+    # A run where the shop closed for good is never the pick: its "profit" is the wages it saved.
+    candidates = [h for h in history if h.shop.result.closedFromDay is None]
+    best = max(candidates, key=lambda h: h.profit) if len(history) > 1 and candidates else None
     best_run = best.shop.run if best else None
 
     if run is None:
@@ -342,7 +344,9 @@ def store_overview(map_data: MapData, store_id: str, run: int | None = None) -> 
             status = "tested_better" if tried[key] >= 0 else "tested_worse"
         advice.append(
             OverviewAdvice(
-                text=advice_text(s, d_visits / economics.WEEKS_PER_RUN, gbp),
+                text=advice_text(
+                    s, d_visits * economics.people_per_agent() / economics.WEEKS_PER_RUN, gbp
+                ),
                 gbpPerWeek=float(gbp),
                 certainty=CERTAINTY[s.confidence or "medium"],
                 status=status,
@@ -361,9 +365,10 @@ def store_overview(map_data: MapData, store_id: str, run: int | None = None) -> 
         overview_status = "best_found"
 
     weeks = economics.WEEKS_PER_RUN
-    customers = current.kpis.visits / weeks
+    per_week = economics.people_per_agent() / weeks  # sim visits in a run -> real customers a week
+    customers = current.kpis.visits * per_week
     kwh = current.kpis.kwh / weeks
-    base_customers = baseline.kpis.visits / weeks
+    base_customers = baseline.kpis.visits * per_week
     base_kwh = baseline.kpis.kwh / weeks
     owner_events = store.read_json(store.run_dir(run) / "owner_events.json")
     return StoreOverview(
@@ -390,7 +395,7 @@ def store_overview(map_data: MapData, store_id: str, run: int | None = None) -> 
             OverviewHistoryItem(
                 run=h.shop.run,
                 label=run_label(h.changes),
-                customersPerWeek=round(h.shop.kpis.visits / weeks),
+                customersPerWeek=round(h.shop.kpis.visits * per_week),
                 kwhPerWeek=round(h.shop.kpis.kwh / weeks, 1),
                 profitChangePerWeekGbp=float(round(h.profit)),
                 changes=[change_label(c) for c in h.changes],
