@@ -427,6 +427,8 @@ export function banglaArch(k: HeroKits, atlas: SignAtlas, at: { x: number; z: nu
   for (const e of [-1, 1]) k.signs.add(x + sx * e * 0.2, 7.0, z + sz * e * 0.2, sx * e, sz * e, 7.5, 0.75, atlas.bangla);
   so.block(0.15, 0.85, 7.8, 0, 6.6, 0, "#0b3d20");
   k.glow.frame(x, z, rr);
+  k.glow.add(new TorusGeometry(half, 0.12, 4, 28, Math.PI).rotateY(Math.PI / 2).scale(1, 0.62, 1).translate(0.32, 6, 0), "#7dffa8");
+  k.glow.add(new TorusGeometry(half, 0.12, 4, 28, Math.PI).rotateY(Math.PI / 2).scale(1, 0.62, 1).translate(-0.32, 6, 0), "#7dffa8");
   for (let i = 0; i <= 12; i++) {
     const a = (i / 12) * Math.PI;
     k.glow.ball(0.14, 0, 6 + Math.sin(a) * half * 0.62, Math.cos(a) * half, "#fff0b0", 5);

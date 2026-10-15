@@ -13,6 +13,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AdditiveBlending,
   BoxGeometry,
   Color,
   DoubleSide,
@@ -38,7 +39,8 @@ import { benchGeometry, binGeometry, merge, treeGeometry } from "../propModels";
 import { CURRY_HOUSES, muralAtlas, SIGN_STYLES, signAtlas, type SignStyle, type UvRect } from "../spitalfields/atlas";
 import { makeWalker, pace, turnout, weekdayOf, type Walker, type Zone } from "../spitalfields/crowds";
 import { banglaArch, christChurch, inRing, liverpoolStreet, marketHall, minaret, trumanBrewery, type HeroKits, type Ring } from "../spitalfields/heroes";
-import { flatPolygon, Kit, Quads } from "../spitalfields/kit";
+import { flatPolygon, Kit, Pools, Quads } from "../spitalfields/kit";
+import { glowTexture } from "../textures";
 import { banglaLampGeometry, banglaLanternGeometry, bikeGeometry, stallAwningGeometry, stallFrameGeometry, standGeometry } from "../spitalfields/props";
 import { buildingsNear, castToFacade, crossings, inArea, kerbRuns, onOtherRoad } from "../spitalfields/street";
 
@@ -139,6 +141,7 @@ function mat(x: number, z: number, fx: number, fz: number, y = 0, s = 1, sx = s,
 export function build(map: CityMap, data: AreaData) {
   const r = rng(1729);
     const inBuilding = (x: number, z: number, pad = 0.3) => buildingsNear(map, x, z).some((b) => Math.abs(x - b.x) < b.w / 2 + pad && Math.abs(z - b.z) < b.d / 2 + pad);
+  const pools = new Pools();
   const kits: HeroKits = { solid: new Kit(), stone: new Kit(), glass: new Kit(), glow: new Kit(), signs: new Quads() };
 
   // --- sign list first (the atlas needs every name before it's drawn) --------------------------------------
@@ -240,6 +243,8 @@ export function build(map: CityMap, data: AreaData) {
       [0.07, 1.4, sp.w / 2 + 0.1, 3.62],
     ] as const)
       g.block(w, h, 0.07, px, py, 0.17, hex);
+    const fc = new Color(sp.style.fg);
+    pools.add(x + nx * 2.2, z + nz * 2.2, 3.4, [0.55 + fc.r * 0.25, 0.42 + fc.g * 0.2, 0.25 + fc.b * 0.2]);
     kits.signs.add(x + nx * 0.3, 3.62, z + nz * 0.3, nx, nz, sp.w, sp.w / (512 / 112) > 1.15 ? 1.15 : sp.w / (512 / 112), atlas.sign(sp.name, sp.style));
   }
   kits.solid.frame(0, 0, 0);
@@ -384,6 +389,8 @@ export function build(map: CityMap, data: AreaData) {
       const z = pt.z - pt.dx * side * off;
       if (onOtherRoad(map, x, z, s, 0.5)) continue;
       lamps.push({ m: mat(x, z, -pt.dz * side, pt.dx * side) });
+      const [lx, lz] = toScene(x - pt.dz * side * 0.9, z + pt.dx * side * 0.9);
+      pools.add(lx, lz, 5.5, [0.75, 0.6, 0.35], 0.235);
     }
   }
 
@@ -522,6 +529,7 @@ export function build(map: CityMap, data: AreaData) {
     glow: finish(kits.glow),
     signs: kits.signs.build(),
     murals: muralQuads.build(),
+    pools: pools.build(),
     signTex: atlas.texture,
     muralTex: murals.texture,
     ground,
@@ -583,7 +591,8 @@ function SpitalfieldsScene({ built }: { built: Built }) {
     const strips = new MeshStandardMaterial({ color: "#ffffff", roughness: 0.9 });
     const lantern = new MeshStandardMaterial({ color: "#fff4d6", emissive: new Color("#ffc857"), emissiveIntensity: 0, toneMapped: false });
     const awning = new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: DoubleSide });
-    return { solid, stone, glass, glow, signs, murals, ground, plain, strips, lantern, awning };
+    const pool = new MeshBasicMaterial({ map: glowTexture(), vertexColors: true, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, toneMapped: false, side: DoubleSide });
+    return { solid, stone, glass, glow, signs, murals, ground, plain, strips, lantern, awning, pool };
   }, [built]);
   const geos = useMemo(
     () => ({
@@ -603,8 +612,8 @@ function SpitalfieldsScene({ built }: { built: Built }) {
   useEffect(
     () => () => {
       Object.values(geos).forEach((g) => g.dispose());
-      Object.values(mats).forEach((m: Material) => m.dispose());
-      for (const g of [built.solid, built.stone, built.glass, built.glow, built.signs, built.murals, built.ground]) g?.dispose();
+      Object.values(mats).forEach((m: Material) => m.dispose()); // (the pool's glow texture is shared: not disposed)
+      for (const g of [built.solid, built.stone, built.glass, built.glow, built.signs, built.murals, built.ground, built.pools]) g?.dispose();
       built.signTex.dispose();
       built.muralTex.dispose();
     },
@@ -627,6 +636,7 @@ function SpitalfieldsScene({ built }: { built: Built }) {
     mats.signs.emissiveIntensity = 0.08 + n * 0.95;
     mats.lantern.emissiveIntensity = n * 2.4;
     mats.glow.color.setScalar(Math.min(1, n * 1.25));
+    mats.pool.opacity = n * 0.55;
     if (glowRef.current) glowRef.current.visible = n > 0.03;
 
     // stalls up only on their market days
@@ -673,7 +683,10 @@ function SpitalfieldsScene({ built }: { built: Built }) {
       {built.solid && <mesh geometry={built.solid} material={mats.solid} castShadow receiveShadow raycast={noRaycast} />}
       {built.stone && <mesh geometry={built.stone} material={mats.stone} castShadow receiveShadow raycast={noRaycast} name="christ-church" />}
       {built.glass && <mesh geometry={built.glass} material={mats.glass} raycast={noRaycast} renderOrder={2} />}
-      <group ref={glowRef}>{built.glow && <mesh geometry={built.glow} material={mats.glow} raycast={noRaycast} />}</group>
+      <group ref={glowRef}>
+        {built.glow && <mesh geometry={built.glow} material={mats.glow} raycast={noRaycast} />}
+        {built.pools && <mesh geometry={built.pools} material={mats.pool} raycast={noRaycast} renderOrder={3} />}
+      </group>
       {built.signs && <mesh geometry={built.signs} material={mats.signs} raycast={noRaycast} />}
       {built.murals && <mesh geometry={built.murals} material={mats.murals} raycast={noRaycast} receiveShadow />}
       <instancedMesh args={[geos.unit, mats.strips, Math.max(1, built.strips.length)]} ref={(m) => fillInst(m, built.strips)} receiveShadow />
