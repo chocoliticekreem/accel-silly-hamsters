@@ -17,6 +17,7 @@ import { closureNights, licenceSchedule } from "../sim/incidents";
 import { buildStreetGraph } from "../sim/streetGraph";
 import { parseHHMM } from "../sim/time";
 import type { OwnerBook } from "./owners";
+import { demoRoles } from "./roles";
 import { between, intBetween, pick, rng, seedOf, weighted } from "./rng";
 
 const dayStart = (day: number) => (day - 1) * MINUTES_PER_DAY;
@@ -76,7 +77,7 @@ function build(map: CityMap, seed: number): Incident[] {
   // ---- club nights: fights at closing time ----
   // The first Friday night has the serious one (police, ambulance, cordon, licence review).
   // It falls on the club furthest from the demo takeaway, so the demo's spill-out story (Kebab Co) stays intact.
-  const demo = map.stores.find((s) => s.name === "Kebab Co");
+  const demo = demoRoles(map).takeaway;
   const demoSpot = demo ? spotOf(map, demo) : null;
   const far = (c: Spot) => (demoSpot ? Math.hypot(c.x - demoSpot.x, c.z - demoSpot.z) : 0);
   const serious = clubs.length ? (demoSpot ? clubs.reduce((a, b) => (far(b) > far(a) ? b : a)) : pick(r, clubs)) : null;

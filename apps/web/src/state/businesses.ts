@@ -232,8 +232,7 @@ useSim.subscribe((s, prev) => {
 /** Map for the landmark hook below (set by the card while mounted). */
 export const landmarkMap: { current: CityMap | null } = { current: null };
 
-// going to (or into) a landmark the sim doesn't model opens its estimate card; one sim store there opens its store
-// card; several (art'otel's restaurant and rooftop bar, Boxpark's traders) open the landmark card listing them
+// going to (or into) a landmark the sim doesn't model opens its estimate card (on a map without landmark stores)
 useTravel.subscribe((s, prev) => {
   if (s.focusPlace === prev.focusPlace && s.interiorOpen === prev.interiorOpen) return;
   const key = s.focusPlace as HeroLandmarkKey | null;
@@ -242,8 +241,6 @@ useTravel.subscribe((s, prev) => {
   const map = landmarkMap.current;
   const plot = landmarkPlots(map).find((p) => p.key === key);
   const here = plot?.hostId ? map.stores.filter((st) => st.buildingId === plot.hostId) : [];
-  const store = here.length === 1 ? here[0] : undefined;
-  if (store) {
-    if (useSim.getState().selectedStoreId !== store.id) useSim.getState().selectStore(store.id);
-  } else useBusinesses.getState().select(`landmark:${key}`);
+  // sim stores there: goPlace / enterPlace open the place's store card (world/landmarks/actions)
+  if (!here.length) useBusinesses.getState().select(`landmark:${key}`);
 });

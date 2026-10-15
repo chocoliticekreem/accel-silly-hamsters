@@ -5,6 +5,7 @@
 //   (falls back to /people/{id} and the day file when a backend has no diaries). Always "Simulated, not a real person."
 // With nobody picked, a small "Featured people" list jumps to someone worth following. Close with Esc or X.
 import { ChevronDown, ChevronRight, Clock3, Store, Users, X } from "lucide-react";
+import { WEEKDAYS } from "./format";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import type { DayData } from "../api/contract";
@@ -22,7 +23,6 @@ import { Sparkline } from "./Sparkline";
 
 const money = (n: number) => `${n < 0 ? "−" : ""}£${fmtInt(Math.abs(n))}`;
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-const NOT_REAL = "Simulated, not a real person.";
 
 export function PersonCard() {
   const personId = useEconomy((s) => s.personId);
@@ -109,7 +109,7 @@ function OwnerCard({ personId }: { personId: string }) {
         </div>
       )}
       <section className="pc-today">
-        <span className="kpi-label">Day {day}</span>
+        <span className="kpi-label">Today</span>
         {v ? (
           <div className="pc-trip">
             <span className="mono">
@@ -130,7 +130,6 @@ function OwnerCard({ personId }: { personId: string }) {
           <Store size={14} /> Open {shop?.name ?? "the shop"}'s page
         </button>
       )}
-      <footer className="pc-note">{NOT_REAL}</footer>
     </aside>
   );
 }
@@ -201,7 +200,7 @@ function CitizenCardView({ personId }: { personId: string }) {
         </section>
       )}
       <section className="pc-today">
-        <span className="kpi-label">Day {day}</span>
+        <span className="kpi-label">Today</span>
         {today ? (
           today.entries.map((e, i) => (
             <div key={i} className={`pc-trip pc-${e.kind} ${t >= e.t && t < (e.tOut ?? e.t + 1) ? "now" : ""}`}>
@@ -216,7 +215,7 @@ function CitizenCardView({ personId }: { personId: string }) {
         )}
         {next && next.t - t > 60 && (
           <button className="sp-link" onClick={() => useSim.getState().setT(next.t - 2)}>
-            <Clock3 size={13} /> Next out: Day {dayOf(next.t)} · {formatHHMM(next.t)}
+            <Clock3 size={13} /> Next out: {WEEKDAYS[(dayOf(next.t) - 1) % 7]} · {formatHHMM(next.t)}
           </button>
         )}
       </section>
@@ -236,7 +235,6 @@ function CitizenCardView({ personId }: { personId: string }) {
         </section>
       )}
       {diary.loading && !d && <div className="muted pc-story">Reading their diary…</div>}
-      <footer className="pc-note">{d?.note ?? NOT_REAL}</footer>
     </aside>
   );
 }

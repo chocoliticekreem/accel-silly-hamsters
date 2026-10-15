@@ -78,7 +78,7 @@ export function BusinessCard() {
         <span className={`status ${open ? "status-open" : "status-closed"}`}>{open ? "Open" : "Closed"}</span>
         {change && <span className="status">{change}</span>}
         {estimated && (
-          <span className="status" title="Unit floor area used for the estimate">
+          <span className="status" title="Unit floor area">
             {fmtInt(est.areaM2)} m²
           </span>
         )}
@@ -87,7 +87,7 @@ export function BusinessCard() {
       {b.simStores && (
         <>
           <h3 className="section-title">
-            Simulated here <span className="muted">{b.simStores.length} shops</span>
+            Shops here <span className="muted">{b.simStores.length}</span>
           </h3>
           <ul className="biz-units biz-sim">
             {b.simStores.map((s) => (
@@ -95,20 +95,15 @@ export function BusinessCard() {
                 <button onClick={() => useSim.getState().selectStore(s.id)}>
                   <TypeIcon type={s.type} size={13} /> {s.name}
                 </button>
-                <span className="muted">live data</span>
+                <span className="muted">open card</span>
               </li>
             ))}
           </ul>
         </>
       )}
 
-      <div className="biz-note">
-        <b>Not in this simulation run:</b> live footfall and energy only for the {map?.stores.length ?? 72} simulated shops.{" "}
-        {b.simStores && !estimated ? "Open a shop above for its numbers." : b.simStores ? "The rest of the building is estimated below from its size, type and hours." : "The numbers below are an estimate from its size, type and hours."}
-      </div>
-
       <h3 className="section-title">
-        Hours <span className="muted">{typical ? (isLandmark ? "assumed" : "typical, none on OSM") : "OpenStreetMap"}</span>
+        Hours <span className="muted">{typical ? "typical" : "OpenStreetMap"}</span>
       </h3>
       <dl className="biz-hours">
         {rows.map(([d, h]) => (
@@ -122,9 +117,9 @@ export function BusinessCard() {
       {estimated && (
       <>
       <h3 className="section-title">
-        Electricity <span className="biz-est">Estimate (not simulated)</span>
+        Electricity
       </h3>
-      <div className="biz-curve" role="img" aria-label={`Estimated kWh by hour today: ${kwh(est.dayKwh)} kWh`}>
+      <div className="biz-curve" role="img" aria-label={`kWh by hour today: ${kwh(est.dayKwh)} kWh`}>
         {est.hourly.map((v, h) => (
           <i key={h} className={h === hour ? "now" : ""} style={{ height: `${Math.max(4, (v / peak) * 100)}%` }} title={`${String(h).padStart(2, "0")}:00 · ${v.toFixed(2)} kWh`} />
         ))}
@@ -205,7 +200,7 @@ export function BusinessCard() {
       <button className="btn btn-lamp biz-go" onClick={() => flyTo(b.x, b.z, isLandmark ? 140 : 70, isLandmark ? 6 : 3)}>
         <Navigation size={14} /> Go there
       </button>
-      <div className="disclaimer card-note">© OpenStreetMap contributors · estimate, not a measurement</div>
+      <div className="disclaimer card-note">© OpenStreetMap contributors</div>
     </aside>
   );
 }

@@ -157,7 +157,6 @@ export function OwnerReport() {
             </div>
 
             <footer className="report-foot">
-              <span className="disclaimer">{report.note ?? "Simulated, not guaranteed."} · you approve every change</span>
               {report.pdfUrl ? (
                 <a className="btn" href={absoluteUrl(API_URL, report.pdfUrl)} download={`${store.name} weekly report.pdf`} target="_blank" rel="noreferrer">
                   <Icon name="download" size={14} /> PDF

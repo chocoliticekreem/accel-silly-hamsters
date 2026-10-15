@@ -15,7 +15,7 @@ export function Headline() {
   return (
     <div className="headline panel" role="status" aria-live="polite" key={`${run}:${day}`}>
       <span className="headline-mast">
-        <Newspaper size={13} /> Shoreditch Daily · Day {day}
+        <Newspaper size={13} /> Shoreditch Daily · {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][(day - 1) % 7]}
       </span>
       <p>{h.text}</p>
     </div>

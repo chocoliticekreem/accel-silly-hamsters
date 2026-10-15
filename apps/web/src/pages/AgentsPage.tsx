@@ -32,7 +32,7 @@ const STEPS: { key: Step; title: string; text: string }[] = [
   { key: "plan", title: "The analyst plans", text: "Picks the next experiment from every run so far." },
   { key: "propose", title: "Your shop's agent proposes", text: "Up to two changes to hours or lighting, from your shop's data only." },
   { key: "check", title: "Hard rules check", text: "Licensed hours, safe day lengths, 30-minute steps. Unsafe ideas never run." },
-  { key: "simulate", title: "14 days are simulated", text: "Every customer in Shoreditch lives the same fortnight with the new settings." },
+  { key: "simulate", title: "14 days play out", text: "Every customer in Shoreditch lives the same fortnight with the new settings." },
   { key: "report", title: "A report is written", text: "Customers, kWh and £ a week, with confidence and evidence." },
   { key: "approve", title: "You approve", text: "Nothing changes in your shop until you say yes." },
 ];
@@ -207,7 +207,7 @@ export function AgentsPage({ storeId: requested }: { storeId: string | null }) {
     setMessage(null);
     try {
       const res = await send<{ queuedRun: number }>(`/api/stores/${encodeURIComponent(storeId)}/experiment`, "POST", { ...draft, baseRun: draftRun ?? undefined });
-      setMessage(`Your experiment is run ${res.queuedRun}: it appears below once its 14 days are simulated.`);
+      setMessage(`Your experiment is run ${res.queuedRun}: it appears below once its 14 days have run.`);
       setPending(res.queuedRun);
       setPicked(res.queuedRun);
       await refresh();
@@ -384,7 +384,6 @@ export function AgentsPage({ storeId: requested }: { storeId: string | null }) {
               </li>
             ))}
           </ul>
-          <p className="ag-muted">{overview.note ?? "Simulated, not guaranteed."}</p>
         </div>
       </section>
 

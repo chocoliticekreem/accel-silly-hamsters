@@ -6,18 +6,18 @@ import type { Incident } from "../api/incidents";
 import { BANNED_TERMS, callLabel, closureNights, driveMinutes, policeBase, policeRoute, responseCarAt } from "../sim/incidents";
 import { storeStateAt } from "../sim/storeState";
 import { buildStreetGraph } from "../sim/streetGraph";
-import { createMockState, mockApi, MOCK_SEED } from ".";
+import { schematicMockState, mockApi, MOCK_SEED } from ".";
 import { generateIncidents } from "./incidents";
 
-const state = createMockState();
+const state = schematicMockState();
 const incidents = generateIncidents(state.map, MOCK_SEED);
 const minuteOf = (t: number) => ((t % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
 
 describe("incident generation", () => {
   it("is deterministic per seed and independent of the map object", () => {
-    expect(generateIncidents(createMockState().map, MOCK_SEED)).toEqual(incidents);
+    expect(generateIncidents(schematicMockState().map, MOCK_SEED)).toEqual(incidents);
     expect(generateIncidents(structuredClone(state.map), MOCK_SEED)).toEqual(incidents);
-    expect(generateIncidents(createMockState().map, 7)).not.toEqual(incidents);
+    expect(generateIncidents(schematicMockState().map, 7)).not.toEqual(incidents);
   });
 
   it("has every kind, sorted by time, inside the run, with sane fields", () => {
