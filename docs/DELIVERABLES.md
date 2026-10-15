@@ -50,7 +50,7 @@ Last updated: 2026-10-15.
 | Sped-up recording | Arvin | upload | Not started |
 | Pitch slides | Anson | link | Not started |
 | One-page architecture diagram | Anson | link | Not started |
-| Responsible-design note (misuse case → code → test) | Anson | `docs/` | Not started |
+| Responsible-design note (misuse case → code → test) | Anson | [docs/RESPONSIBLE_DESIGN.md](RESPONSIBLE_DESIGN.md), tests/test_responsible_design.py | Done (14 open gaps listed) |
 | 2–3 real shop-owner quotes | Team | notes | Not started |
 
 ## Run proof: where it lives
