@@ -254,7 +254,7 @@ function Scene({ data }: { data: OldStreetData }) {
     const h = hourOf(useSim.getState().t);
     const night = nightLevel(h);
     setHeroNight(night);
-    stat.poolMat.opacity = 0.55 * night;
+    stat.poolMat.opacity = 0.3 * night;
     stat.pools.visible = night > 0.02;
     stat.screens.update(time);
     // signals

@@ -464,7 +464,7 @@ export function buildOldStreet(data: OldStreetData): Built {
       const [X, Z] = PV(lx, lz);
       k.at(X, PLAZA_Y, Z, pry, () => drawRoundelPost(k, "Old Street", 3.2));
     }
-    pools.push({ x: pc[0], z: pc[1], r: Math.max(OX, OZ) + 4, y: PLAZA_Y + 0.03 });
+    pools.push({ x: pc[0], z: pc[1], r: Math.max(OX, OZ) + 1, y: PLAZA_Y + 0.03 });
   }
 
   // ============================================================ St Agnes Well (sunken walk), Exit 4
@@ -711,7 +711,7 @@ export function buildOldStreet(data: OldStreetData): Built {
     k.cyl("metal", 0.08, 0.11, 7.5, 10, [X, PLAZA_Y + 3.9, Z], "#3c4046");
     k.cyl("metal", 0.32, 0.18, 0.35, 12, [X, PLAZA_Y + 7.7, Z], "#3c4046");
     k.cyl("glow", 0.26, 0.26, 0.05, 12, [X, PLAZA_Y + 7.5, Z], "#fff1d6");
-    pools.push({ x: X, z: Z, r: 11, y: PLAZA_Y + 0.02 });
+    pools.push({ x: X, z: Z, r: 7, y: PLAZA_Y + 0.02 });
   }
   // bollards along the peninsula's road edges (anti-ram, stainless)
   {
@@ -765,7 +765,7 @@ export function buildOldStreet(data: OldStreetData): Built {
         const mm = new Matrix4().compose(new Vector3(X + Math.sin(ry) * 0.37 * s, PLAZA_Y + y, Z + Math.cos(ry) * 0.37 * s), new Quaternion().setFromAxisAngle(UP, ry + (s > 0 ? 0 : Math.PI)), new Vector3(1, 1, 1));
         screens.push({ m: mm, w: W, h: H });
       }
-      pools.push({ x: X + Math.sin(ry) * 6, z: Z + Math.cos(ry) * 6, r: 14, y: PLAZA_Y + 0.025 });
+      pools.push({ x: X + Math.sin(ry) * 6, z: Z + Math.cos(ry) * 6, r: 9, y: PLAZA_Y + 0.025 });
     });
   }
 
