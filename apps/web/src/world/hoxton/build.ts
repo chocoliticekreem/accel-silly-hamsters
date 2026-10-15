@@ -15,7 +15,7 @@ import { BufferAttribute, BufferGeometry, Color, ExtrudeGeometry, Shape, ShapeUt
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Building, CityMap, Street } from "../../api/contract";
 import { rng, seedOf, type Rng } from "../../mock/rng";
-import { HOXTON_AREA, inPoly } from "../../sim/areaKeepouts";
+import { AREA_KEEPOUTS, HOXTON_AREA, inPoly } from "../../sim/areaKeepouts";
 import { MARKING_LIFT, ROAD_TOP, roadClass } from "../../sim/roadLayers";
 import { Kit, type SlotGeos } from "../models/kit";
 import { landmarkHostIds, landmarkKeepouts } from "../models/plots";
@@ -23,7 +23,9 @@ import { drawBusStop, drawCycleDock, drawK6, drawPlaneTree } from "../models/str
 import { buildAtlas, MURALS, type Atlas, type SignReq, type SignStyle } from "./atlas";
 import { bbox, centroid, closestSeg, pip, polyArea, type HoxtonData, type HxArea, type P2 } from "./data";
 
-export const inArea = (x: number, z: number) => inPoly(x, z, HOXTON_AREA);
+const OTHERS = AREA_KEEPOUTS.filter((a) => a.name !== "Hoxton");
+/** Ours: inside the Hoxton outline and not in another area module's patch. */
+export const inArea = (x: number, z: number) => inPoly(x, z, HOXTON_AREA) && !OTHERS.some((a) => inPoly(x, z, a.poly));
 
 /** Hoxton Square's garden (inside the road loop of the map's "Hoxton Square" street), contract coords. */
 export const SQUARE = { minX: -482.2, maxX: -450.6, minZ: 461.5, maxZ: 529.8 };
