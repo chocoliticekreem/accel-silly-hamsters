@@ -1,6 +1,7 @@
 // Side card for the selected store: status now, 24h strip, KPIs vs last run, suggestions with Apply buttons,
 // and the way into the owner's weekly report.
 import { useState } from "react";
+import { GBP_PER_KWH, staffPerOpenHour } from "../sim/economics";
 import { api } from "../api/client";
 import { storeStateAt } from "../sim/storeState";
 import { hourOf, isOpenAt, minuteOfDay } from "../sim/time";
@@ -146,6 +147,12 @@ export function StoreCard() {
           </div>
         ))}
       </div>
+      {cfg?.kpis.openHours != null && store.type !== "club" && (
+        <div className="foot-note">
+          Open {fmtInt(cfg.kpis.openHours / 2)} h/week · wages ≈ £{fmtInt((cfg.kpis.openHours / 2) * staffPerOpenHour(store.type))} · energy ≈ £
+          {fmtInt((cfg.kpis.kwh / 2) * GBP_PER_KWH)}
+        </div>
+      )}
       <div className="foot-note">vs run {run > 1 ? run - 1 : "—"}</div>
 
       {!isClub && (

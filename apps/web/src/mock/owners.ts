@@ -8,7 +8,7 @@
 // customers in the mock find exactly what the UI shows.
 import type { CityMap, LightLevel, OwnerEvent, OwnerTriggerKind, ScheduleEntry, StoreType, StreetEvent, WeekHours } from "../api/contract";
 import { DAYS_PER_RUN, MINUTES_PER_DAY } from "../api/contract";
-import { GBP_PER_KWH, GROSS_MARGIN, SPEND_GBP } from "../sim/economics";
+import { GBP_PER_KWH, marginPerVisit } from "../sim/economics";
 import { daySpan, fromSpan, latestLightingChange, lightLevelAt, minutesLeft, openInSpans, scheduledWeek, toSpan, WEEKDAY_NAMES, weekdayIndex, type Span } from "../sim/storeState";
 import { formatHHMM } from "../sim/time";
 import { LICENCE, type RunConfig } from "./configs";
@@ -345,7 +345,7 @@ export class OwnerBook {
       // takings margin minus energy and a fixed £25/day for rent and staff, per day over days [from, to]
       const profit = (shop: Shop, from: number, to: number) => {
         let p = 0;
-        for (let d = from; d <= to; d++) p += sum(shop.history[d - 1].visits) * SPEND_GBP[shop.type] * GROSS_MARGIN - sum(this.kwhByHour(shop, d)) * GBP_PER_KWH - 25;
+        for (let d = from; d <= to; d++) p += sum(shop.history[d - 1].visits) * marginPerVisit(shop.type) - sum(this.kwhByHour(shop, d)) * GBP_PER_KWH - 25;
         return p / (to - from + 1);
       };
       for (const shop of this.shops) {
