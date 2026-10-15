@@ -11,6 +11,7 @@ import { Bot } from "lucide-react";
 import { AnalystChip } from "./ui/AnalystChip";
 import { CompareView } from "./ui/CompareView";
 import { DemoBar, DemoChip } from "./ui/DemoBar";
+import { GraphicsChip } from "./ui/GraphicsChip";
 import { HistoryPanel } from "./ui/HistoryPanel";
 import { Clock, Hud } from "./ui/Hud";
 import { Icon } from "./ui/icons";
@@ -74,6 +75,7 @@ export default function App() {
           <div className="tool-row">
             <DemoChip />
             <InterveneMenu />
+            <GraphicsChip />
             <button className={`chip ${panel === "history" ? "on" : ""}`} aria-pressed={panel === "history"} onClick={() => openPanel(panel === "history" ? null : "history")}>
               <Icon name="chart" size={14} /> History
             </button>

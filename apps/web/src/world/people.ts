@@ -2,6 +2,7 @@
 // one transform per person. Limbs swing with a walk cycle. Six draw calls however many people there are.
 // Colours per person: shirt (torso + arms), trousers (legs), skin (head), and an optional apron band (shop owners;
 // only when created with `aprons: true`, which adds a seventh mesh).
+import { groundY } from "./ground";
 import { BoxGeometry, Color, DynamicDrawUsage, Group, IcosahedronGeometry, InstancedMesh, Matrix4, MeshStandardMaterial, type BufferGeometry } from "three";
 
 export const SKIN_TONES = ["#f1c9a5", "#e0ac69", "#c68642", "#8d5524", "#5c3a21", "#ffdbac", "#a86b3c"].map((c) => new Color(c));
@@ -78,7 +79,7 @@ export function createPeople(capacity: number, opts: { emissive?: number; aprons
     meshes,
     set(i, x, y, z, heading, phase, moving, scale, shirt, trousers, skin, apron) {
       base.makeRotationY(heading).multiply(scaleM.makeScale(scale, scale, scale));
-      base.setPosition(x, y, z);
+      base.setPosition(x, y + groundY(x, z), z);
       m.torso.setMatrixAt(i, base);
       m.torso.setColorAt(i, shirt);
       m.head.setMatrixAt(i, base);
