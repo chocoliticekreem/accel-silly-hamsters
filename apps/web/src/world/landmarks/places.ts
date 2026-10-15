@@ -64,11 +64,11 @@ interface Spec {
 
 // Encode first: the hackathon venue is the hero of the bar
 const SPECS: Spec[] = [
-  { key: "encode", name: "Encode Hub", sub: "Hackathon venue · 41 Pitfield St", landmark: "encode", at: [-540, 630], dist: 130, interior: "encode", host: "building", size: [26, 19, 16] },
+  { key: "encode", name: "Encode Hub", sub: "Hackathon venue · 41 Pitfield St", landmark: "encode", at: [-645, 481], dist: 130, interior: "encode", host: "building", size: [26, 19, 16] },
   { key: "xoyo", name: "XOYO", sub: "Club · 32–37 Cowper St", store: /^xoyo$/i, at: [XOYO.x, XOYO.z], dist: 120, interior: "xoyo", host: "building", size: [XOYO.w, XOYO.d, XOYO.h] },
-  { key: "artotel", name: "art'otel", sub: "Hotel tower · Old St", landmark: "artotel", at: [-530, 345], dist: 150, y: 10, interior: "artotel", host: "building", size: [28, 22, 34] },
-  { key: "oldstreet", name: "Old Street", sub: "Roundabout · Northern line", landmark: "oldstreet", at: [-909, 264], dist: 240, drawnOutside: true },
-  { key: "boxpark", name: "Boxpark", sub: "Container mall · Bethnal Green Rd", landmark: "boxpark", at: [-60, -40], dist: 120, interior: "boxpark", host: "free", size: [40, 16, 6] },
+  { key: "artotel", name: "art'otel", sub: "Hotel tower · Old St", landmark: "artotel", at: [-601, 339], dist: 150, y: 10, interior: "artotel", host: "building", size: [28, 22, 34] },
+  { key: "oldstreet", name: "Old Street", sub: "Roundabout · Northern line", landmark: "oldstreet", at: [-880, 255], dist: 240, drawnOutside: true },
+  { key: "boxpark", name: "Boxpark", sub: "Container mall · Bethnal Green Rd", landmark: "boxpark", at: [-124, 26], dist: 120, interior: "boxpark", host: "free", size: [40, 16, 6] },
   { key: "station", name: "Shoreditch High St", sub: "Overground station", store: undefined, at: [0, 0], dist: 200 },
 ];
 
@@ -217,3 +217,11 @@ export function resolvePlaces(map: CityMap): Place[] {
   return out;
 }
 
+
+const cache = new WeakMap<CityMap, Place[]>();
+/** resolvePlaces, once per map. */
+export function placesFor(map: CityMap): Place[] {
+  let p = cache.get(map);
+  if (!p) cache.set(map, (p = resolvePlaces(map)));
+  return p;
+}

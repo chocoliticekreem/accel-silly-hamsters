@@ -30,6 +30,7 @@ import Traffic from "./modules/Traffic";
 import ClubLife from "./modules/ClubLife";
 import Incidents from "./modules/Incidents";
 import Interiors from "./modules/Interiors";
+import Landmarks from "./modules/Landmarks";
 import Police from "./modules/Police";
 import Photoreal from "./modules/Photoreal";
 import MapGround from "./modules/MapGround";
@@ -56,6 +57,7 @@ export const MODULES: Record<string, ComponentType> = {
   Traffic,
   ClubLife,
   Interiors,
+  Landmarks,
   Incidents,
   Police,
   Footfall,
