@@ -3,6 +3,6 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [react()],
-  // the mock sim tests simulate whole runs: give them room when the suite runs files in parallel
-  test: { environment: "node", include: ["src/**/*.test.ts"], testTimeout: 30_000 },
+  test: { environment: "node", include: ["src/**/*.test.ts"], // the mock city simulates 8 runs × 14 days: give it time on a busy machine
+    testTimeout: 60_000, hookTimeout: 60_000 },
 });

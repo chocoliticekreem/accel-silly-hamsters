@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api } from "../api/client";
 import type { AgentDay, AgentEvent, AgentSession, AnalystStatus, Calibration, Health, RunAreaSummary, StoreInsights, CityMap, OwnerEvent, OwnerReport, RunStores, RunSummary, StreetEvent, Suggestion } from "../api/contract";
 import { DAYS_PER_RUN } from "../api/contract";
+import { resolveOverlaps } from "../sim/footprints";
 import { mergeDays, prepareAgents, type PreparedAgent } from "../sim/interp";
 
 const cache = new Map<string, Promise<unknown>>();
@@ -80,7 +81,8 @@ export function useResource<T>(key: string | null, loader: () => Promise<T>): Re
   return { data: key ? state.data : undefined, error: state.error, loading: !!key && state.key !== key };
 }
 
-export const useMap = () => useResource<CityMap>("map", () => api.map());
+// OSM bounding boxes overlap; trim them once so walls never run through each other (sim/footprints.ts)
+export const useMap = () => useResource<CityMap>("map", () => api.map().then((m) => ({ ...m, buildings: resolveOverlaps(m.buildings) })));
 export const useRuns = () => useResource<RunSummary[]>("runs", () => api.runs());
 export const useAnalyst = () => useResource<AnalystStatus>("analyst", () => api.analyst());
 export const useHealth = () => useResource<Health | null>("health", () => api.health());

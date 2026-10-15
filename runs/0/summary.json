@@ -85,5 +85,119 @@
   "cache": {
     "hits": {},
     "misses": {}
-  }
+  },
+  "daily": [
+    {
+      "day": 1,
+      "visits": 180,
+      "kwh": 105.0,
+      "visitsPerKwh": 1.7143,
+      "profitGbp": 619.65,
+      "ownerActions": 0
+    },
+    {
+      "day": 2,
+      "visits": 184,
+      "kwh": 105.0,
+      "visitsPerKwh": 1.7524,
+      "profitGbp": 634.05,
+      "ownerActions": 0
+    },
+    {
+      "day": 3,
+      "visits": 186,
+      "kwh": 104.0,
+      "visitsPerKwh": 1.7885,
+      "profitGbp": 641.52,
+      "ownerActions": 1
+    },
+    {
+      "day": 4,
+      "visits": 190,
+      "kwh": 104.0,
+      "visitsPerKwh": 1.8269,
+      "profitGbp": 655.92,
+      "ownerActions": 0
+    },
+    {
+      "day": 5,
+      "visits": 209,
+      "kwh": 106.1,
+      "visitsPerKwh": 1.9698,
+      "profitGbp": 723.75,
+      "ownerActions": 1
+    },
+    {
+      "day": 6,
+      "visits": 232,
+      "kwh": 107.1,
+      "visitsPerKwh": 2.1662,
+      "profitGbp": 806.28,
+      "ownerActions": 1
+    },
+    {
+      "day": 7,
+      "visits": 217,
+      "kwh": 106.1,
+      "visitsPerKwh": 2.0452,
+      "profitGbp": 752.55,
+      "ownerActions": 0
+    },
+    {
+      "day": 8,
+      "visits": 184,
+      "kwh": 102.0,
+      "visitsPerKwh": 1.8039,
+      "profitGbp": 634.86,
+      "ownerActions": 0
+    },
+    {
+      "day": 9,
+      "visits": 188,
+      "kwh": 100.9,
+      "visitsPerKwh": 1.8632,
+      "profitGbp": 649.56,
+      "ownerActions": 1
+    },
+    {
+      "day": 10,
+      "visits": 192,
+      "kwh": 100.9,
+      "visitsPerKwh": 1.9029,
+      "profitGbp": 663.96,
+      "ownerActions": 0
+    },
+    {
+      "day": 11,
+      "visits": 194,
+      "kwh": 99.9,
+      "visitsPerKwh": 1.9419,
+      "profitGbp": 671.43,
+      "ownerActions": 0
+    },
+    {
+      "day": 12,
+      "visits": 213,
+      "kwh": 102.0,
+      "visitsPerKwh": 2.0882,
+      "profitGbp": 739.26,
+      "ownerActions": 0
+    },
+    {
+      "day": 13,
+      "visits": 238,
+      "kwh": 103.0,
+      "visitsPerKwh": 2.3107,
+      "profitGbp": 828.99,
+      "ownerActions": 0
+    },
+    {
+      "day": 14,
+      "visits": 221,
+      "kwh": 102.0,
+      "visitsPerKwh": 2.1667,
+      "profitGbp": 768.06,
+      "ownerActions": 0
+    }
+  ]
 }

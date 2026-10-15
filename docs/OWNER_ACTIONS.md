@@ -15,14 +15,16 @@ The fixed seed still holds: the same 14 days of arrivals, so two runs differ onl
 
 | Action | Example trigger | Example reason (one line, owner voice) |
 | --- | --- | --- |
-| `hours_changed` | Missed demand after close; empty first/last hours | "People kept finding us shut after 23:00, staying open till 01:00." |
-| `day_closed` | A weekday with almost no visits two weeks running | "Mondays are dead, closing Mondays." |
-| `day_reopened` | Footfall on a closed day picks up | "Busy Mondays again, opening." |
+| `hours_changed` | Missed demand after close whose margin beats the extra energy bill; first/last hours whose visits don't pay for their energy | "People kept finding us shut after 23:00, staying open till 01:00." |
+| `day_closed` | Week-1 review (end of day 7): a weekday with < 10% of a usual day's visits and a margin below its energy bill, closed from week 2 | "Mondays are dead, closing Mondays." |
+| `day_reopened` | People keep trying the door, or the footfall past the shut door is close to an open day's | "Plenty walking past on Mondays, opening again." |
 | `shut_early` (today) | Heavy traffic / roadworks / disruption cutting footfall | "Roadworks outside, nobody can get in, shutting at 15:00." |
 | `open_late` (today) | A club night or event spilling past close | "Club crowd outside, staying open till 03:00 tonight." |
 | `temporary_closure` | Street closed for N days | "Street closed for works, closed until Thursday." |
-| `lighting_changed` | Lights burning while shut or nobody passing | "Window lights off after close." |
+| `lighting_changed` | Lights that bring nobody in: while shut, and sign lights in daylight | "Window lights off while we're shut, they don't sell anything." |
 | `closed_permanently` | Losing money N weeks in a row (rare, never in run 1 of a session) | "Not enough trade to cover costs, closing for good." |
+
+Money decides (v2): margin per visit and the hourly energy price come from backend/economics.py and energy.json; an owner never buys visits with power that costs more than they earn.
 
 Hard rules still apply (backend/agents/rules.py): never outside the licence, never cross-store
 coordination, never use another shop's data.
@@ -84,4 +86,4 @@ Met Office. In the sim they are deterministic per seed.
 - 3D: a shop's open/closed state and lighting follow `schedule` / `closedFromDay` / `owner-events` (today-only actions) at the current time; roadworks render on the street (barriers, cones); a closed-for-good shop shows boarded windows.
 - City feed (area view): a live ticker of owner decisions at the current sim time ("Day 3 · 15:00 · Kebab Co shut early: roadworks outside").
 - Store card / owner page: the week grid (Mon–Sun × hours) and "What I changed this fortnight" from the shop's events.
-- Learning curve: per-day KPI for the run (owners adapting inside the run) next to the per-run curve (the analyst learning across runs).
+- Learning curve: per-day KPI for the run (`RunSummary.daily`, see backend/CONTRACT_CHANGES.md) (owners adapting inside the run) next to the per-run curve (the analyst learning across runs).

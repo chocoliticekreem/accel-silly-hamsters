@@ -101,7 +101,9 @@ def get_session():
     state = store.load_analyst_state()
     if state is None:
         raise HTTPException(404, "no training session yet")
-    return common.contract_json(AgentSession.model_validate(state.model_dump()))
+    # scopeStore stays out of the area view (data firewall: no shop ids in area-level views).
+    session = AgentSession.model_validate(state.model_dump(exclude={"scopeStore"}))
+    return common.contract_json(session)
 
 
 @router.get("/api/agents/log", response_model=list[AgentEvent])

@@ -723,8 +723,9 @@ def test_apply_refuses_when_the_rules_cannot_run(
 def test_apply_with_the_real_hard_rules(
     client: TestClient, runs_dir: Path, runner: FakeRunner
 ) -> None:
-    """Integration with backend.agents.rules as written: the sample's s3 changes pass, a close
-    outside s1's licence (10:00-04:00) is rejected and logged to the base run's audit log."""
+    """Integration with backend.agents.rules as written: the sample's s3 lighting change passes,
+    its close 23:00 -> 03:00 (a 20 h day for a cafe) is rejected by the day-length cap, a close
+    outside s1's licence (10:00-04:00) is rejected, and both rejections are logged."""
     pytest.importorskip(apply.RULES_MODULE)
     add_run(runs_dir, 4)
     write_processed_map(runs_dir)
@@ -742,12 +743,17 @@ def test_apply_with_the_real_hard_rules(
     response = client.post("/api/apply", json={"run": 4, "scope": "all"})
     assert response.json() == {"queuedRun": 5}
     [call] = runner.calls
-    assert call["applied_changes"] == sample("GET /api/runs/{run}/suggestions")
+    close_s3, light_s3 = sample("GET /api/runs/{run}/suggestions")
+    assert call["applied_changes"] == [light_s3]
     assert call["stores"]["s1"].close == "23:00"
     log = [json.loads(line) for line in (runs_dir / "4" / "llm_log.jsonl").read_text().splitlines()]
-    [rejection] = [e for e in log if e.get("type") == "rule_rejection"]
-    assert rejection["agent"] == "manual_apply" and rejection["suggestion"] == outside_licence
-    assert "licensed hours" in rejection["reason"]
+    rejections = {e["suggestion"]["storeId"]: e for e in log if e.get("type") == "rule_rejection"}
+    assert set(rejections) == {"s1", "s3"}
+    assert all(e["agent"] == "manual_apply" for e in rejections.values())
+    assert rejections["s1"]["suggestion"] == outside_licence
+    assert "licensed hours" in rejections["s1"]["reason"]
+    assert rejections["s3"]["suggestion"] == close_s3
+    assert "longer than a cafe usually trades" in rejections["s3"]["reason"]
 
     response = client.post("/api/apply", json={"run": 4, "scope": "store", "storeIds": ["s1"]})
     assert response.status_code == 409

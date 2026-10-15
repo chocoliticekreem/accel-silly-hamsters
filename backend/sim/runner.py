@@ -223,4 +223,5 @@ def _summary(run: int, seed: int, results: kpi_model.RunResults, duration: float
         agents=results.agents,
         durationSec=round(duration, 2),
         cache=cache.stats(),
+        daily=results.daily,
     )
