@@ -13,6 +13,7 @@ import CameraRig from "./modules/CameraRig";
 import Glow from "./modules/Glow";
 import Ground from "./modules/Ground";
 import Heatmap from "./modules/Heatmap";
+import HeroLandmarks from "./modules/HeroLandmarks";
 import Infill from "./modules/Infill";
 import Construction from "./modules/Construction";
 import Sky from "./modules/Sky";
@@ -50,6 +51,7 @@ export const MODULES: Record<string, ComponentType> = {
   Infill,
   Construction,
   Stores,
+  HeroLandmarks,
   StreetLights,
   StreetDressing,
   StreetEvents,

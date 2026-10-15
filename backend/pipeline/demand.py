@@ -5,9 +5,10 @@ SIM_WEEKDAY_ARRIVALS and every real count is scaled by one factor, written into 
 
 Measured (TfL open data, no key needed):
   NUMBAT 2025 typical-day workbooks, one per day type: exits by quarter hour for every station
-  inside the map (Shoreditch High Street; Liverpool Street = its LU and NR rows). Exits are
-  people arriving, so they give each station's arrivals by hour, the weekend/weekday volume
-  ratio and, in the Fri/Sat 00:00-05:00 bands, the night services.
+  inside the map (Shoreditch High Street; Liverpool Street = its LU and NR rows; Old Street,
+  whose entrances share its arrivals; Moorgate). Exits are people arriving, so they give each
+  station's arrivals by hour, the weekend/weekday volume ratio and, in the Fri/Sat 00:00-05:00
+  bands, the night services.
   Unified API, Windrush line Night route: confirms the Night Overground calls at Shoreditch High
   Street.
 Assumed (named constants below, repeated in the notes): the share of each station's exits that
@@ -40,7 +41,7 @@ log = logging.getLogger(__name__)
 
 STEP = "demand"
 # Bump when a code change alters demand.json for the same map, so the pipeline cache rebuilds it.
-MODEL_VERSION = 4
+MODEL_VERSION = 5
 
 # --- TfL NUMBAT: station exits by quarter hour ----------------------------------------------
 
@@ -91,6 +92,22 @@ RAIL_STATIONS: dict[str, RailStation] = {
         "station, Spitalfields and the walk up Bishopsgate to Shoreditch are inside: one exit "
         "in five assumed to head into the area",
     ),
+    "Old Street": RailStation(
+        numbat_rows=("Old Street",),
+        into_area=0.5,
+        basis="the Northern line station under Old Street roundabout, ~170 m inside the west "
+        "edge: the map holds the roundabout's east and north sides (Old Street east to "
+        "Shoreditch, Great Eastern Street, City Road and East Road north, Silicon Roundabout's "
+        "offices, Hoxton), while Bunhill, Clerkenwell and Finsbury to the west and south are "
+        "outside: half its exits assumed to head into the area",
+    ),
+    "Moorgate": RailStation(
+        numbat_rows=("Moorgate",),
+        into_area=0.05,
+        basis="the station sits ~40 m inside the south-west corner, so the City (Moorgate, "
+        "London Wall, Finsbury Circus) it serves is outside the map: one exit in twenty "
+        "assumed to walk north-east into the area",
+    ),
 }
 EXITS_SHEET = "Station_Exits"
 QUARTER_HOUR_LABEL = re.compile(r"^(\d{2})(\d{2})-\d{4}$")  # "0500-0515"
@@ -114,7 +131,7 @@ WORKING_DAYS = tuple(d for d in timeutil.WEEKDAYS if d not in WEEKEND_DAYS)
 
 # Used only when NUMBAT is unreachable: calendar_profiles() of the five 2025 workbooks as fetched
 # on SNAPSHOT_DATE (mean exits per clock hour, per RAIL_STATIONS key; Liverpool Street = LU + NR
-# rows). The file is then flagged fallback=True.
+# rows; Old Street and Moorgate = their LU rows). The file is then flagged fallback=True.
 SNAPSHOT_DATE = "2026-10-15"
 NUMBAT_FOLDER_URL = "https://crowding.data.tfl.gov.uk/#!NUMBAT%2FNUMBAT%202025%2F"
 # fmt: off
@@ -141,6 +158,28 @@ SNAPSHOT_EXITS = {
             4086.7, 4618.1, 3705.9,
         ],
     },
+    "Old Street": {
+        "weekday": [
+            89.1, 3.1, 0.0, 0.0, 0.0, 24.0, 443.3, 1760.8, 4131.9, 4112.3, 1829.9, 1059.2,
+            986.1, 1034.7, 971.5, 966.9, 1214.2, 1684.6, 1752.5, 1175.7, 808.6, 651.6, 635.3,
+            452.3,
+        ],
+        "weekend": [
+            438.9, 27.8, 0.0, 0.0, 0.0, 3.3, 55.9, 195.5, 447.1, 635.1, 808.9, 943.9, 1080.5,
+            1225.1, 1216.5, 1189.4, 1249.3, 1323.0, 1321.2, 1229.7, 963.2, 759.9, 708.1, 579.2,
+        ],
+    },
+    "Moorgate": {
+        "weekday": [
+            59.6, 4.1, 0.0, 0.0, 0.0, 235.1, 1888.8, 5030.7, 9819.5, 7968.7, 3013.3, 1686.0,
+            1475.2, 1329.5, 1120.6, 1142.5, 1390.8, 1777.8, 1677.4, 850.3, 434.4, 331.6, 336.1,
+            240.6,
+        ],
+        "weekend": [
+            248.2, 21.9, 0.0, 0.0, 0.0, 17.9, 145.8, 380.1, 629.1, 743.2, 860.3, 1046.4, 1194.8,
+            1238.7, 1143.3, 1041.3, 1034.8, 1020.7, 1024.2, 806.0, 503.8, 360.8, 403.7, 391.6,
+        ],
+    },
 }
 # fmt: on
 
@@ -152,10 +191,10 @@ NIGHT_ROUTE_URL = "https://api.tfl.gov.uk/Line/windrush/Route/Sequence/outbound"
 # keeps the ~68 stores at the visits per store the 500 m map gave its 24 (~41 a day).
 SIM_WEEKDAY_ARRIVALS = 3500.0
 # Assumption: share of all arrivals into the area that come out of the stations inside the map
-# (30% for Shoreditch High Street alone on the 500 m map; Liverpool Street is now inside too).
-# The rest walk in from Old Street, Aldgate East, Moorgate and Hoxton just past the edges, or
-# come by bus, by bike or on foot from home.
-STATION_SHARE = 0.40
+# (30% for Shoreditch High Street alone on the 500 m map; 40% with Liverpool Street; 45% now
+# that Old Street is inside too). The rest walk in from Aldgate East, Moorgate, Barbican and
+# Hoxton just past the edges, or come by bus, by bike or on foot from home.
+STATION_SHARE = 0.45
 # Street arrivals are not measured by hour here (TfL BUSTO bus files are 55-125 MB). They reuse
 # the stations' exit timing plus this share of night-time-economy walk-ins.
 STREET_LEISURE_SHARE = {"weekday": 0.30, "weekend": 0.40}

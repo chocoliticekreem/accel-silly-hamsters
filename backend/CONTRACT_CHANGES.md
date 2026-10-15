@@ -12,15 +12,18 @@ not sent as `null`.
 | --- | --- |
 | `GET /api/map` → `stores[]` | Optional `licensedHours` `{open, close}`, `defaultHours` `{open, close}`, `floorArea` (m²) and `osmId`. |
 | `GET /api/map` | `sources`: `[{label, url, fetchedAt?}]`, citations for the map data. |
+| `GET /api/map` | Optional `landmarks`: `[{id, name, kind, buildingId, x, z, h, note?}]`, named real places to label or render specially. `kind` is `venue` \| `hotel` \| `station` \| `market` \| `landmark`; `buildingId` is the map building that is the place, or `null` (Old Street station is underground); `x`/`z` in map metres; `h` = the building's height in metres (where to hang a label; `0` = street level). The OSM map has `shoreditch-high-street` (station, the origin, with its building), `liverpool-street`, `moorgate` and `old-street` (stations at the station node, `buildingId: null`), `encode-hub` (venue, the hackathon), `artotel-london-hoxton` (hotel, 92.2 m) and `boxpark-shoreditch` (market); the fallback map only the station. Absent in maps built before it was added. |
+| `GET /api/map` → `bounds` | The OSM map is the rectangle `minX -1050, maxX 700, minZ -750, maxZ 750`: the 1.5 km map widened 250 m west so the whole Old Street roundabout (Silicon Roundabout, ~880 m W / 255 m N) is inside. The origin is still Shoreditch High Street station. The hand-written fallback keeps ±250 m. |
+| `GET /api/map` → `entryPoints` | Old Street gets one `kind: "station"` entry per street entrance, all named `"Old Street"` (consecutive `st` ids); every other station keeps one entry. Group station entries by `name`. Moorgate (just inside the south-west corner) is now a station entry too. |
 | Suggestions (`GET /api/runs/{run}/suggestions`, report `changes`) | Optional `confidence` (`low` \| `medium` \| `high`) and `reason` (one line). |
 | `GET /api/stores/{storeId}/report` | `note`, always present (default `"Simulated, not guaranteed."`). `evidence[]` items may carry `fetchedAt`. |
 | `pdfUrl` | Format `/files/reports/{run}/{storeId}.pdf` (the sample shows `/files/reports/s3.pdf`), relative to the API origin. `null` when no PDF was written. |
-| `GET /api/analyst` | `stoppedReason` adds `budget` (spend cap reached) and `error`. `startedAt` and `bestRun` are `null` before the analyst has ever run. |
+| `GET /api/analyst` | `stoppedReason` adds `budget` (spend cap reached), `error` and `stopped` (a stop request, `POST /api/training/stop`). Optional `baselineRun`: the session's baseline run (compare mode's left side). Without an analyst session but with real runs, the runs stand in: `startedAt` = the first real run's `createdAt`, `bestRun` = the best finished real run by `settings.OBJECTIVE`, `baselineRun` = the first real run; so `baselineRun` is present whenever real runs exist. Before any real run: `startedAt` and `bestRun` are `null`, `baselineRun` is omitted. |
 | `GET /api/runs` | `status` adds `queued`, `running` and `failed`. `kpis` is `null` until the run is `done`. |
 | `POST /api/decision` | Optional `?run=` query parameter pins the run whose report the owner saw. Default: the report endpoint's default run. |
 | New `GET /files/reports/{run}/{storeId}.pdf` | The PDF behind `pdfUrl` (`application/pdf`). |
 | New `GET /api/runs/{run}/summary` | `RunSummary` (`backend/schemas.py`) for the city view: `kpis`, `objective`, `objectiveValue`, `peakKw`, `peakHour`, `co2Kg`, `energyCostGbp`, `demandByHourKw[24]`, `footfallByHour[24]`, `agents`, `durationSec`, `cost`, `cache`. Area totals only, no store ids. Optional `daily`: the in-run learning curve, 14 entries `{day, visits, kwh, visitsPerKwh, profitGbp, ownerActions}` (e.g. `{"day": 1, "visits": 1012, "kwh": 1603.4, "visitsPerKwh": 0.631, "profitGbp": 412.5, "ownerActions": 3}`): that sim day's area totals over non-club stores; `profitGbp` = margin on the visits (spend per visit x gross margin by store type, `backend/economics.py`) minus that day's energy bill; `ownerActions` = owner events dated that day (0 with adaptation off). Visits count on the day they start (a trip past midnight of day 14 counts on day 14), so the 14 entries sum to `kpis.visits` and, within rounding, to `kpis.kwh`. Every new run has it; runs from before it was added omit it. |
-| New `GET /api/notebook` | Analyst lab notebook: `[{run, line, objectiveValue, at}]`, one line per run. |
+| New `GET /api/notebook` | Analyst lab notebook: `[{run, line, objectiveValue, at, objective}]`, one line per run. `objective` names what `objectiveValue` measures (`visitsPerKwh`, `visits` or `netValueGbp` in GBP a week; `null` in entries written before training was configurable): sessions with different objectives leave values in different units. A one-shop session (`storeProfitGbp`) notes the run's area value on `settings.OBJECTIVE`, never the shop's profit. |
 | New `GET /api/health` | `{ok, simVersion, mapSource, realRuns}`. `mapSource` is `processed`, `sample` or `missing`. |
 | New `GET /api/stores/{storeId}/insights?run=` | `StoreInsights` (`backend/contract.py`): one shop's 14-day `kpis`, `funnel` (passers-by → visits → returning), `hourly` (visits, footfall, missedDemand, kWh, lighting, openFraction), `weekdayVsWeekend`, `personas`, `energy` (incl. kWh while closed), anonymised `benchmarks` (peer count ≥ 3, percentiles only; may be `null`) and up to 5 ranked `insights` (kind, severity, title, detail, metric, impact, confidence, `suggestion` or `null`, evidence). Store-scoped: no other shop's id, name or numbers. Default run as for the report. 404 for clubs, unknown stores/runs and runs without store stats; 503 when processed data is missing. |
 | New `GET /api/agents/session` | `AgentSession` (`backend/contract.py`): the analyst checkpoint in full (sessionId, state, backend, startedAt, updatedAt, baselineRun, currentRun, bestRun, bestObjective, iterations, runsThisSession, lowGainStreak, step, stoppedReason, spentGbp, error). 404 before the analyst has ever run. `GET /api/analyst` is unchanged. |
@@ -30,7 +33,28 @@ not sent as `null`.
 | New `GET /api/runs/{run}/owner-events` | `OwnerEvent[]` oldest first (`t`, then `storeId`): `day`, `t` (sim minute), `storeId`, `action` (`hours_changed` \| `day_closed` \| `day_reopened` \| `shut_early` \| `open_late` \| `temporary_closure` \| `lighting_changed` \| `closed_permanently`), optional `from`/`to` (`HH:MM`, a weekday like `mon`, or a lighting level), `reason` (one owner-voice sentence, ≤ 100 chars), `trigger` `{kind, value, label}`. 404 like other run files (runs from before this feature have none). |
 | New `GET /api/runs/{run}/street-events` | `StreetEvent[]` oldest first: `day`, `fromT`, `toT` (sim minutes), `kind` (`roadworks` \| `heavy_traffic` \| `club_night` \| `event` \| `weather`), `streetId` (a map `Street.id`), `label`, `severity` (0–1). 404 like other run files. |
 | New `GET /api/stores/{storeId}/overview?run=` | `StoreOverview` (`backend/contract.py`, `docs/STORE_PAGE.md`): the owner's store page in one call. `storeId`, `name`, `type`, `run`, `baselineRun`, `bestRun` (this shop's most profitable run vs its baseline; `null` while only the baseline exists), `status` (`not_started` \| `improving` \| `best_found`), `headline` (one sentence), `numbers` (`customersPerWeek`, `energyCostPerWeekGbp`, `kwhPerWeek` as `{value, change}` with `change` a fraction vs the baseline, plus `profitChangePerWeekGbp`), up to 3 `advice[]` (`text`, `gbpPerWeek`, `certainty` `likely` \| `worth testing` \| `uncertain`, `status` `new` \| `applied` \| `tested_better` \| `tested_worse`, `suggestion`), `history[]` (`run`, `label`, `customersPerWeek`, `kwhPerWeek`, `profitChangePerWeekGbp`, `changes[]`, `best`), `note`. Optional `ownerChanges`: how many times the shop's owner adapted during `run` (absent when the run has no `owner_events.json`). Store-scoped: no other shop's id, name or numbers (a suggestion `reason` naming another shop is dropped). 404 for clubs, unknown stores, unknown or unfinished runs, and before any run has finished. |
-| New `POST /api/stores/{storeId}/optimize` | Body `{maxRuns?}` (2–10, default 6; the baseline counts). Starts a training session scoped to this shop as a background task and answers **202** with `AnalystStatus` (`state: "running"`). Only this shop's settings change (every other store stays at the baseline) and the objective is its profit change per week. 403 when the server runs with `READ_ONLY=1` (hosted demo), 404 for clubs and unknown stores, 409 while any session is `running` (a `running` checkpoint not updated for 30 min counts as dead), 422 for `maxRuns` out of range, 503 without `data/processed/map.json`. |
+| New `POST /api/stores/{storeId}/optimize` | Body `{maxRuns?}` (2–10, default 6; the baseline counts). Starts a training session scoped to this shop as a background task and answers **202** with `AnalystStatus` (`state: "running"`): the saved `TrainingConfig` with `storeIds: [storeId]`, objective `storeProfitGbp` and the heuristic analyst (levers, limits, stop rule, seed and budget as saved; `maxRuns` from the body). Only this shop's settings change (every other store stays at the baseline) and the objective is its profit change per week. `POST /api/training/stop` stops it like any session. 403 on a read-only deployment (`READ_ONLY=1` or `VERCEL=1`), 404 for clubs and unknown stores, 409 while any session is `running` (a `running` checkpoint not updated for 30 min counts as dead), 422 for `maxRuns` out of range, 503 without `data/processed/map.json`. |
+| New `GET /api/training` | `{config, options, status, running}`. `config`: the saved `TrainingConfig` (table below; `runs/training_config.json`, settings defaults until one is saved), what the next session runs with. `options`: what each field accepts: `{values: [...]}` for choices, `{min, max?}` for numbers (`max` absent = unbounded), `levers: {values: ["hours", "lighting"], minEnabled: 1}`, `storeIds: {stores: [{id, name, type}], null}` (`null` = every non-club store). `status`: `AnalystStatus`, as `GET /api/analyst`. `running`: a session started by this API process is running. |
+| New `PUT /api/training/config` | Body: a `TrainingConfig` (missing fields take the settings defaults). Validated, saved, answered back. 409 while a session runs, 422 on a bad value or a `storeIds` entry that is unknown or a club, 403 when read-only. |
+| New `POST /api/training/start` | Body (optional): `{config?: TrainingConfig, fresh?: false}`. Starts a session in a background thread of the API, or resumes the last one (same seed, objective and shop, not `fresh`; a finished one-shop session is never resumed); a body `config` is saved as the current config first, else the saved one runs. Answers `AnalystStatus`, already `running`. One at a time: 409 while one runs in this API, or while another process (e.g. a CLI `train`) runs a session on the same `runs/` (it holds `runs/training.lock`; its stop request is left alone). 422 on a bad config, 403 when read-only. |
+| New `POST /api/training/stop` | Asks the running session to stop at its next step boundary (the step in progress finishes); it then checkpoints with `stoppedReason: "stopped"`. Also stops a CLI session on the same `runs/` (flag file). Answers `AnalystStatus` at once (still `running` until the step and the wrap-up end, see below). 403 when read-only. |
+
+### `TrainingConfig` (`backend/schemas.py`)
+
+| Field | Accepts | Default |
+| --- | --- | --- |
+| `objective` | `visitsPerKwh` \| `netValueGbp` (weekly margin on visits minus the energy bill, `backend/economics.py`) \| `visits` \| `storeProfitGbp` (one shop's profit change per week vs the session baseline: a one-shop session, as `POST /api/stores/{storeId}/optimize` runs; needs exactly one store in `storeIds` and `analystBackend` `auto` or `heuristic`) | `settings.OBJECTIVE` |
+| `threshold` | 0–1: stop when the gain over the best run stays below it... | `settings.THRESHOLD` (0.02) |
+| `patience` | ≥ 1: ...for this many runs in a row | 2 |
+| `maxRuns` | 2–50, the baseline included | `settings.MAX_RUNS` (10) |
+| `maxStoresPerIteration` | 1–24 stores changed per experiment | 4 |
+| `maxChangesPerStore` | 1–2 changes per store per week | 2 |
+| `seed` | ≥ 0 | 42 |
+| `levers` | `{hours: bool, lighting: bool}`, at least one `true` | both `true` |
+| `storeIds` | participating store ids (no clubs), or `null` = every non-club store; the others stay frozen | `null` |
+| `sessionBudgetUsd` | 0.01 – `settings.SPEND_CAP_USD` (30) | `settings.SESSION_BUDGET_USD` (15) |
+| `analystBackend` | `auto` \| `heuristic` \| `messages` \| `managed` | `settings.ANALYST_BACKEND` |
+| `storeAgents` | `auto` \| `heuristic` \| `batch` | `auto` |
 
 ## Behaviour notes (not shape changes)
 
@@ -48,13 +72,16 @@ not sent as `null`.
   `tested_better`/`tested_worse` = an earlier run made it and the shop's profit rose/fell.
   `headline`: when `run` costs the shop money, "going back is better" (to its original settings or
   to its best earlier test, with the £/week gap); else the top advice; else a keep/no-change line.
-- **One-shop sessions** (`POST .../optimize`, `training.train(scope_store=...)`) write the same
-  `runs/analyst_state.json` as the area session (with `scopeStore`, kept out of
+- **One-shop sessions** (`POST .../optimize`, `training.train(scope_store=...)`, or any
+  `TrainingConfig` with objective `storeProfitGbp`) run the same training loop and write the same
+  `runs/analyst_state.json` as the area session (with `scopeStore` and `config`, both kept out of
   `GET /api/agents/session`), so `GET /api/analyst` shows them and, while one is the last session,
   the report's default run is that shop's best run. The choice is a deterministic ranking of the
-  shop's proposals by expected £/week (no analyst LLM); store-agent proposals use the usual
-  backend (Batch API online, heuristic offline). Reports are written for that shop only; the
-  shared baseline run keeps its area session's cost.
+  shop's proposals by expected £/week (no analyst LLM); the shop's agent ranks its own ideas by
+  its profit and uses the usual backend (`storeAgents`: Batch API online, heuristic offline).
+  At the stop the shop's agent proposes next week's changes on the best run (other stores'
+  suggestions there are kept). Reports are written for that shop only; the shared baseline run
+  keeps its area session's cost.
 
 - **Owners adapt inside a run** (`docs/OWNER_ACTIONS.md`, `backend/sim/owners.py`), switch
   `OWNER_ADAPTATION` (env, default on; `0` = the pre-adaptation sim, byte-identical files apart
@@ -96,6 +123,13 @@ not sent as `null`.
   across days; one-off ids are `v{day}-{n}` and never repeat. Spawn, `tIn` and `tOut` sit on the
   5-minute grid; corners, door arrivals and exits are integer minutes from walking at 1.3 m/s.
 - **CORS:** `settings.CORS_ORIGINS` plus any `http(s)://localhost` or `127.0.0.1` port.
+- **Read-only deployments** (`VERCEL=1` or `READ_ONLY=1`, i.e. the hosted demo that replays
+  pre-computed runs): `PUT /api/training/config`, `POST /api/training/start`,
+  `POST /api/training/stop` and `POST /api/stores/{storeId}/optimize` answer 403; every read works.
+- **Training stop is cooperative:** a session checks for a stop request between steps, so
+  `state` stays `running` until the step in progress (e.g. a 14-day simulation) finishes, then
+  through the wrap-up every stop gets (next week's proposals on the best run, owner reports,
+  costs). `stopped` therefore means the session's files are all written.
 
 ## Errors
 
@@ -103,9 +137,9 @@ All errors are `{"detail": ...}`.
 
 | Status | When |
 | --- | --- |
+| 403 | A training write (`PUT /api/training/config`, `POST /api/training/start`, `POST /api/training/stop`, checked before the body: a bad body there is 403 too) or `POST /api/stores/{storeId}/optimize` on a read-only deployment. |
 | 404 | Unknown run, day (outside 1–14), store, report or PDF. The detail names the missing file and the run status while it is `queued` or `running`. |
-| 422 | Invalid input: wrong types, unknown fields, `scope: "store"` without `storeIds`, `suggestionIndex` out of range. |
-| 403 | `POST /api/stores/{storeId}/optimize` on a read-only server (`READ_ONLY=1`). |
-| 409 | `POST /api/apply` on the sample run, with nothing to apply, or with every selected suggestion rejected by the hard rules (`detail.rejections`). `POST /api/stores/{storeId}/optimize` while a training session is running. |
-| 503 | The sim, the hard rules or `data/processed/map.json` is unavailable, so nothing was queued. |
+| 422 | Invalid input: wrong types, unknown fields, `scope: "store"` without `storeIds`, `suggestionIndex` out of range, a `TrainingConfig` value out of range or a `storeIds` entry that is unknown or a club. |
+| 409 | `POST /api/apply` on the sample run, with nothing to apply, or with every selected suggestion rejected by the hard rules (`detail.rejections`). `PUT /api/training/config` or `POST /api/training/start` while a session is running (start: also in another process). `POST /api/stores/{storeId}/optimize` while a training session is running. |
+| 503 | The sim, the hard rules, the training module or `data/processed/map.json` is unavailable, so nothing was queued or started. |
 | 500 | A data file on disk no longer matches its schema; the detail names the file or the schema. |
