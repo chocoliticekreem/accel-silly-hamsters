@@ -2,10 +2,13 @@
 // Add a module: create world/modules/<Name>.tsx (default export, reads useWorld() + useSim), then list it in MODULES.
 // Debug: ?only=Sky,Ground,Streets or ?skip=Glow,Agents switch modules off.
 import { Canvas } from "@react-three/fiber";
-import { AdaptiveDpr, PerformanceMonitor } from "@react-three/drei";
+import { AtmosphereRoot } from "./AtmosphereRoot";
+import { PerformanceMonitor, Stats } from "@react-three/drei";
 import { Suspense, useMemo, useState, type ComponentType } from "react";
 import type { CityMap, RunStores } from "../api/contract";
+import { GraphicsMenu } from "./GraphicsMenu";
 import { ModuleBoundary } from "./ModuleBoundary";
+import { PRESETS, useQuality } from "./quality";
 import { newLive, WorldContext, type WorldCtx } from "./context";
 import { PhysicsLayer } from "./physics/PhysicsLayer";
 import Agents from "./modules/Agents";
@@ -88,7 +91,9 @@ export interface WorldProps {
 }
 
 export default function World({ map, run, stores, cameraGroup = "main", interactive = true, onLive }: WorldProps) {
-  const [dpr, setDpr] = useState(1.5);
+  const level = useQuality((s) => s.level);
+  const dpr = Math.min(PRESETS[level].dpr, window.devicePixelRatio || 1);
+  const [stats] = useState(() => new URLSearchParams(window.location.search).has("stats"));
   const [enabled] = useState(enabledModules);
   const modeHides = useModuleHides();
   const live = useMemo(() => {
@@ -101,15 +106,19 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
   const ctx = useMemo<WorldCtx>(() => ({ map, run, stores, cameraGroup, live, interactive }), [map, run, stores, cameraGroup, live, interactive]);
 
   return (
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
     <Canvas
-      shadows
+      shadows="percentage"
       dpr={dpr}
       camera={{ position: [190, 105, -230], fov: 42, near: 1, far: 4000 }}
-      gl={{ antialias: true, powerPreference: "high-performance", stencil: false }}
+      gl={{ antialias: false, powerPreference: "high-performance", stencil: false }}
     >
-      <PerformanceMonitor onIncline={() => setDpr(Math.min(2, window.devicePixelRatio))} onDecline={() => setDpr(1)} />
-      <AdaptiveDpr pixelated />
+      {/* auto quality: step down when the frame rate sags, back up when there's headroom */}
+      <PerformanceMonitor bounds={() => [42, 58]} flipflops={4} onDecline={() => useQuality.getState().step(-1)} onIncline={() => useQuality.getState().step(1)} />
+      {stats && <Stats />}
       <WorldContext.Provider value={ctx}>
+        {/* physically based sky + aerial perspective share this (Sky drives it from the sim clock) */}
+        <AtmosphereRoot>
         <PhysicsLayer enabled={interactive && cameraGroup === "main"}>
         {Object.entries(MODULES)
           .filter(([name]) => enabled.includes(name) && !modeHides.has(name))
@@ -121,7 +130,10 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
             </ModuleBoundary>
           ))}
         </PhysicsLayer>
+        </AtmosphereRoot>
       </WorldContext.Provider>
     </Canvas>
+    {interactive && cameraGroup === "main" && <GraphicsMenu />}
+    </div>
   );
 }
