@@ -3,7 +3,9 @@ import { formatHHMM, dayOf } from "../sim/time";
 import { useAnalyst, usePrevRun } from "../state/data";
 import { useSim } from "../state/store";
 import { Delta } from "./Delta";
-import { change, fmtInt, fmtNum, WEEKDAYS } from "./format";
+import { change, fmtInt, fmtNum } from "./format";
+
+const WEEKDAY_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 export function Clock() {
   const minute = useSim((s) => Math.floor(s.t));
@@ -11,8 +13,7 @@ export function Clock() {
   return (
     <div className="clock">
       <span className="clock-day">
-        Day <b>{day}</b>
-        <small>{WEEKDAYS[(day - 1) % 7]}</small>
+        <b>{WEEKDAY_LONG[(day - 1) % 7]}</b>
       </span>
       <span className="clock-sep">·</span>
       <span className="clock-time">{formatHHMM(minute)}</span>

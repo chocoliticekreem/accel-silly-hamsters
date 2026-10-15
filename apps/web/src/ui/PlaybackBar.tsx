@@ -46,7 +46,7 @@ export function PlaybackBar() {
           <div key={i} className={`day ${i % 7 >= 5 ? "weekend" : ""}`}>
             <span className="night night-am" />
             <span className="night night-pm" />
-            <span className="day-label">{i % 7 === 0 || i === 0 ? `${WEEKDAYS[i % 7]} ${i + 1}` : i + 1}</span>
+            <span className="day-label">{WEEKDAYS[i % 7]}</span>
           </div>
         ))}
         <div className="track-fill" style={{ width: `${(t / RUN_MINUTES) * 100}%` }} />
