@@ -18,6 +18,7 @@ import { DemoBar } from "../ui/DemoBar";
 import { Toast } from "../ui/Toast";
 import { TypeIcon } from "../ui/TypeIcon";
 import { STORE_COLORS } from "../world/palette";
+import { OwnerMoney } from "../ui/OwnerMoney";
 
 const STATUS_LABEL: Record<StoreOverview["status"], string> = {
   not_started: "Not started",
@@ -175,6 +176,8 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
               </p>
             )}
           </section>
+
+          <OwnerMoney storeId={storeId} run={o.run} />
 
           <section className="sp-card">
             <div className="sp-card-head">

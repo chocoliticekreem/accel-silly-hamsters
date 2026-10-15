@@ -1,7 +1,7 @@
 // UI state and data hooks for the people + economy layer (docs/PEOPLE_ECONOMY.md): the picked person, the
 // heatmap layer and the intervention compare pair. Kept apart from state/store.ts so the two can evolve separately.
 import { create } from "zustand";
-import { economyApi, type Headline, type OwnerPerson, type PersonStory, type RunIntervention } from "../api/economy";
+import { economyApi, type CitizenDiary, type CitizenIndex, type Headline, type OwnerPerson, type PersonStory, type RunIntervention } from "../api/economy";
 import { useResource } from "./data";
 
 export type HeatmapLayer = null | "wealth" | "footfall" | "missed";
@@ -39,4 +39,7 @@ export const useOwners = (run: number | null) => useResource<OwnerPerson[]>(run 
 export const usePersonStory = (run: number, personId: string | null) =>
   useResource<PersonStory | null>(personId ? `econ:person:${run}:${personId}` : null, () => economyApi.person(run, personId!));
 export const useHeadlines = (run: number | null) => useResource<Headline[]>(run == null ? null : `econ:headlines:${run}`, () => economyApi.headlines(run!));
-export const useInterventions = () => useResource<Record<number, RunIntervention>>("runs:econ:interventions", () => economyApi.interventions());
+export const useCitizens = (run: number | null) => useResource<CitizenIndex | null>(run == null ? null : `econ:citizens:${run}`, () => economyApi.citizens(run!));
+export const useDiary = (run: number, id: string | null) =>
+  useResource<CitizenDiary | null>(id ? `econ:diary:${run}:${id}` : null, () => economyApi.diary(run, id!));
+export const useInterventions =() => useResource<Record<number, RunIntervention>>("runs:econ:interventions", () => economyApi.interventions());

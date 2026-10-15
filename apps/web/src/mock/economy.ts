@@ -22,6 +22,7 @@ import { formatHHMM } from "../sim/time";
 import { MOCK_RUN_COUNT } from "./configs";
 import { MOCK_SEED, sharedMockState, type MockState } from "./index";
 import { between, rng, seedOf } from "./rng";
+import { citizenDiary, citizenIndex } from "./citizens";
 import { simulateRun, type RunResult, type SimTweaks } from "./simulate";
 
 const WEEKDAY = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -448,6 +449,9 @@ export function mockEconomyApi(state: MockState = sharedMockState()): EconomyApi
       }, 20),
     interventions: () =>
       later(() => Object.fromEntries([...econ.forks.values()].map((f) => [f.run, { kind: f.kind, label: f.label, baseRun: f.baseRun, params: f.params }]))),
+    // docs/CITIZENS.md: featured people are picked from run 1 (the plan), so they're the same in every run
+    citizens: (run) => later(() => citizenIndex(state.map, state.result(run), run, state.result(1))),
+    diary: (run, id) => later(() => citizenDiary(state.map, state.result(run), run, id)),
     headlines: (run) =>
       later(() => {
         const res = state.result(run);

@@ -101,10 +101,10 @@ export function storeDoors(map: CityMap): Door[] {
  * "Found it shut": a stop of at most `maxWait` minutes at a shop door with no visit then (the trip walked over,
  * found the shutter down, and walked on). Read straight off the day file.
  */
-export function shutStops(path: PathKey[], visits: StoreVisit[], doors: Door[], opts: { near?: number; maxWait?: number } = {}): { storeId: string; t: number }[] {
+export function shutStops(path: PathKey[], visits: StoreVisit[], doors: Door[], opts: { near?: number; maxWait?: number } = {}): { storeId: string; t: number; x: number; z: number }[] {
   const near = opts.near ?? 3;
   const maxWait = opts.maxWait ?? 2;
-  const out: { storeId: string; t: number }[] = [];
+  const out: { storeId: string; t: number; x: number; z: number }[] = [];
   for (let i = 1; i < path.length; i++) {
     const [ta, xa, za] = path[i - 1];
     const [tb, xb, zb] = path[i];
@@ -120,7 +120,7 @@ export function shutStops(path: PathKey[], visits: StoreVisit[], doors: Door[], 
         bestD = dd;
       }
     }
-    if (best) out.push({ storeId: best.storeId, t: ta });
+    if (best) out.push({ storeId: best.storeId, t: ta, x: xa, z: za });
   }
   return out;
 }

@@ -110,6 +110,80 @@ export interface Headline {
   text: string;
 }
 
+// ---------- citizens (docs/CITIZENS.md §5): GET /api/runs/{run}/citizens, /citizens/{id}/diary ----------
+
+export type AgeBand = "18-24" | "25-34" | "35-49" | "50-64" | "65+";
+export type Occupation = "office" | "remote" | "student" | "retired" | "shift" | "resident" | "visitor";
+export type Budget = "low" | "mid" | "high";
+
+export interface CitizenProfile {
+  id: string;
+  persona: string;
+  profile: string;
+  label: string;
+  occupation: Occupation;
+  ageBand: AgeBand;
+  budget: Budget;
+  /** Street of the home anchor, or "outside the area". */
+  home: string;
+  /** Entry or station name. */
+  arrivesVia?: string | null;
+  /** Street of the work anchor. */
+  work?: string | null;
+  loyalty: number;
+  lightingSensitivity: number;
+  /** "Tue ~10:30 weekly cafe" */
+  routine: string[];
+  returning: boolean;
+}
+
+export interface CitizenCard {
+  id: string;
+  persona: string;
+  label: string;
+  story: string;
+  headline: string;
+  daysPresent: number;
+  visits: number;
+  foundShut: number;
+}
+
+export interface CitizenIndex {
+  run: number;
+  featured: CitizenCard[];
+  counts: Record<string, number>;
+  note: string;
+}
+
+export type DiaryKind = "arrive" | "visit" | "found_shut" | "seen_shut" | "skip" | "enter" | "leave" | "noticed_open";
+
+export interface DiaryEntry {
+  t: number;
+  kind: DiaryKind;
+  storeId?: string | null;
+  storeName?: string | null;
+  purpose?: string | null;
+  tOut?: number | null;
+  place?: string | null;
+  note?: string | null;
+}
+
+export interface DiaryDay {
+  day: number;
+  weekday: string;
+  summary: string;
+  entries: DiaryEntry[];
+}
+
+export interface CitizenDiary {
+  run: number;
+  citizen: CitizenProfile;
+  days: DiaryDay[];
+  /** "regular at [cafe] (5 visits)", "avoids [shop] Tue mornings" */
+  memory: string[];
+  note: string;
+}
+
 // ---------- the client ----------
 
 export interface EconomyApi {
@@ -125,6 +199,10 @@ export interface EconomyApi {
   interventions(): Promise<Record<number, RunIntervention>>;
   /** [] when not served. */
   headlines(run: number): Promise<Headline[]>;
+  /** Featured citizens (docs/CITIZENS.md); null when not served. */
+  citizens(run: number): Promise<CitizenIndex | null>;
+  /** A citizen's fortnight diary; null when not served or unknown. */
+  diary(run: number, citizenId: string): Promise<CitizenDiary | null>;
 }
 
 export function httpEconomyApi(base: string): EconomyApi {
@@ -157,6 +235,8 @@ export function httpEconomyApi(base: string): EconomyApi {
       return Object.fromEntries(runs.filter((r) => r.intervention).map((r) => [r.run, r.intervention!]));
     },
     headlines: async (run) => (await getOptional<Headline[]>(`/api/runs/${run}/headlines`)) ?? [],
+    citizens: (run) => getOptional<CitizenIndex>(`/api/runs/${run}/citizens`),
+    diary: (run, id) => getOptional<CitizenDiary>(`/api/runs/${run}/citizens/${encodeURIComponent(id)}/diary`),
   };
 }
 

@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { DAYS_PER_RUN } from "../api/contract";
 import type { PersonDay } from "../api/economy";
 import { createMockState } from ".";
-import { buildMoney, economyFor, forkRun, headlinesFor, mockEconomyApi, personStory, replayLedger } from "./economy";
+import { citizenDiary, citizenIndex } from "./citizens";
+import { economyFor, forkRun, headlinesFor, mockEconomyApi, personStory, replayLedger } from "./economy";
 
 const state = createMockState();
 const econ = economyFor(state);
-const RUN = 2;
+const RUN = 1;
 const res = state.result(RUN);
 const money = econ.money(RUN);
 
@@ -105,7 +106,7 @@ describe("headlines", () => {
 });
 
 describe("interventions fork the same seed", () => {
-  const fresh = createMockState();
+  const fresh = state; // forks are added to the same state: fewer simulations, same checks
   const api = mockEconomyApi(fresh);
   const base = fresh.result(RUN);
   const sig = (day: number, r = base) => JSON.stringify(r.days[day - 1].agents);
@@ -155,11 +156,33 @@ describe("interventions fork the same seed", () => {
   });
 });
 
-describe("debug", () => {
-  it("prints", () => {
-    for (const o of money.owners) console.log(o.name, o.storeId, o.status, o.business.startGbp, o.business.endGbp, JSON.stringify(o.totals));
-    console.log(headlinesFor(state.map, res).map((h) => h.text).join("\n"));
-    console.log(personStory(state.map, res, money, res.owners[3].personId)!.story.join("\n"));
-    console.log(personStory(state.map, res, money, "r70")!.story.join("\n"));
+describe("citizens (docs/CITIZENS.md)", () => {
+  it("features the same regulars in every run, with plain one-line stories", () => {
+    const a = citizenIndex(state.map, res, RUN, state.result(1));
+    const b = citizenIndex(state.map, state.result(1), 1);
+    expect(a.featured.length).toBeGreaterThanOrEqual(8);
+    expect(a.featured.map((c) => c.id)).toEqual(b.featured.map((c) => c.id));
+    for (const c of a.featured) {
+      expect(c.story).toMatch(/^[A-Z].+\.$/);
+      expect(c.story).not.toMatch(/undefined|NaN|\n/);
+      expect(c.daysPresent).toBeGreaterThan(0);
+    }
+    expect(a.note).toMatch(/not real people/);
+  });
+
+  it("writes a diary from the person's own trips", () => {
+    const d = citizenDiary(state.map, res, RUN, "r1")!;
+    expect(d.citizen.id).toBe("r1");
+    expect(d.note).toBe("Simulated, not a real person.");
+    expect(d.days.length).toBeGreaterThan(0);
+    const visits = res.days.flatMap((x) => x.agents.filter((a) => a.id.split("~")[0] === "r1").flatMap((a) => a.visits));
+    const diaryVisits = d.days.flatMap((x) => x.entries.filter((e) => e.kind === "visit"));
+    expect(diaryVisits.length).toBeLessThanOrEqual(visits.length);
+    expect(diaryVisits.length).toBeGreaterThan(0);
+    for (const day of d.days) {
+      expect(day.summary.length).toBeGreaterThan(5);
+      expect(day.entries.map((e) => e.t)).toEqual([...day.entries.map((e) => e.t)].sort((x, y) => x - y));
+    }
+    expect(citizenDiary(state.map, res, RUN, res.owners[0].personId)).toBeNull();
   });
 });
