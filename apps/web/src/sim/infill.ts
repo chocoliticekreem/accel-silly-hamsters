@@ -6,6 +6,7 @@ import type { Building, CityMap } from "../api/contract";
 import { rng, seedOf, type Rng } from "../mock/rng";
 import { closestOnStreet, frontage } from "./geometry";
 import { overgroundRoute, routeDistance, VIADUCT_W } from "./overground";
+import { inAreaKeepout } from "./areaKeepouts";
 
 export const CELL = 4;
 /** Clear margin around real buildings, stores (bigger, so awnings breathe) and the station. */
@@ -85,6 +86,7 @@ export function occupancy(map: CityMap, cell = CELL): Grid {
             s = STREET;
             break;
           }
+      if (s === FREE && inAreaKeepout(cx, cz)) s = KEEPOUT;
       if (s === FREE && viaduct && routeDistance(viaduct, cx, cz) - halfDiag < VIADUCT_W / 2 + 2) s = KEEPOUT;
       if (s === FREE)
         for (const k of keepouts)

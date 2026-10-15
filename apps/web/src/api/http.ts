@@ -41,6 +41,7 @@ export function httpApi(base: string): Api {
     decision: ({ run, ...body }) => post(`/api/decision${run === undefined ? "" : `?run=${run}`}`, body),
     calibration: () => getOptional("/api/calibration"),
     summary: (run) => getOptional(`/api/runs/${run}/summary`),
+    footfall: (run) => getOptional(`/api/runs/${run}/footfall`),
     health: () => getOptional("/api/health"),
     insights: (storeId, run) => getOptional(`/api/stores/${encodeURIComponent(storeId)}/insights?run=${run}`),
     // the real endpoint when served, else composed from runs + store results + suggestions

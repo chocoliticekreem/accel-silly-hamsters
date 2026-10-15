@@ -90,7 +90,7 @@ export function AreaPanel() {
               </span>
             )}
             <span className="muted">
-              {fmtInt(cur.agents.total)} people · {Math.round((cur.agents.returning / Math.max(1, cur.agents.total)) * 100)}% regulars
+              {fmtInt(cur.agents.total)} sim citizens · {Math.round((cur.agents.returning / Math.max(1, cur.agents.total)) * 100)}% regulars
             </span>
           </div>
         </>
