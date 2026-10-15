@@ -119,6 +119,8 @@ export class JunctionTraffic {
       if (a.lane === b.lane && b.s - a.s < 16) b.s = Math.min(this.lanes[b.lane].len, a.s + 16);
     }
     for (const v of this.vs) this.place(v);
+    // lanes share their first and last stretches: drop any starter sitting on another (it respawns later)
+    for (const v of this.vs) if (this.vs.some((o) => o !== v && o.on && Math.hypot(o.x - v.x, o.z - v.z) < 13)) v.on = false;
   }
 
   private place(v: Vehicle) {
