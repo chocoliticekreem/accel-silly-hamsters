@@ -27,7 +27,7 @@ from typing import Any
 
 from backend import settings
 from backend.schemas import CacheStats, StoreConfig
-from backend.store import read_json, write_json
+from backend.store import read_json, read_json_recovering, write_json
 
 _lock = threading.RLock()
 
@@ -150,7 +150,9 @@ def _run_cache_path():
 
 
 def _load_run_cache() -> dict:
-    data = read_json(_run_cache_path(), {})
+    data = read_json_recovering(_run_cache_path(), {})
+    if not isinstance(data, dict):
+        data = {}
     data.setdefault("runs", {})
     data.setdefault("storeConfigs", {})
     return data
@@ -209,10 +211,20 @@ def run_lookup(key: str) -> int | None:
     run = _load_run_cache()["runs"].get(key)
     if run is not None and policy.fresh and run not in policy.session_runs:
         run = None
-    if run is not None and not (settings.RUNS_DIR / str(run) / "summary.json").exists():
+    if run is not None and not _complete(run):
         run = None
     _record("run", run is not None)
     return run
+
+
+def _complete(run: int) -> bool:
+    """A cached run is reused only when its summary.json (written last) is there and readable:
+    a run killed mid-write or damaged on disk is simulated again instead."""
+    try:
+        summary = read_json(settings.RUNS_DIR / str(run) / "summary.json")
+    except (OSError, ValueError):
+        return False
+    return isinstance(summary, dict) and "kpis" in summary
 
 
 def run_record(key: str, run: int, stores: dict[str, StoreConfig]) -> None:
@@ -225,7 +237,7 @@ def run_record(key: str, run: int, stores: dict[str, StoreConfig]) -> None:
             )
             if run not in runs:
                 runs.append(run)
-        write_json(_run_cache_path(), data)
+        write_json(_run_cache_path(), data, backup=True)
     policy.session_runs.add(run)
 
 
