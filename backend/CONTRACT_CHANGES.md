@@ -22,6 +22,7 @@ not sent as `null`.
 | New `GET /api/runs/{run}/summary` | `RunSummary` (`backend/schemas.py`) for the city view: `kpis`, `objective`, `objectiveValue`, `peakKw`, `peakHour`, `co2Kg`, `energyCostGbp`, `demandByHourKw[24]`, `footfallByHour[24]`, `agents`, `durationSec`, `cost`, `cache`. Area totals only, no store ids. |
 | New `GET /api/notebook` | Analyst lab notebook: `[{run, line, objectiveValue, at}]`, one line per run. |
 | New `GET /api/health` | `{ok, simVersion, mapSource, realRuns}`. `mapSource` is `processed`, `sample` or `missing`. |
+| New `GET /api/calibration` | `data/processed/calibration.json` as built (`CalibrationFile`): anchor `venues[]` with `name`, `storeId`, `type`, `weekday[24]`, `weekend[24]` busyness (0–100), `measured`, `source`; plus `fallback`, `notes`, `sources`. `measured: false` = a placeholder shape, never proof. 404 until the pipeline has built it (the frontend hides its calibration tab). |
 
 ## Behaviour notes (not shape changes)
 
