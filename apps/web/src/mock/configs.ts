@@ -2,6 +2,7 @@
 // analyst's next experiment batch on top. This is the mock's stand-in for the optimizer.
 import type { CityMap, LightLevel, StoreType } from "../api/contract";
 import { isOpenAt, parseHHMM } from "../sim/time";
+import { demoRoles } from "./roles";
 import { rng, seedOf } from "./rng";
 
 export interface StoreConfig {
@@ -38,24 +39,24 @@ const lit = (from: number, to: number, level: LightLevel = "high"): LightLevel[]
 
 export function baseline(map: CityMap): RunConfig {
   const cfg: RunConfig = {};
+  const lateClub = demoRoles(map).lateClub?.id;
   for (const s of map.stores) {
     const d = DEFAULTS[s.type];
     const r = rng(seedOf("base", s.id));
     const lighting = lit(d.lightOn, d.lightOff);
     // some owners leave the window lit all night
     if (s.type !== "club" && r() < 0.35) lighting.fill("high");
-    cfg[s.id] = { open: d.open, close: s.id === "c2" ? "04:00" : d.close, lighting };
+    cfg[s.id] = { open: d.open, close: s.id === lateClub ? "04:00" : d.close, lighting };
   }
   return cfg;
 }
 
 export interface Experiment {
-  /** One-line lab notebook label, e.g. "Opened Kebab Co till 03:00". */
+  /** One-line lab notebook label, e.g. "Opened Kebab Co till 03:00" (store names from the map's demo roles). */
   label: string;
   apply: (cfg: RunConfig, map: CityMap) => void;
 }
 
-const byName = (map: CityMap, name: string) => map.stores.find((s) => s.name === name);
 const ofType = (map: CityMap, ...types: StoreType[]) => map.stores.filter((s) => types.includes(s.type));
 
 function setLights(c: StoreConfig, hours: number[], level: LightLevel) {
@@ -78,16 +79,21 @@ function lightsOffWhenClosed(c: StoreConfig) {
 }
 
 /** The analyst's experiment plan, one batch per run after run 1. The last two barely move the KPI → plateau. */
-export function experiments(): Experiment[] {
+export function experiments(map?: CityMap): Experiment[] {
+  const roles = map ? demoRoles(map) : null;
+  const takeaway = roles?.takeaway.name ?? "Kebab Co";
+  const offie = roles?.offlicence.name ?? "Night Owl Offie";
+  const cafe = roles?.cafe.name ?? "Arch Coffee";
+  const late = roles ? roles.lateTakeaway?.name : "Late Pizza";
   return [
     {
       label: "Shop windows dark after close",
       apply: (cfg, map) => ofType(map, "shop").forEach((s) => lightsOffWhenClosed(cfg[s.id])),
     },
     {
-      label: "Opened Kebab Co till 03:00, low light 23–03",
+      label: `Opened ${takeaway} till 03:00, low light 23–03`,
       apply: (cfg, map) => {
-        const c = cfg[byName(map, "Kebab Co")!.id];
+        const c = cfg[demoRoles(map).takeaway.id];
         c.close = "03:00";
         setLights(c, [23, 0, 1, 2], "low");
       },
@@ -98,12 +104,12 @@ export function experiments(): Experiment[] {
         ofType(map, "cafe", "restaurant").forEach((s) => setLights(cfg[s.id], [9, 10, 11, 12, 13, 14, 15, 16].filter((h) => cfg[s.id].lighting[h] === "high"), "low")),
     },
     {
-      label: "Night Owl Offie till 04:30, Arch Coffee opens 06:30",
+      label: `${offie} till 04:30, ${cafe} opens 06:30`,
       apply: (cfg, map) => {
-        const o = byName(map, "Night Owl Offie")!;
+        const o = demoRoles(map).offlicence;
         cfg[o.id].close = "04:30";
         setLights(cfg[o.id], [0, 1, 2, 3, 4], "low");
-        const a = byName(map, "Arch Coffee")!;
+        const a = demoRoles(map).cafe;
         cfg[a.id].open = "06:30";
       },
     },
@@ -112,9 +118,9 @@ export function experiments(): Experiment[] {
       apply: (cfg, map) => ofType(map, "cafe", "restaurant", "bar", "offlicence").forEach((s) => lightsOffWhenClosed(cfg[s.id])),
     },
     {
-      label: "Late Pizza till 02:00, restaurants close 22:00",
+      label: late ? `${late} till 02:00, restaurants close 22:00` : "Restaurants close 22:00",
       apply: (cfg, map) => {
-        const p = byName(map, "Late Pizza");
+        const p = demoRoles(map).lateTakeaway;
         if (p) {
           cfg[p.id].close = "02:00";
           setLights(cfg[p.id], [22, 23, 0, 1], "low");
@@ -136,12 +142,12 @@ export const MOCK_RUN_COUNT = experiments().length + 1; // 8
 
 export function configForRun(map: CityMap, run: number): RunConfig {
   const cfg = structuredClone(baseline(map));
-  experiments()
+  experiments(map)
     .slice(0, Math.max(0, run - 1))
     .forEach((e) => e.apply(cfg, map));
   return cfg;
 }
 
-export function notebookLabel(run: number): string {
-  return run <= 1 ? "Baseline: owners' current hours and lighting" : experiments()[run - 2].label;
+export function notebookLabel(run: number, map?: CityMap): string {
+  return run <= 1 ? "Baseline: owners' current hours and lighting" : experiments(map)[run - 2].label;
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError, DAYS_PER_RUN, type DayData, type OwnerEvent } from "../api/contract";
 import { countOwnerChanges } from "../api/overviewFallback";
 import { GBP_PER_KWH, marginPerVisit } from "../sim/economics";
-import { createMockState, mockApi } from ".";
+import { schematicMockState, mockApi } from ".";
 import { aggregateDaily } from "./daily";
 import { OPTIMISE_MS, optimiseProgress } from "./optimise";
 
@@ -42,7 +42,7 @@ describe("aggregateDaily", () => {
 });
 
 describe("mock summary.daily", () => {
-  const state = createMockState();
+  const state = schematicMockState();
   const api = mockApi(state);
 
   it("has 14 days that add up to the run totals", async () => {
@@ -90,7 +90,7 @@ describe("mock optimise session", () => {
   });
 
   it("the mock api answers 409 while a session runs and shows it running", async () => {
-    const api = mockApi(createMockState());
+    const api = mockApi(schematicMockState());
     const s = await api.optimize("s1");
     expect(s.state).toBe("running");
     expect((await api.agentSession())!.state).toBe("running");
