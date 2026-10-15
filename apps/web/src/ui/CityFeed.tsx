@@ -5,6 +5,7 @@ import { Radio } from "lucide-react";
 import { useMemo } from "react";
 import { useMap, useOwnerEvents, useStreetEvents } from "../state/data";
 import { useSim } from "../state/store";
+import { IncidentFeed } from "./IncidentFeed";
 import { ACTION_ICON, feedItems, momentLabel, STREET_ICON, type FeedItem } from "./ownerFormat";
 
 export interface CityFeedProps {
@@ -68,6 +69,7 @@ export function CityFeed({ run: runProp, windowHours = 24, limit = 6, className 
           )}
         </div>
       )}
+      <IncidentFeed run={run} t={t} windowMin={windowHours * 60} />
       {rows.length ? (
         <ol className="city-feed-list">
           {rows.map((i) => {

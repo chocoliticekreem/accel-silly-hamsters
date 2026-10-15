@@ -24,6 +24,10 @@ import StreetDressing from "./modules/StreetDressing";
 import StreetEvents from "./modules/StreetEvents";
 import Streets from "./modules/Streets";
 import Traffic from "./modules/Traffic";
+import ClubLife from "./modules/ClubLife";
+import Incidents from "./modules/Incidents";
+import Interiors from "./modules/Interiors";
+import Police from "./modules/Police";
 
 export const MODULES: Record<string, ComponentType> = {
   Sky,
@@ -39,6 +43,10 @@ export const MODULES: Record<string, ComponentType> = {
   StreetDressing,
   StreetEvents,
   Traffic,
+  ClubLife,
+  Interiors,
+  Incidents,
+  Police,
   Footfall,
   Agents,
   CameraRig,
