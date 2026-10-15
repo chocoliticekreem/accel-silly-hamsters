@@ -77,9 +77,9 @@ export default function CameraRig() {
       const target = new Vector3(x, req.y ?? 0, z);
       const off = camera.position.clone().sub(controls.target);
       const azimuth = Math.atan2(off.x, off.z);
-      const polar = 0.95;
+      const polar = req.polar ?? 0.95;
       const dir = new Vector3(Math.sin(polar) * Math.sin(azimuth), Math.cos(polar), Math.sin(polar) * Math.cos(azimuth));
-      fly.current = { target, position: target.clone().add(dir.multiplyScalar(req.dist)), k: 0 };
+      fly.current = { target, position: req.position ? new Vector3(...req.position) : target.clone().add(dir.multiplyScalar(req.dist)), k: 0 };
       shared.leader = id;
     }
     const f = fly.current;
