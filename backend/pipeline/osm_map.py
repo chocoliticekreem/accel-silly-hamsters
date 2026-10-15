@@ -71,7 +71,7 @@ APPROX_ORIGIN = (51.5233, -0.0754)  # Shoreditch High Street station, refined fr
 # spare for edge clipping.
 QUERY_HALF_SIZE_M = 850.0
 EARTH_RADIUS_M = 6_371_008.8
-MAP_BUILDER_VERSION = 4  # bump when the processing changes, so the pipeline cache rebuilds
+MAP_BUILDER_VERSION = 5  # bump when the processing changes, so the pipeline cache rebuilds
 
 # Street network simplification, in metres.
 JUNCTION_MERGE_M = 12.0  # junction nodes this close become one (dual carriageways, junction boxes)
@@ -135,6 +135,16 @@ TYPE_TARGETS: dict[StoreType, int] = {
     "offlicence": 6,
 }
 MIN_CLUBS, MAX_CLUBS = 2, 4  # late-opening bars are promoted when OSM has too few nightclubs
+# Venues OpenStreetMap still lists that have closed, with the source that says so. OSM lags reality
+# in nightlife; a closed club would fake a crowd at closing time and a demo venue judges can check.
+CLOSED_VENUES: dict[str, str] = {
+    "club aquarium": (
+        "Closed by Islington Council (licence suspended Jan 2020, "
+        "https://www.timeout.com/london/news/nightlife-news-old-streets-club-aquarium-has-had-its-"
+        "licence-suspended-011720); the site was later relicensed as a different venue "
+        "(https://www.islingtontribune.co.uk/article/former-aquarium-nightspot-gets-2am-licence)"
+    ),
+}
 AMENITY_TYPES: dict[str, StoreType] = {
     "cafe": "cafe",
     "restaurant": "restaurant",
@@ -1581,6 +1591,8 @@ def venue_candidates(
         store_type = _venue_type(tags)
         name = tags.get("name", "").strip()
         if store_type is None or not name or not _inside(point, inset=5.0):
+            continue
+        if name.lower() in CLOSED_VENUES:
             continue
         fp, shares_building = _resolve_footprint(key, tags, point, ring, buildings)
         if fp is not None and station_fp is not None and fp.key == station_fp.key:

@@ -672,6 +672,7 @@ def test_processed_map_is_the_osm_build() -> None:
     clubs = {s.name for s in data.stores if s.type == "club"}
     assert "Village Underground" in clubs, "the real nightclub on Holywell Lane"
     assert "XOYO" in clubs, "the Cowper Street nightclub, just inside the west edge"
+    assert not {s.name.lower() for s in data.stores} & set(osm_map.CLOSED_VENUES), "closed venue"
     assert 2000 <= len(data.buildings) <= osm_map.MAX_BUILDINGS
 
 
