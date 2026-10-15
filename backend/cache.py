@@ -5,6 +5,7 @@ Layers and where they live:
   scrape    raw scraped data / API responses                           data/raw/{source}/{key}.json
   pipeline  processed outputs, rebuilt only when inputs change         data/processed/.hashes.json
   run       finished sim runs, keyed by configs + seed + sim version   runs/cache.json
+            + the processed files the run was simulated on
   prompt    Claude API prompt caching: always on, handled in llm.py (it never changes outputs)
 
 Policy:
@@ -155,11 +156,38 @@ def _load_run_cache() -> dict:
     return data
 
 
+# The processed files a run is simulated from (sim.engine.load_world). A map rebuild renumbers the
+# stores and a demand rebuild changes who arrives, so a run made on other data is never reused.
+SIM_INPUTS = ("map.json", "personas.json", "demand.json", "energy.json")
+_inputs_hashes: dict[tuple, str] = {}
+
+
+def sim_inputs_hash() -> str:
+    """Content hash of SIM_INPUTS, memoised on each file's (path, mtime_ns, size)."""
+    paths = [settings.PROCESSED_DIR / name for name in SIM_INPUTS]
+    stamp = tuple(
+        (str(p), p.stat().st_mtime_ns, p.stat().st_size) if p.exists() else (str(p), None, None)
+        for p in paths
+    )
+    if stamp not in _inputs_hashes:
+        digest = hashlib.sha256()
+        for name, path in zip(SIM_INPUTS, paths, strict=True):
+            digest.update(name.encode())
+            digest.update(path.read_bytes() if path.exists() else b"")
+        _inputs_hashes[stamp] = digest.hexdigest()[:16]
+    return _inputs_hashes[stamp]
+
+
 def run_key(stores: dict[str, StoreConfig], seed: int, *, allow_closure: bool = False) -> str:
-    """Configs + seed + sim version, plus the owner-adaptation switches when adaptation is on
-    (so runs with and without adaptation never share a cache entry; off keeps the old keys)."""
+    """Configs + seed + sim version + the processed inputs, plus the owner-adaptation switches
+    when adaptation is on (so runs with and without adaptation never share a cache entry)."""
     configs = {sid: c.model_dump(mode="json") for sid, c in sorted(stores.items())}
-    key: dict = {"stores": configs, "seed": seed, "simVersion": settings.SIM_VERSION}
+    key: dict = {
+        "stores": configs,
+        "seed": seed,
+        "simVersion": settings.SIM_VERSION,
+        "data": sim_inputs_hash(),
+    }
     if settings.OWNER_ADAPTATION:
         key["owners"] = 2  # owner-logic version: bump when owners decide differently
         if allow_closure:
@@ -168,7 +196,9 @@ def run_key(stores: dict[str, StoreConfig], seed: int, *, allow_closure: bool = 
 
 
 def store_config_hash(config: StoreConfig) -> str:
-    return stable_hash(config)
+    """One store's config on the current processed data: after a map rebuild the same store id
+    can be a different shop, so its tried configs start over."""
+    return stable_hash({"config": config.model_dump(mode="json"), "data": sim_inputs_hash()})
 
 
 def run_lookup(key: str) -> int | None:

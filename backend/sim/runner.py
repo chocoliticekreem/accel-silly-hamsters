@@ -117,9 +117,9 @@ def execute_run(
     With owner adaptation on, an owner may close for good only in a run whose parent is not the
     baseline (docs/OWNER_ACTIONS.md: never in run 1 of a session).
 
-    Returns the run id. On a run-cache hit (same configs + seed + SIM_VERSION, honouring the
-    cache policy) returns the cached run id without simulating. `run_id` lets the API reserve
-    an id first (POST /api/apply answers with it before the run finishes).
+    Returns the run id. On a run-cache hit (same configs + seed + SIM_VERSION + processed data,
+    honouring the cache policy) returns the cached run id without simulating. `run_id` lets the
+    API reserve an id first (POST /api/apply answers with it before the run finishes).
 
     The index item reads "running" while the run simulates, then "done" with its KPIs (or
     "failed" if the simulation raised). summary.json is written last: its presence marks the run
