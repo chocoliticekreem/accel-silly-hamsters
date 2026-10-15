@@ -1,6 +1,7 @@
 // Areas that a hand-built area module fills itself from real OSM data, so the generic Infill planner leaves them
 // alone (no made-up blocks on top of real gardens, yards and buildings). Contract coords (x east, z north).
 // Area modules add their outline here; keep each entry one polygon.
+import { OLD_STREET_AREA, OLD_STREET_HIDDEN_BUILDINGS, WHITE_COLLAR_AREA } from "./oldStreetArea";
 
 export interface AreaKeepout {
   name: string;
@@ -35,6 +36,8 @@ export const GOODSYARD_AREA: [number, number][] = [
 export const AREA_KEEPOUTS: AreaKeepout[] = [
   { name: "Hoxton", poly: HOXTON_AREA },
   { name: "Goodsyard", poly: GOODSYARD_AREA },
+  { name: "Old Street", poly: OLD_STREET_AREA },
+  { name: "White Collar Factory", poly: WHITE_COLLAR_AREA },
 ];
 
 export function inPoly(x: number, z: number, poly: [number, number][]): boolean {
@@ -48,7 +51,7 @@ export function inPoly(x: number, z: number, poly: [number, number][]): boolean 
 }
 
 /** Map buildings an area module redraws itself (the Buildings module skips them). b579: Best Mangal, Hoxton. */
-export const REPLACED_BUILDINGS: ReadonlySet<string> = new Set(["b579"]);
+export const REPLACED_BUILDINGS: ReadonlySet<string> = new Set(["b579", ...OLD_STREET_HIDDEN_BUILDINGS]);
 
 /** Is (x, z) inside any area module's own patch? */
 export const inAreaKeepout = (x: number, z: number) => AREA_KEEPOUTS.some((a) => inPoly(x, z, a.poly));
