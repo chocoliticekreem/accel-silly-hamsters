@@ -36,7 +36,7 @@ interface Saved {
 }
 
 function load(): Saved {
-  const def: Saved = { level: "high", auto: true, tiltShift: true };
+  const def: Saved = { level: "medium", auto: true, tiltShift: true };
   if (typeof window === "undefined") return def;
   try {
     const forced = new URLSearchParams(window.location.search).get("gfx");
