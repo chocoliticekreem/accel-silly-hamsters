@@ -79,3 +79,41 @@ sets are aggregated by hour when `limit` would be exceeded.
 - Owner page (`/store/:id`): "Your money this fortnight": business balance line over 14 days with takings and
   costs breakdown, from `/owners` (+ ledger for detail).
 - City feed: "Day 9 · Sam closed early: cash is tight" when a money reason drives a decision.
+
+## What makes it memorable (from the design notes)
+
+Scale gets attention; individual stories and counterfactuals are what judges remember.
+
+### 1. Click anyone, read their life (biography)
+
+Every person has a short story built from their own events and ledger, plain English, three to five lines:
+"Sam opened Dumbo at 11:00 after a 14-minute walk from Arnold Circus. Busy lunch, quiet afternoon. Roadworks
+on Bethnal Green Rd cut takings on Wednesday, so Sam shut at 15:00. Down £40 this week, still trading."
+Citizens get the same: where they came from, where they went, what they spent.
+
+New `GET /api/runs/{run}/people/{personId}` → `{ personId, role, name?, persona, home, story: string[], spentGbp?,
+balance?: { daily: number[] }, visits: [{ storeId, day, tIn, tOut, spentGbp }] }` (store-scoped data only for
+owners; citizens are synthetic archetypes, no real person).
+
+### 2. Intervene: fork the same 14 days
+
+An "Intervene" button with a few levers: close Shoreditch High St station (a day or all fortnight), roadworks
+on a chosen street, double the electricity price, a big event at the club, a rainy week. The sim forks from the
+baseline snapshot with the intervention applied (same seed, so the only difference is the change) and the UI
+shows the two side by side on one clock, with the area deltas.
+
+New `POST /api/interventions` `{ kind, params, baseRun? }` → `{ queuedRun }` (poll /api/runs as for apply);
+the run's `run.json` records `intervention: { kind, params, label }` and `GET /api/runs` items may add
+`intervention?: { kind, label }`. Kinds: `station_closed | roadworks | energy_price | club_event | rain`.
+
+### 3. Heatmaps
+
+Toggle the 3D ground between wealth (owners' and residents' balances by home), footfall, and missed demand
+(people who found a shop shut). From day files + `/owners` (frontend can compute; no new endpoint needed).
+
+### 4. A journalist writes the day's headline
+
+One notable LLM-written character (cheap: one short call per sim day, cached; heuristic fallback offline)
+reads the day's area numbers, street events and owner decisions and writes a one-line headline:
+"Brick Lane digs up, four shops shut early; club crowd keeps Kebab Co busy till 3."
+New `GET /api/runs/{run}/headlines` → `[{ day, text }]`.
