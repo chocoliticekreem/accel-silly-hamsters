@@ -2,15 +2,16 @@
 import type { BuildingKind, LightLevel, StoreType } from "../api/contract";
 
 export const PERSONA_COLORS: Record<string, string> = {
-  commuter: "#7fb2ff",
-  resident: "#9be0b4",
-  student: "#ffb37a",
-  shopper: "#f7a1c4",
-  "night-owl": "#c79bff",
-  tourist: "#ffe08a",
-  foodie: "#ff8f8f",
+  commuter: "#3d7fe0",
+  resident: "#2fae6a",
+  student: "#f08a2c",
+  shopper: "#e0559a",
+  "night-owl": "#a463ff",
+  tourist: "#f2c230",
+  foodie: "#e34b4b",
+  "passer-by": "#7d8aa0",
 };
-export const PERSONA_FALLBACK = "#d8dee9";
+export const PERSONA_FALLBACK = "#b8c1d1";
 export const personaColor = (p: string) => PERSONA_COLORS[p] ?? PERSONA_FALLBACK;
 
 /** Soft pastel store bodies; awnings use the stronger accent. */
@@ -25,7 +26,7 @@ export const STORE_COLORS: Record<StoreType, { body: string; awning: string; ico
 };
 
 export const BUILDING_COLORS: Record<BuildingKind, string> = {
-  residential: "#b9a79a",
+  residential: "#a39388",
   office: "#9fb0c4",
   station: "#c9ced6",
   store: "#e0d6c8",

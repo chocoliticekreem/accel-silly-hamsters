@@ -78,13 +78,22 @@ export function mockApi(state: MockState = createMockState()): Api {
 
   return {
     map: () => later(() => map),
-    runs: () => later(() => state.runs()),
+    runs: async () => {
+      // simulate runs one by one, yielding between them, so the first paint isn't blocked
+      for (let r = 1; r <= MOCK_RUN_COUNT; r++) {
+        state.result(r);
+        await new Promise((res) => setTimeout(res, 0));
+      }
+      return later(() => state.runs());
+    },
     runStores: (run) => later(() => state.result(run).stores),
     day: (run, day) => later(() => state.result(run).days[day - 1], 30),
+    // what the store agents propose from this run: the diff to the best config the analyst found
     suggestions: (run) =>
-      later(() =>
-        run >= MOCK_RUN_COUNT ? [] : suggestionsBetween(state.config(run), state.config(run + 1), state.result(run).stores, state.result(run + 1).stores),
-      ),
+      later(() => {
+        const best = state.bestRun();
+        return run >= best ? [] : suggestionsBetween(state.config(run), state.config(best), state.result(run).stores, state.result(best).stores);
+      }),
     apply: (req) => later(() => ({ queuedRun: Math.max(req.run, MOCK_RUN_COUNT) + 1 })),
     analyst: () =>
       later<AnalystStatus>(() => ({

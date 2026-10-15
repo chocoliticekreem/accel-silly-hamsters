@@ -12,8 +12,8 @@ import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { personaColor } from "../palette";
 
-const CAPACITY = 1500;
-const SCALE = 1.6; // cartoon scale: readable from the default camera
+const CAPACITY = 4000;
+const SCALE = 2; // cartoon scale: readable from the default camera
 
 export default function Agents() {
   const { run, live } = useWorld();
@@ -24,7 +24,7 @@ export default function Agents() {
   const { geo, mat } = useMemo(
     () => ({
       geo: new CapsuleGeometry(0.55, 1.1, 4, 8).translate(0, 1.1, 0),
-      mat: new MeshStandardMaterial({ roughness: 0.55, emissive: "#ffffff", emissiveIntensity: 0.08 }),
+      mat: new MeshStandardMaterial({ roughness: 0.7 }),
     }),
     [],
   );

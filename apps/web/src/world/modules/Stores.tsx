@@ -116,7 +116,7 @@ function StoreBox({ store, b, nx, nz }: { store: Store; b: Building; nx: number;
         {/* roof lip */}
         <mesh position-y={h + 0.25}>
           <boxGeometry args={[width + 0.5, 0.5, depth + 0.5]} />
-          <meshStandardMaterial color={isClub ? "#251f35" : "#9a8f86"} roughness={1} />
+          <meshStandardMaterial color={isClub ? "#251f35" : colors.awning} roughness={0.9} />
         </mesh>
         {/* shop window: the lit facade */}
         <mesh position={[0, 0.4 + glassH / 2, depth / 2 + 0.06]}>

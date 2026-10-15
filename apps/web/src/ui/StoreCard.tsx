@@ -90,7 +90,7 @@ export function StoreCard() {
       {!isClub && (
         <>
           <h3 className="section-title">
-            Next experiment <span className="muted">run {run} → {run + 1}</span>
+            Suggestions <span className="muted">{mine.length} change{mine.length === 1 ? "" : "s"}</span>
           </h3>
           {suggestions ? <SuggestionList items={mine} /> : <div className="empty">…</div>}
           <div className="btn-row">
