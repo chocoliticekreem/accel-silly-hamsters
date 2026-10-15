@@ -54,7 +54,7 @@ export function createMockState(): MockState {
     });
     return summaries;
   };
-  const bestRun = () => runs().reduce((best, r) => (r.kpis.visitsPerKwh > best.kpis.visitsPerKwh ? r : best)).run;
+  const bestRun = () => runs().reduce((best, r) => ((r.kpis?.visitsPerKwh ?? 0) > (best.kpis?.visitsPerKwh ?? 0) ? r : best)).run;
   return { map, config, result, runs, bestRun, decisions: [] };
 }
 

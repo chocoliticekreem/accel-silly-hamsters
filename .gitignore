@@ -19,3 +19,6 @@ data/raw/
 data/cache/
 runs/*
 !runs/0/
+
+# local browser automation output
+.playwright-mcp/

@@ -77,8 +77,9 @@ export interface RunKpis {
 export interface RunSummary {
   run: number;
   seed: number;
-  status: "queued" | "running" | "done";
-  kpis: RunKpis;
+  status: "queued" | "running" | "done" | "failed";
+  /** null until the run is done. */
+  kpis: RunKpis | null;
   /** One-line analyst lab notebook entry. */
   notebook: string;
   createdAt: string;
@@ -155,10 +156,14 @@ export interface ApplyResponse {
 
 export interface AnalystStatus {
   state: "running" | "stopped";
-  startedAt: string;
+  /** null before the first training session. */
+  startedAt: string | null;
   iterations: number;
-  bestRun: number;
-  stoppedReason: "threshold" | "max_runs" | null;
+  bestRun: number | null;
+  /** budget = spend cap reached (hard stop); error = the session crashed and can resume. */
+  stoppedReason: "threshold" | "max_runs" | "budget" | "error" | null;
+  /** The session's untouched starting run (compare mode's left side). */
+  baselineRun?: number | null;
 }
 
 // ---------- GET /api/stores/{storeId}/report?run={run} ----------

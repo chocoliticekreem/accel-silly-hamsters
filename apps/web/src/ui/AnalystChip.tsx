@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { useAnalyst, useRuns } from "../state/data";
 import { duration } from "./format";
 
+const STOP_LABELS = { threshold: "plateau", max_runs: "max runs", budget: "budget cap", error: "crashed, resumable" } as const;
+
 export function AnalystChip({ onClick }: { onClick?: () => void }) {
   const a = useAnalyst().data;
   const runs = useRuns().data;
@@ -14,10 +16,10 @@ export function AnalystChip({ onClick }: { onClick?: () => void }) {
   }, [a?.state]);
   if (!a) return <div className="chip">Analyst …</div>;
 
-  const start = Date.parse(a.startedAt);
+  const start = a.startedAt ? Date.parse(a.startedAt) : NaN;
   const lastRun = runs?.length ? Date.parse(runs[runs.length - 1].createdAt) : start;
   const end = a.state === "running" ? now : lastRun;
-  const reason = a.stoppedReason === "threshold" ? "plateau" : a.stoppedReason === "max_runs" ? "max runs" : null;
+  const reason = a.stoppedReason ? STOP_LABELS[a.stoppedReason] : null;
 
   return (
     <button className={`chip chip-analyst ${a.state}`} onClick={onClick} title="Open history">
@@ -26,7 +28,7 @@ export function AnalystChip({ onClick }: { onClick?: () => void }) {
         Analyst <b>{a.state}</b>
       </span>
       {reason && <span className="muted">· {reason}</span>}
-      <span className="muted">· {duration(end - start)}</span>
+      {Number.isFinite(end - start) && <span className="muted">· {duration(end - start)}</span>}
       <span className="muted">· {a.iterations} experiments</span>
     </button>
   );

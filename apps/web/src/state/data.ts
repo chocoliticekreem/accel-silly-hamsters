@@ -51,7 +51,7 @@ export function useResource<T>(key: string | null, loader: () => Promise<T>): Re
 export const useMap = () => useResource<CityMap>("map", () => api.map());
 export const useRuns = () => useResource<RunSummary[]>("runs", () => api.runs());
 export const useAnalyst = () => useResource<AnalystStatus>("analyst", () => api.analyst());
-export const useRunStores = (run: number | null) => useResource<RunStores>(run ? `stores:${run}` : null, () => api.runStores(run!));
+export const useRunStores = (run: number | null) => useResource<RunStores>(run == null ? null : `stores:${run}`, () => api.runStores(run!));
 export const useSuggestions = (run: number) => useResource<Suggestion[]>(`suggestions:${run}`, () => api.suggestions(run));
 export const useReport = (storeId: string | null, run: number) =>
   useResource<OwnerReport>(storeId ? `report:${storeId}:${run}` : null, () => api.report(storeId!, run));

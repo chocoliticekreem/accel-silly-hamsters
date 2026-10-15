@@ -6,19 +6,21 @@ import { change, fmtNum } from "./format";
 
 export function CompareView() {
   const map = useMap().data;
-  const best = useAnalyst().data?.bestRun ?? 1;
+  const analyst = useAnalyst().data;
+  const base = analyst?.baselineRun ?? 1;
+  const best = analyst?.bestRun ?? base;
   const runs = useRuns().data;
-  const left = useRunStores(1).data;
+  const left = useRunStores(base).data;
   const right = useRunStores(best).data;
   if (!map) return null;
-  const k1 = runs?.find((r) => r.run === 1)?.kpis;
+  const k1 = runs?.find((r) => r.run === base)?.kpis;
   const kb = runs?.find((r) => r.run === best)?.kpis;
   return (
     <div className="compare">
       <div className="compare-pane">
-        <World map={map} run={1} stores={left} cameraGroup="compare" />
+        <World map={map} run={base} stores={left} cameraGroup="compare" />
         <div className="compare-label panel">
-          <b>Run 1</b> <span className="muted">owners today</span>
+          <b>Run {base}</b> <span className="muted">owners today</span>
           {k1 && <span className="mono">{fmtNum(k1.visitsPerKwh)} v/kWh</span>}
         </div>
       </div>
