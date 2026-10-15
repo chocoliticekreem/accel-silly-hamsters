@@ -1,3 +1,6 @@
 {
-  "rewrites": [{ "source": "/store/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/store/(.*)", "destination": "/index.html" },
+    { "source": "/agents(.*)", "destination": "/index.html" }
+  ]
 }
