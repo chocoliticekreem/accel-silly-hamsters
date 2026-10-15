@@ -1,0 +1,26 @@
+[
+  {
+    "storeId": "s3",
+    "field": "close",
+    "from": "23:00",
+    "to": "03:00",
+    "expectedDelta": {
+      "visits": 0.18,
+      "kwh": 0.05
+    }
+  },
+  {
+    "storeId": "s3",
+    "field": "lighting",
+    "hours": [
+      1,
+      2
+    ],
+    "from": "off",
+    "to": "low",
+    "expectedDelta": {
+      "visits": 0.04,
+      "kwh": 0.01
+    }
+  }
+]

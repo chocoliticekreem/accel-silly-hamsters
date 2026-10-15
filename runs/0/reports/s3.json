@@ -1,0 +1,33 @@
+{
+  "storeId": "s3",
+  "changes": [
+    {
+      "storeId": "s3",
+      "field": "close",
+      "from": "23:00",
+      "to": "03:00",
+      "expectedDelta": {
+        "visits": 0.18,
+        "kwh": 0.05
+      }
+    }
+  ],
+  "impact": {
+    "visits": 0.12,
+    "kwh": -0.08,
+    "gbpPerWeek": 34.0
+  },
+  "confidence": "medium",
+  "evidence": [
+    {
+      "label": "Sample: Popular Times, Fri nights",
+      "url": "https://besttime.app"
+    },
+    {
+      "label": "Sample: TfL station entries/exits",
+      "url": "https://tfl.gov.uk/info-for/open-data-users/"
+    }
+  ],
+  "pdfUrl": "/files/reports/0/s3.pdf",
+  "note": "Sample report (hand-made). Simulated, not guaranteed."
+}
