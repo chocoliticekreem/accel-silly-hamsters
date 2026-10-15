@@ -23,7 +23,7 @@ function Row({ v, sim, name, onMap }: { v: CalibrationVenue; sim: number[] | und
           <b>{onMap ? name : v.storeId}</b>
           <span className="muted">{v.name}</span>
           {!v.measured && <span className="tag tag-warn">placeholder</span>}
-          {!onMap && <span className="tag">not on this map</span>}
+          {!onMap && <span className="tag" title="This store is not on the current map">off map</span>}
         </div>
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-label={`${name}: sim vs target by hour`}>
           <path d={`${path(target)} L${W},${H} L0,${H} Z`} className="calib-target-area" />
