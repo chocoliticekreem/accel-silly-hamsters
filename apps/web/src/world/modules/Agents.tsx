@@ -62,7 +62,10 @@ export default function Agents() {
     [agents],
   );
 
-  useFrame(({ clock }) => {
+  // per-agent side-step (scene metres), kept across frames and eased so agents glide apart instead of jumping
+  const offsets = useMemo(() => ({ x: new Float32Array(agents.length), z: new Float32Array(agents.length), baseX: new Float32Array(CAPACITY), baseZ: new Float32Array(CAPACITY) }), [agents]);
+
+  useFrame(({ clock }, delta) => {
     const t = useSim.getState().t;
     const time = clock.elapsedTime;
     // a faint self-glow at night so people stay readable against dark streets
@@ -81,8 +84,10 @@ export default function Agents() {
       const s = sampleAgent(a, t);
       if (!s.visible) continue;
       const [x, z] = toScene(s.x, s.z);
-      obstacles.xs[n] = x;
-      obstacles.zs[n] = z;
+      offsets.baseX[n] = x;
+      offsets.baseZ[n] = z;
+      obstacles.xs[n] = x + offsets.x[i];
+      obstacles.zs[n] = z + offsets.z[i];
       // sampleAgent's heading is in contract coords (atan2(dx, dz)); the scene flips z
       placed.heading[n] = Math.PI - s.heading;
       placed.phase[n] = time * 8 + looks[i].stride;
@@ -93,8 +98,15 @@ export default function Agents() {
     // step apart anyone sharing a spot; the background crowd then avoids these positions (obstacles)
     sep.separate(obstacles.xs, obstacles.zs, n, MIN_GAP, { maxPush: MAX_PUSH });
     obstacles.n = n;
+    const ease = Math.min(1, Math.min(delta, 0.1) * 4);
     for (let q = 0; q < n; q++) {
-      const look = looks[placed.who[q]];
+      const i = placed.who[q];
+      offsets.x[i] += (obstacles.xs[q] - offsets.baseX[q] - offsets.x[i]) * ease;
+      offsets.z[i] += (obstacles.zs[q] - offsets.baseZ[q] - offsets.z[i]) * ease;
+      // the crowd avoids where agents are actually drawn
+      obstacles.xs[q] = offsets.baseX[q] + offsets.x[i];
+      obstacles.zs[q] = offsets.baseZ[q] + offsets.z[i];
+      const look = looks[i];
       const phase = placed.phase[q];
       const moving = placed.moving[q] === 1;
       people.set(q, obstacles.xs[q], moving ? Math.abs(Math.sin(phase)) * 0.08 : 0, obstacles.zs[q], placed.heading[q], phase, moving, SCALE, look.shirt, look.trousers, look.skin);
