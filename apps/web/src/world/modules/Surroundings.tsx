@@ -67,9 +67,10 @@ function build(map: CityMap) {
     const len = Math.hypot(bx - ax, bz - az);
     return { x: (ax + bx) / 2, y, z: (az + bz) / 2, sx: rd.width + widen, sy: 1, sz: len + rd.width * 0.6, rot: Math.atan2(bx - ax, bz - az) };
   };
-  const roads = plan.roads.map((rd) => roadInst(rd, 0.02));
+  // below every map road class (sim/roadLayers ROAD_TOP) so the joins never share a plane
+  const roads = plan.roads.map((rd) => roadInst(rd, 0.035));
   // kerbside pavement strips under the main roads read as wide streets from above
-  const pavements = plan.roads.filter((rd) => rd.main).map((rd) => roadInst(rd, 0.0, 6));
+  const pavements = plan.roads.filter((rd) => rd.main).map((rd) => roadInst(rd, -0.012, 6));
   // centre dashes on the main roads near the map
   const dashes: Inst[] = [];
   for (const rd of plan.roads) {
@@ -118,7 +119,7 @@ function build(map: CityMap) {
   for (let i = 0; i < THAMES.points.length - 1; i++) {
     const [ax, az] = toScene(...THAMES.points[i]);
     const [bx, bz] = toScene(...THAMES.points[i + 1]);
-    river.push({ x: (ax + bx) / 2, y: 0.05, z: (az + bz) / 2, sx: THAMES.width, sy: 1, sz: Math.hypot(bx - ax, bz - az) + THAMES.width * 0.5, rot: Math.atan2(bx - ax, bz - az) });
+    river.push({ x: (ax + bx) / 2, y: -0.08, z: (az + bz) / 2, sx: THAMES.width, sy: 1, sz: Math.hypot(bx - ax, bz - az) + THAMES.width * 0.5, rot: Math.atan2(bx - ax, bz - az) });
   }
   // main-road traffic: each car drives one road segment back and forth
   const mains = plan.roads.filter((rd) => rd.main && Math.hypot(...rd.a) < 2000);
