@@ -202,6 +202,7 @@ def test_sample_run_is_complete_valid_and_small() -> None:
     files = {p.relative_to(SAMPLE_DIR).as_posix() for p in SAMPLE_DIR.rglob("*") if p.is_file()}
     days = {f"days/{d}.json" for d in range(1, 15)}
     expected = {"run.json", "config.json", "stores.json", "suggestions.json", "summary.json"}
+    expected |= {"owner_events.json", "street_events.json"}
     assert files == expected | days | {"map.json", "reports/s3.json", "reports/s3.pdf"}
     assert sum(p.stat().st_size for p in SAMPLE_DIR.rglob("*") if p.is_file()) < 300_000
 

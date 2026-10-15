@@ -1,0 +1,42 @@
+[
+  {
+    "day": 3,
+    "t": 2880,
+    "storeId": "s1",
+    "action": "hours_changed",
+    "from": "23:00",
+    "to": "00:00",
+    "reason": "People kept finding us shut after 23:00, staying open till 00:00.",
+    "trigger": { "kind": "missed_demand", "value": 6.0, "label": "6 a day found us shut after 23:00" }
+  },
+  {
+    "day": 5,
+    "t": 7140,
+    "storeId": "s1",
+    "action": "open_late",
+    "from": "00:00",
+    "to": "04:00",
+    "reason": "Club crowd outside, staying open till 04:00 tonight.",
+    "trigger": { "kind": "club_night", "value": 4.0, "label": "4 at the door after the last club night" }
+  },
+  {
+    "day": 6,
+    "t": 7200,
+    "storeId": "s4",
+    "action": "lighting_changed",
+    "from": "low",
+    "to": "off",
+    "reason": "Window lights off while we're shut, nobody walks past.",
+    "trigger": { "kind": "lights_waste", "value": 0.6, "label": "0.6 kWh a day lighting an empty street" }
+  },
+  {
+    "day": 9,
+    "t": 12180,
+    "storeId": "s3",
+    "action": "shut_early",
+    "from": "23:00",
+    "to": "11:30",
+    "reason": "Roadworks outside, nobody can get in, shutting at 11:30.",
+    "trigger": { "kind": "roadworks", "value": 0.62, "label": "visits −62% vs usual" }
+  }
+]

@@ -1,0 +1,5 @@
+[
+  { "day": 1, "fromT": 450, "toT": 570, "kind": "heavy_traffic", "streetId": "shoreditch-high-st", "label": "Heavy traffic, Shoreditch High St", "severity": 0.4 },
+  { "day": 4, "fromT": 5640, "toT": 5940, "kind": "club_night", "streetId": "shoreditch-high-st", "label": "Club night, Basement Club", "severity": 1.0 },
+  { "day": 9, "fromT": 11940, "toT": 12660, "kind": "roadworks", "streetId": "redchurch-st", "label": "Roadworks, Redchurch St", "severity": 0.65 }
+]

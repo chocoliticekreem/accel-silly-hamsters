@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from backend import timeutil
-from backend.contract import DAYS, Kpis, StoreKpis, StoreRunResult
+from backend.contract import DAYS, Kpis, ScheduleEntry, StoreKpis, StoreRunResult
 from backend.schemas import StoreConfig, StoreStats
 from backend.sim import energy as energy_model
 from backend.sim.engine import SimOutput, World
@@ -91,6 +91,8 @@ def build_results(world: World, configs: Mapping[str, StoreConfig], out: SimOutp
                 returnRate=round(repeat / unique, 4) if unique else 0.0,
             ),
             visitsByHour=_round(by_hour[i] / DAYS),
+            schedule=_schedule(out.schedules.get(s.id)),
+            closedFromDay=out.closed_from.get(s.id),
         )
         stats[s.id] = StoreStats(
             visitsByHourWeekday=_round(weekday[i] / WEEKDAYS_IN_RUN),
@@ -115,6 +117,10 @@ def build_results(world: World, configs: Mapping[str, StoreConfig], out: SimOutp
         footfall_by_hour=_round(out.area_footfall / DAYS),
         agents={"returning": len(returning), "oneOff": one_off, "total": len(returning) + one_off},
     )
+
+
+def _schedule(entries: list[dict] | None) -> list[ScheduleEntry] | None:
+    return None if entries is None else [ScheduleEntry.model_validate(e) for e in entries]
 
 
 def run_kpis(
