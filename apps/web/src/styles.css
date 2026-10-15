@@ -2633,22 +2633,29 @@ button.chip:disabled {
 
 /* Go-to bar: teleport to landmarks, always visible top-centre */
 .goto-bar {
+  /* its own row across the top, right of the HUD; wraps on narrow screens. .top-right sits below it (--goto-h). */
   position: absolute;
   top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 380px;
+  right: 16px;
   z-index: 20;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 999px;
-  background: var(--glass);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--line);
+  gap: 4px;
   pointer-events: auto;
-  max-width: calc(100vw - 32px);
-  overflow-x: auto;
+}
+.goto-bar > .goto-label { display: none; }
+.goto-bar .goto-btn,
+.goto-bar .goto-enter {
+  backdrop-filter: blur(12px);
+  background: var(--glass);
+}
+.goto-bar .goto-hero { background: var(--lamp); }
+.top-right { top: calc(20px + var(--goto-h, 40px)); }
+@media (max-width: 900px) {
+  .goto-bar { left: 16px; }
 }
 .goto-label {
   font-family: var(--mono);
@@ -2663,12 +2670,12 @@ button.chip:disabled {
   align-items: center;
   gap: 6px;
   white-space: nowrap;
-  padding: 7px 12px;
+  padding: 6px 10px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
-  font: 600 13px var(--font);
+  font: 600 12px var(--font);
   cursor: pointer;
 }
 .goto-btn:hover { background: rgba(255, 255, 255, 0.12); }

@@ -76,7 +76,7 @@ export default function Skyline() {
 
   useFrame(() => {
     const n = nightLevel(hourOf(useSim.getState().t));
-    for (const { mat } of parts) mat.emissiveIntensity = n * 0.9;
+    for (const { mat } of parts) mat.emissiveIntensity = n * 0.4; // far + minified: keep it a glow, not a lamp
   });
 
   return (

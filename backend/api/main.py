@@ -15,9 +15,9 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from backend import settings, store
-from backend.api import common
+from backend.api import common, footfall
 from backend.api.routers import agents, city, insights, reports, runs, stores, training
-from backend.contract import Model
+from backend.contract import Model, Optional
 
 # Any localhost port: Vite moves to the next free port when 5173 is taken.
 LOCAL_ORIGIN_REGEX = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
@@ -51,14 +51,20 @@ class HealthStatus(Model):
     simVersion: str
     mapSource: common.MapSource  # "sample" until data/processed/map.json exists
     realRuns: int  # runs in runs/index.json other than the sample run
+    # Real people one sim agent stands for (footfall.people_per_agent); omitted until the
+    # pipeline has built demand.json and the map.
+    peoplePerAgent: float | None = Optional()
 
 
 @app.get("/api/health", response_model=HealthStatus, tags=["meta"])
 def get_health() -> JSONResponse:
-    """Liveness plus which map is served and how many real runs exist."""
+    """Liveness plus which map is served, how many real runs exist and the sim's people scale."""
     real_runs = sum(1 for r in store.load_index() if r.run != common.SAMPLE_RUN)
     return common.contract_json(
         HealthStatus(
-            simVersion=settings.SIM_VERSION, mapSource=common.map_source(), realRuns=real_runs
+            simVersion=settings.SIM_VERSION,
+            mapSource=common.map_source(),
+            realRuns=real_runs,
+            peoplePerAgent=footfall.people_per_agent(),
         )
     )
