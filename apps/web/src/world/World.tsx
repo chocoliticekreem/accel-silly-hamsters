@@ -32,6 +32,10 @@ import Interiors from "./modules/Interiors";
 import Police from "./modules/Police";
 import Photoreal from "./modules/Photoreal";
 import MapGround from "./modules/MapGround";
+import RealBuildings from "./modules/RealBuildings";
+import RealLand from "./modules/RealLand";
+import RealRail from "./modules/RealRail";
+import RealRoads from "./modules/RealRoads";
 import { useModuleHides } from "./graphics";
 
 export const MODULES: Record<string, ComponentType> = {
@@ -39,11 +43,15 @@ export const MODULES: Record<string, ComponentType> = {
   Photoreal,
   MapGround,
   Ground,
+  RealLand,
   Surroundings,
   Heatmap,
   Skyline,
   Streets,
+  RealRoads,
   Buildings,
+  RealBuildings,
+  RealRail,
   Overground,
   Infill,
   Construction,
