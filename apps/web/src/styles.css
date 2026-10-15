@@ -2737,3 +2737,67 @@ button.chip:disabled {
 .ag-log { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; display: grid; gap: 6px; font-size: 13px; }
 .ag-log li { display: grid; grid-template-columns: 70px 110px 1fr; gap: 2px 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .ag-log li > span:last-child { grid-column: 1 / -1; }
+
+/* ---------- dropdowns (toolbar menus) ---------- */
+.dd {
+  position: relative;
+}
+.dd-caret {
+  opacity: 0.7;
+  transition: transform 0.15s;
+}
+.dd-caret.up {
+  transform: rotate(180deg);
+}
+.dd-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 200px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dd-right {
+  right: 0;
+}
+.dd-left {
+  left: 0;
+}
+.dd-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 6px 8px 4px;
+}
+.dd-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+.dd-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.dd-item.on {
+  color: var(--lamp);
+  background: var(--lamp-soft);
+}
+.dd-note {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 8px 2px;
+}
+.goto-menu {
+  top: calc(18px + var(--goto-h, 40px)) !important;
+}
