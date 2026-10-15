@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api } from "../api/client";
 import type { AgentDay, AnalystStatus, Calibration, Health, RunAreaSummary, CityMap, OwnerReport, RunStores, RunSummary, Suggestion } from "../api/contract";
 import { DAYS_PER_RUN } from "../api/contract";
-import { prepareAgents, type PreparedAgent } from "../sim/interp";
+import { mergeDays, prepareAgents, type PreparedAgent } from "../sim/interp";
 
 const cache = new Map<string, Promise<unknown>>();
 
@@ -105,7 +105,8 @@ export function useDayAgents(run: number, day: number): PreparedAgent[] {
     const days = [day - 1, day].filter((d) => d >= 1);
     Promise.all(days.map((d) => loadDay(run, d))).then((ds) => {
       if (!alive) return;
-      const list: AgentDay[] = ds.flatMap((d) => d.agents);
+      // trips past midnight sit in both files: draw (and count) each once
+      const list: AgentDay[] = mergeDays(ds);
       setAgents({ key, list: prepareAgents(list) });
     });
     if (day < DAYS_PER_RUN) void loadDay(run, day + 1).catch(() => {});
