@@ -9,8 +9,8 @@ export function Legend() {
   const sources = useMap().data?.sources ?? [];
   return (
     <div className={`legend ${open ? "open" : ""}`}>
-      <button className="chip" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <Icon name="info" size={14} /> Legend
+      <button className="chip" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="Legend">
+        <Icon name="info" size={14} /> <span className="chip-label">Legend</span>
       </button>
       {open && (
         <div className="legend-body panel">

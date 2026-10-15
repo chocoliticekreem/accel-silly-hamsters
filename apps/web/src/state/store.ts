@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { RUN_MINUTES } from "../api/contract";
 
 export type Speed = 1 | 10 | 100;
-export type Panel = null | "history" | "report" | "area" | "agents";
+export type Panel = null | "history" | "area" | "agents";
 
 /** Sim minutes per real second. 100× plays 14 days in one minute (spec). */
 export const RATE: Record<Speed, number> = { 100: RUN_MINUTES / 60, 10: RUN_MINUTES / 600, 1: RUN_MINUTES / 6000 };
@@ -19,6 +19,8 @@ interface SimState {
   panel: Panel;
   compare: boolean;
   toast: { id: number; text: string } | null;
+  /** Guided demo step (index into DEMO_STEPS), or null when the demo is off. */
+  demo: number | null;
 
   setRun: (run: number) => void;
   setT: (t: number) => void;
@@ -30,6 +32,7 @@ interface SimState {
   openPanel: (p: Panel) => void;
   setCompare: (c: boolean) => void;
   showToast: (text: string) => void;
+  setDemo: (step: number | null) => void;
   /** Jump to a run (and optionally a moment) and start playing: "click a point → replay that run". */
   replay: (run: number, t?: number) => void;
 }
@@ -56,6 +59,7 @@ export const useSim = create<SimState>((set, get) => ({
   panel: null,
   compare: false,
   toast: null,
+  demo: null,
 
   setRun: (run) => set({ run }),
   setT: (t) => set({ t: Math.max(0, Math.min(RUN_MINUTES, t)) }),
@@ -66,10 +70,11 @@ export const useSim = create<SimState>((set, get) => ({
     set({ playing: !playing, t: !playing && t >= RUN_MINUTES ? 0 : t });
   },
   setSpeed: (speed) => set({ speed }),
-  selectStore: (selectedStoreId) => set((s) => ({ selectedStoreId, panel: selectedStoreId ? s.panel : s.panel === "report" ? null : s.panel })),
+  selectStore: (selectedStoreId) => set({ selectedStoreId }),
   hoverStore: (hoveredStoreId) => set({ hoveredStoreId }),
   openPanel: (panel) => set({ panel }),
   setCompare: (compare) => set({ compare }),
   showToast: (text) => set({ toast: { id: ++toastSeq, text } }),
+  setDemo: (demo) => set({ demo }),
   replay: (run, t) => set({ run, t: t ?? 0, playing: true, panel: null }),
 }));

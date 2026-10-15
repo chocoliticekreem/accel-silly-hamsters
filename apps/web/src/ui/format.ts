@@ -43,3 +43,6 @@ export function duration(ms: number) {
   const m = Math.max(0, Math.round(ms / 60000));
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }
+
+/** Why the analyst stopped, in two words (chip, History's stop line). */
+export const STOP_LABELS = { threshold: "plateau", max_runs: "max runs", budget: "budget cap", error: "crashed, resumable" } as const;
