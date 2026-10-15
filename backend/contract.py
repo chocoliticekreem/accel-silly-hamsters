@@ -559,4 +559,4 @@ class StoreOverview(Model):
 
 class OptimizeRequest(Model):
     # Runs in the session, the baseline included (it usually comes back from the run cache).
-    maxRuns: int = Field(default=6, ge=2, le=10)
+    maxRuns: int = Field(default=6, ge=2, le=40)
