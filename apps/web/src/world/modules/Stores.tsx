@@ -9,6 +9,7 @@ import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { AdditiveBlending, type Group, type Mesh, type MeshBasicMaterial, type MeshStandardMaterial } from "three";
 import type { Building, OwnerEvent, Store } from "../../api/contract";
+import { shopfrontSpan } from "../../sim/facade";
 import { frontage, toScene } from "../../sim/geometry";
 import { nightLevel } from "../../sim/sky";
 import { eventsByStore, storeStateAt, type StoreState } from "../../sim/storeState";
@@ -30,20 +31,33 @@ export default function Stores() {
     () =>
       map.stores.flatMap((s) => {
         const b = map.buildings.find((x) => x.id === s.buildingId);
-        return b ? [{ s, b, f: frontage(b, map.streets) }] : [];
+        if (!b) return [];
+        const f = frontage(b, map.streets);
+        // OSM boxes overlap: keep the window and awning to the stretch of facade no neighbour pokes out over
+        return [{ s, b, f, span: shopfrontSpan(b, f.nx, f.nz, map.buildings) }];
       }),
     [map],
   );
   return (
     <group name="stores">
-      {items.map(({ s, b, f }) => (
-        <StoreBox key={s.id} store={s} b={b} nx={f.nx} nz={f.nz} events={byStore.get(s.id) ?? NO_EVENTS} />
+      {items.map(({ s, b, f, span }) => (
+        <StoreBox key={s.id} store={s} b={b} nx={f.nx} nz={f.nz} span={span} events={byStore.get(s.id) ?? NO_EVENTS} />
       ))}
     </group>
   );
 }
 
-function StoreBox({ store, b, nx, nz, events }: { store: Store; b: Building; nx: number; nz: number; events: OwnerEvent[] }) {
+interface StoreBoxProps {
+  store: Store;
+  b: Building;
+  nx: number;
+  nz: number;
+  /** Uncovered stretch of the facade (local x), or null when neighbours cover it all: no window or awning then. */
+  span: { centre: number; width: number } | null;
+  events: OwnerEvent[];
+}
+
+function StoreBox({ store, b, nx, nz, span, events }: StoreBoxProps) {
   const { stores, live, interactive } = useWorld();
   const selected = useSim((s) => s.selectedStoreId === store.id);
   const hovered = useSim((s) => s.hoveredStoreId === store.id);
@@ -127,6 +141,9 @@ function StoreBox({ store, b, nx, nz, events }: { store: Store; b: Building; nx:
   };
 
   const glassH = Math.min(4.2, h * 0.45);
+  // shop window, awning, shutter and boards share the free stretch of facade
+  const gx = span?.centre ?? 0;
+  const gw = span ? Math.min(span.width, width * 0.82) : 0;
   return (
     <group position={[x, 0, z]} rotation-y={rot} name={`store-${store.id}`}>
       <group name="store-body" onPointerOver={over} onPointerOut={out} onClick={click}>
@@ -140,62 +157,66 @@ function StoreBox({ store, b, nx, nz, events }: { store: Store; b: Building; nx:
           <meshStandardMaterial color={isClub ? "#251f35" : colors.awning} roughness={0.9} />
         </mesh>
         {/* shop window: the lit facade */}
-        <mesh position={[0, 0.4 + glassH / 2, depth / 2 + 0.06]}>
-          <boxGeometry args={[width * 0.82, glassH, 0.1]} />
+        {span && (
+        <mesh position={[gx, 0.4 + glassH / 2, depth / 2 + 0.06]}>
+          <boxGeometry args={[gw, glassH, 0.1]} />
           <meshStandardMaterial ref={glass} color={isClub ? "#1b1626" : "#3a4458"} emissive={isClub ? "#9a6bff" : LAMP} emissiveIntensity={0} roughness={0.25} />
         </mesh>
+        )}
         {/* awning / club neon strip */}
-        {isClub ? (
-          <mesh position={[0, h - 1.4, depth / 2 + 0.12]}>
-            <boxGeometry args={[width * 0.9, 0.6, 0.15]} />
+        {!span ? null : isClub ? (
+          <mesh position={[gx, h - 1.4, depth / 2 + 0.12]}>
+            <boxGeometry args={[gw * 1.08, 0.6, 0.15]} />
             <meshStandardMaterial ref={neon} color={colors.awning} emissive={colors.awning} emissiveIntensity={0} />
           </mesh>
         ) : (
-          <mesh position={[0, 0.4 + glassH + 0.6, depth / 2 + 1.1]} rotation-x={0.45} castShadow>
-            <boxGeometry args={[width * 0.86, 0.18, 2.4]} />
+          <mesh position={[gx, 0.4 + glassH + 0.6, depth / 2 + 1.1]} rotation-x={0.45} castShadow>
+            <boxGeometry args={[gw * 1.05, 0.18, 2.4]} />
             <meshStandardMaterial color={colors.awning} roughness={0.8} />
           </mesh>
         )}
         {/* shut all day: roller shutter down over the window */}
-        {!isClub && (
-          <group ref={shutter} visible={false} position={[0, 0.4 + glassH / 2, depth / 2 + 0.16]}>
+        {!isClub && span && (
+          <group ref={shutter} visible={false} position={[gx, 0.4 + glassH / 2, depth / 2 + 0.16]}>
             <mesh>
-              <boxGeometry args={[width * 0.86, glassH + 0.2, 0.08]} />
+              <boxGeometry args={[gw * 1.05, glassH + 0.2, 0.08]} />
               <meshStandardMaterial color="#8a919c" roughness={0.6} metalness={0.4} />
             </mesh>
             {Array.from({ length: 5 }, (_, i) => (
               <mesh key={i} position={[0, -glassH / 2 + ((i + 1) * glassH) / 6, 0.05]}>
-                <boxGeometry args={[width * 0.86, 0.06, 0.02]} />
+                <boxGeometry args={[gw * 1.05, 0.06, 0.02]} />
                 <meshStandardMaterial color="#5f6670" roughness={0.7} />
               </mesh>
             ))}
           </group>
         )}
         {/* closed for good: boarded up */}
-        {!isClub && (
-          <group ref={boards} visible={false} position={[0, 0.4 + glassH / 2, depth / 2 + 0.2]}>
+        {!isClub && span && (
+          <group ref={boards} visible={false} position={[gx, 0.4 + glassH / 2, depth / 2 + 0.2]}>
             {[-0.32, 0, 0.32].map((k) => (
               <mesh key={k} position={[0, k * glassH, 0]} rotation-z={k * 0.08}>
-                <boxGeometry args={[width * 0.9, glassH * 0.26, 0.1]} />
+                <boxGeometry args={[gw * 1.08, glassH * 0.26, 0.1]} />
                 <meshStandardMaterial color={k === 0 ? "#b08a5a" : "#a07a4c"} roughness={0.95} />
               </mesh>
             ))}
-            <mesh position-z={0.08} rotation-z={Math.atan2(glassH, width * 0.82)}>
-              <boxGeometry args={[Math.hypot(width * 0.82, glassH), 0.32, 0.08]} />
+            <mesh position-z={0.08} rotation-z={Math.atan2(glassH, gw)}>
+              <boxGeometry args={[Math.hypot(gw, glassH), 0.32, 0.08]} />
               <meshStandardMaterial color="#8c6a40" roughness={0.95} />
             </mesh>
           </group>
         )}
         {/* OPEN sign */}
-        <mesh position={[width * 0.32, 0.4 + glassH + 0.05, depth / 2 + 0.2]}>
-          <boxGeometry args={[1.6, 0.6, 0.12]} />
-          <meshStandardMaterial ref={sign} color="#7a3b3b" />
-        </mesh>
+        {span && (
+          <mesh position={[gx + Math.max(0, gw / 2 - 1), 0.4 + glassH + 0.05, depth / 2 + 0.2]}>
+            <boxGeometry args={[Math.min(1.6, gw * 0.4), 0.6, 0.12]} />
+            <meshStandardMaterial ref={sign} color="#7a3b3b" />
+          </mesh>
+        )}
       </group>
 
       {/* pool of light on the pavement */}
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0.15, depth / 2 + 4]} renderOrder={2}>
-        <planeGeometry args={[width * 1.6, 11]} />
+      <mesh rotation-x={-Math.PI / 2} position={[gx, 0.15, depth / 2 + 4]} renderOrder={2} visible={!!span}>
+        <planeGeometry args={[Math.max(gw, 3) * 1.8, 11]} />
         <meshBasicMaterial ref={pool} map={glowTexture()} color={isClub ? "#b88bff" : LAMP} transparent opacity={0} blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
       </mesh>
 

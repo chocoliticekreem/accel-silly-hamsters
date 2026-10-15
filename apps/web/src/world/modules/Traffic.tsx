@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { BoxGeometry, Color, DynamicDrawUsage, MeshStandardMaterial, Object3D, type InstancedMesh } from "three";
 import { rng } from "../../mock/rng";
+import { extendStreets } from "../../sim/edges";
 import { newPoint, pingPong, polyline, type Polyline } from "../../sim/polyline";
 import { toScene } from "../../sim/geometry";
 import { nightLevel } from "../../sim/sky";
@@ -53,7 +54,8 @@ export default function Traffic() {
   const vehicles = useMemo(() => {
     const r = rng(7);
     const out: Vehicle[] = [];
-    for (const s of map.streets) {
+    // streets that leave the map run on into the surroundings: cars drive out of sight and come back in
+    for (const s of extendStreets(map)) {
       if (s.width < 7) continue; // footpaths and alleys
       const path = polyline(s.points);
       if (path.length < 40) continue;

@@ -14,6 +14,7 @@ import { sampleAgent, type PreparedAgent } from "../../sim/interp";
 import { nightLevel } from "../../sim/sky";
 import { dayOf, hourOf } from "../../sim/time";
 import { useDayAgents } from "../../state/data";
+import { useEdgeAgents } from "../edgeAgents";
 import { personOf, useEconomy } from "../../state/economy";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
@@ -47,7 +48,7 @@ function hash(s: string) {
 export default function Agents() {
   const { run, live, map, interactive } = useWorld();
   const day = useSim((s) => dayOf(s.t));
-  const agents = useDayAgents(run, day);
+  const agents = useEdgeAgents(useDayAgents(run, day), map);
   const people = useMemo(() => createPeople(CAPACITY, { emissive: 0.1, aprons: true }), []);
   useEffect(() => {
     // pick on torso, head and apron only: limbs are thin and swing

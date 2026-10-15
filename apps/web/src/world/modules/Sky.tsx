@@ -17,8 +17,8 @@ export default function Sky() {
 
   useMemo(() => {
     scene.background = new Color("#121a2e");
-    // far enough that the City skyline (1–2 km south-west) sits in soft haze, not in a void
-    scene.fog = new Fog("#121a2e", 700, 3200);
+    // London runs on to the horizon (Surroundings): haze it from ~0.5 km so the far city melts into the sky
+    scene.fog = new Fog("#121a2e", 520, 3000);
   }, [scene]);
 
   useFrame(() => {
