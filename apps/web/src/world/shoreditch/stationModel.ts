@@ -55,7 +55,7 @@ export interface StationParts {
   /** See-through glass (window strips, hall curtain walls), one transparent mesh. */
   windows: BufferGeometry;
   /** Points (local) for street-level walkers: gate line, doors, stair foot. */
-  hallPoints: { gate: [number, number]; door: [number, number]; stairFoot: [number, number][]; outside: [number, number] } | null;
+  hallPoints: { gate: [number, number]; door: [number, number]; stairFoot: [number, number][]; stairTop: [number, number, number][]; outside: [number, number] } | null;
 }
 
 const CONCRETE = ["#8e9195", "#878a8e", "#93969a"];
@@ -135,7 +135,7 @@ export function buildStation(o: StationLayout, name = "Shoreditch High Street"):
     k.box("metal", 0.06, 0.07, HW - 2.6, x, TOP + 0.385, -(HW + 2.6) / 2 + 0.05, SEAM);
     k.box("metal", 0.06, 0.07, HW - 2.6, x, TOP + 0.385, (HW + 2.6) / 2 - 0.05, SEAM);
   }
-  k.slab("glass", x0 + 2, L / 2 - 2, TOP + 0.35, TOP + 0.95, -2.2, 2.2, "#d8ecf5");
+  k.slab("glass", x0 + 2, L / 2 - 2, TOP + 0.35, TOP + 0.95, -2.2, 2.2, "#9db6c4");
   k.slab("metal", x0 + 1.8, L / 2 - 1.8, TOP + 0.95, TOP + 1.02, -2.4, 2.4, "#8f959b");
   for (let x = x0 + 2; x <= L / 2 - 2; x += 4) k.box("metal", 0.08, 0.62, 4.5, x, TOP + 0.66, 0, STEEL);
 
@@ -292,10 +292,12 @@ export function buildStation(o: StationLayout, name = "Shoreditch High Street"):
     const steps = Math.max(8, Math.floor(run / 0.33));
     const rise = (HTOP - 0.95) / steps;
     const stairFoot: [number, number][] = [];
+    const stairTop: [number, number, number][] = [];
     for (const sz of [-3.6, 3.0]) {
       for (let i = 0; i < steps; i++) k.slab("solid", ...span(sd0 + i * (run / steps), sd0 + (i + 1) * (run / steps) + 0.02), 0.14, 0.14 + (i + 1) * rise, sz - 1.0, sz + 1.0, i % 2 ? "#8f8c87" : "#99968f");
       for (const side of [-1, 1]) k.beam("metal", [X(sd0), 1.05, sz + side * 1.05], [X(sd0 + run), 1.05 + steps * rise, sz + side * 1.05], 0.04, "#c0c5ca");
       stairFoot.push([X(sd0 - 0.6), sz]);
+      stairTop.push([X(sd0 + run * 0.78), sz, 0.14 + steps * 0.78 * rise]);
     }
     k.slab("glass", ...span(sd0 + 0.2, sd0 + 2.2), 0.14, HTOP - 0.8, -0.6, 1.4, "#a9c0cc");
     k.slab("metal", ...span(sd0 + 0.15, sd0 + 2.25), HTOP - 1.1, HTOP - 0.8, -0.65, 1.45, "#5b6067");
@@ -305,7 +307,7 @@ export function buildStation(o: StationLayout, name = "Shoreditch High Street"):
       k.cyl("metal", 0.08, 0.09, 4.2, 10, [0, 2.1, 0], "#3a3f45");
       roundelDisc(k, 4.75, 0.7);
     });
-    hallPoints = { gate: [X(gd), -0.6], door: [fx - f * 0.6, -1.5], stairFoot, outside: [fx - f * 2.2, -HZ - 2.4] };
+    hallPoints = { gate: [X(gd), -0.6], door: [fx - f * 0.6, -1.5], stairFoot, stairTop, outside: [fx - f * 2.2, -HZ - 2.4] };
   }
 
   const model = k.model("shoreditch-high-street-station", { ao: 0 });

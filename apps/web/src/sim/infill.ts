@@ -5,6 +5,7 @@
 import type { Building, CityMap } from "../api/contract";
 import { rng, seedOf, type Rng } from "../mock/rng";
 import { closestOnStreet, frontage } from "./geometry";
+import { AREA_KEEPOUTS } from "./areaKeepouts";
 import { overgroundRoute, routeDistance, VIADUCT_W } from "./overground";
 
 export const CELL = 4;
@@ -67,6 +68,7 @@ export function occupancy(map: CityMap, cell = CELL): Grid {
   for (const e of map.entryPoints) keepouts.push({ x: e.x, z: e.z, w: 16, d: 16 });
   // the Overground viaduct's corridor (its arches stand there)
   const viaduct = overgroundRoute(map, 0);
+  if (viaduct?.real) keepouts.push(...AREA_KEEPOUTS); // hand-built areas on the real map (sim/areaKeepouts.ts)
 
   for (let j = 0; j < nz; j++)
     for (let i = 0; i < nx; i++) {

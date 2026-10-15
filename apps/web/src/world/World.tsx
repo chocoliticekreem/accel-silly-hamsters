@@ -28,6 +28,7 @@ import Streets from "./modules/Streets";
 import Surroundings from "./modules/Surroundings";
 import Overground from "./modules/Overground";
 import OldStreet from "./modules/OldStreet";
+import ShoreditchStation from "./modules/ShoreditchStation";
 import Traffic from "./modules/Traffic";
 import ClubLife from "./modules/ClubLife";
 import Incidents from "./modules/Incidents";
@@ -50,6 +51,7 @@ export const MODULES: Record<string, ComponentType> = {
   Buildings,
   Overground,
   OldStreet,
+  ShoreditchStation,
   Infill,
   Construction,
   Stores,
