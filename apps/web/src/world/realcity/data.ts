@@ -2,6 +2,7 @@
 // public/city/{buildings,roads,land}.json. Loaded once per page; the Real* modules build three.js geometry from it.
 // While it loads (or if it is missing) `ready` stays false and the old procedural modules keep drawing the city.
 // Coordinates here are already in the *scene* frame (x east, z = -north): see toScene in sim/geometry.ts.
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 import type { CityMap } from "../../api/contract";
 import { task } from "../../state/loading";
@@ -298,8 +299,22 @@ export async function buildRealBuildings(city: RealCity, map: CityMap): Promise<
 }
 
 /** The baked city once loaded (null meanwhile / when missing). Starts the load on first use. */
-export function useRealCityData(): RealCity | null {
+export function useRealCityData(frames = 0): RealCity | null {
   const city = useRealCity((s) => s.city);
   if (useRealCity.getState().status === "idle") queueMicrotask(loadRealCity);
-  return city;
+  // `frames` > 0: hand the city over that many frames after it arrives, so the modules that build geometry from it
+  // (roads, land, rail) each take their turn instead of all building in the same frame
+  const [late, setLate] = useState<RealCity | null>(null);
+  useEffect(() => {
+    if (!frames || !city) return;
+    let n = frames;
+    let raf = 0;
+    const tick = () => {
+      if (--n <= 0) setLate(city);
+      else raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [city, frames]);
+  return frames ? (late === city ? late : null) : city;
 }
