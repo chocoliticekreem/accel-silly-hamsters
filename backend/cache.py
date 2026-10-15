@@ -161,7 +161,7 @@ def run_key(stores: dict[str, StoreConfig], seed: int, *, allow_closure: bool = 
     configs = {sid: c.model_dump(mode="json") for sid, c in sorted(stores.items())}
     key: dict = {"stores": configs, "seed": seed, "simVersion": settings.SIM_VERSION}
     if settings.OWNER_ADAPTATION:
-        key["owners"] = True
+        key["owners"] = 2  # owner-logic version: bump when owners decide differently
         if allow_closure:
             key["ownerClosures"] = True
     return stable_hash(key)
