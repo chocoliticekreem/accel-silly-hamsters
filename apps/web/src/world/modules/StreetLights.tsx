@@ -1,7 +1,7 @@
 // Module: StreetLights. Lamp posts along both pavements of every street; heads glow at night.
-// Two instanced meshes (posts, heads): two draw calls for the whole city.
+// Two instanced meshes (heritage columns, lanterns): two draw calls for the whole city.
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Object3D, type InstancedMesh, type MeshStandardMaterial } from "three";
 import { closestOnStreet, toScene } from "../../sim/geometry";
 import { nightLevel } from "../../sim/sky";
@@ -9,6 +9,7 @@ import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
 import { LAMP } from "../palette";
+import { lampColumnGeometry, lampGlassGeometry } from "../propModels";
 
 const SPACING = 34;
 const POST_H = 6;
@@ -16,6 +17,10 @@ const POST_H = 6;
 export default function StreetLights() {
   const { map } = useWorld();
   const head = useRef<MeshStandardMaterial>(null);
+  // heritage lamp column + lantern (world/propModels.ts)
+  const columnGeo = useMemo(() => lampColumnGeometry(POST_H), []);
+  const glassGeo = useMemo(() => lampGlassGeometry(POST_H), []);
+  useEffect(() => () => [columnGeo, glassGeo].forEach((g) => g.dispose()), [columnGeo, glassGeo]);
 
   const spots = useMemo(() => {
     const out: [number, number][] = [];
@@ -62,12 +67,10 @@ export default function StreetLights() {
   if (!spots.length) return null;
   return (
     <group name="street-lights">
-      <instancedMesh args={[undefined, undefined, spots.length]} ref={(m) => setup(m, POST_H / 2)} castShadow>
-        <cylinderGeometry args={[0.15, 0.2, POST_H, 6]} />
-        <meshStandardMaterial color="#3d4452" roughness={0.6} />
+      <instancedMesh args={[columnGeo, undefined, spots.length]} ref={(m) => setup(m, 0)} castShadow>
+        <meshStandardMaterial vertexColors roughness={0.55} metalness={0.3} />
       </instancedMesh>
-      <instancedMesh args={[undefined, undefined, spots.length]} ref={(m) => setup(m, POST_H + 0.3)}>
-        <sphereGeometry args={[0.55, 10, 8]} />
+      <instancedMesh args={[glassGeo, undefined, spots.length]} ref={(m) => setup(m, 0)}>
         <meshStandardMaterial ref={head} color="#fff4d6" emissive={LAMP} emissiveIntensity={0} toneMapped={false} />
       </instancedMesh>
     </group>
