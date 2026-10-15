@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from backend import timeutil
+from backend import settings, timeutil
 from backend.contract import (
     DAYS,
     MINUTES_PER_DAY,
@@ -34,10 +34,11 @@ from backend.contract import (
     EntryPoint,
     MapData,
     MapStore,
+    OwnerEvent,
     Visit,
 )
 from backend.schemas import ClubNight, DemandFile, EnergyFile, PersonasFile, StoreConfig
-from backend.sim import citizens, movement
+from backend.sim import citizens, movement, owners, street
 from backend.sim.citizens import TICK, Arrival, PersonaModel, Regular
 from backend.sim.energy import LEVELS, floor_area
 from backend.sim.movement import Keyframe
@@ -222,6 +223,11 @@ class SimOutput:
     peak_visible: int  # most agents walking or waiting outside at one tick
     skipped_busy: int  # planned regular trips dropped because the regular was still out
     schedule: Schedule
+    # Self-learning city (settings.OWNER_ADAPTATION); empty when adaptation is off.
+    owner_events: list[OwnerEvent] = field(default_factory=list)
+    street_events: list[dict] = field(default_factory=list)  # contract StreetEvent dicts
+    schedules: dict[str, list[dict]] = field(default_factory=dict)  # storeId -> ScheduleEntry
+    closed_from: dict[str, int] = field(default_factory=dict)  # storeId -> day closed for good
 
 
 # --- the simulation -----------------------------------------------------------------------------
@@ -241,7 +247,15 @@ class _Walker:
 
 
 class _Simulation:
-    def __init__(self, world: World, schedule: Schedule, seed: int) -> None:
+    def __init__(
+        self,
+        world: World,
+        schedule: Schedule,
+        seed: int,
+        *,
+        street_factor: np.ndarray | None = None,
+        owners: owners.Owners | None = None,
+    ) -> None:
         self.world = world
         self.schedule = schedule
         self.seed = seed
@@ -249,12 +263,22 @@ class _Simulation:
         self.found_closed = np.zeros((n, 24))
         self.events: list[ClosedEvent] = []
         self.entry_weight_cache: dict[int, np.ndarray] = {}
+        self.street_factor = street_factor  # (n, SIM_TICKS) choice-weight multiplier, or None
+        self.owners = owners
+        self.footfall = np.zeros((n, 24))  # summed day by day when owners are on
 
     def run(self, plan: list[list[Arrival]], pool: list[Regular]) -> tuple[list[Trip], int]:
         members = {m.id: m for m in pool}
-        trips, skipped = [], 0
-        for arrivals in plan:
+        trips: list[Trip] = []
+        skipped = 0
+        for day, arrivals in enumerate(plan, start=1):
+            team = self.owners
+            if team is not None:
+                team.start_day(day)
+            first = len(trips)
             for arrival in arrivals:
+                if team is not None:
+                    team.before(arrival.t)
                 regular = members.get(arrival.agent_id) if arrival.returning else None
                 if regular is not None and regular.busy_until > arrival.t:
                     skipped += 1
@@ -263,6 +287,11 @@ class _Simulation:
                 if regular is not None:
                     regular.busy_until = trip.path[-1][0]
                 trips.append(trip)
+            if team is not None:
+                # Owners see the passers-by at their door today, then decide for tomorrow.
+                footfall = _footfall_near(trips[first:], self.world.doors)
+                self.footfall += footfall
+                team.end_day(day, footfall)
         return trips, skipped
 
     def trip(self, arrival: Arrival, regular: Regular | None) -> Trip:
@@ -333,6 +362,8 @@ class _Simulation:
             )
             t_out = min(t_in + dwell, self.schedule.open_until(choice, t_in))
             walker.visits.append((choice, t_in, t_out))
+            if self.owners is not None:
+                self.owners.visit(choice, walker.arrival.day, t_in, t_out)
             walker.t = t_out
             if walker.regular is not None:
                 walker.regular.memory.visited(choice, t_in)
@@ -357,6 +388,8 @@ class _Simulation:
         )
         if walker.regular is not None:
             weights = weights * walker.regular.memory.factor(minute)
+        if self.street_factor is not None:
+            weights = weights * self.street_factor[:, min(minute // TICK, SIM_TICKS - 1)]
         weights[excluded] = 0.0
         visible_closed = ~is_open & (world.sight[walker.loc] <= citizens.VISIBLE_M)
         choice = citizens.race(draws, weights, visible_closed, citizens.OUTSIDE_WEIGHT)
@@ -368,6 +401,8 @@ class _Simulation:
     def record_closed(self, walker: _Walker, store: int, minute: int, *, walked: bool) -> None:
         self.found_closed[store, (minute // 60) % 24] += 1
         arrival = walker.arrival
+        if self.owners is not None:
+            self.owners.found_closed(store, arrival.day, minute)
         self.events.append(
             ClosedEvent(arrival.day, store, minute, arrival.agent_id, arrival.returning, walked)
         )
@@ -412,26 +447,62 @@ class _Simulation:
         return self.entry_weight_cache[model.index]
 
 
-def simulate(world: World, configs: Mapping[str, StoreConfig], seed: int) -> SimOutput:
-    """Run 14 days. Pure: same world + configs + seed gives the same output."""
+def simulate(
+    world: World,
+    configs: Mapping[str, StoreConfig],
+    seed: int,
+    *,
+    allow_closure: bool = False,
+    adapt: bool | None = None,
+) -> SimOutput:
+    """Run 14 days. Pure: same world + configs + seed (+ switches) gives the same output.
+
+    adapt (default settings.OWNER_ADAPTATION): street events and owners adapting day by day
+    (backend/sim/owners.py). Off gives exactly the pre-adaptation sim. allow_closure lets an
+    owner close for good after a losing streak (never in a run whose parent is the baseline).
+    """
+    adapt = settings.OWNER_ADAPTATION if adapt is None else adapt
     schedule = build_schedule(world, configs)
     pool = citizens.build_pool(world.models, world.pool_size, world.n_stores)
     plan = citizens.plan_arrivals(
         seed, world.models, world.entries, world.stores, world.demand, pool, DAYS
     )
-    sim = _Simulation(world, schedule, seed)
-    trips, skipped = sim.run(plan, pool)
+    if not adapt:
+        sim = _Simulation(world, schedule, seed)
+        trips, skipped = sim.run(plan, pool)
+        footfall = _footfall_near(trips, world.doors)
+        extras: dict = {}
+    else:
+        events = street.generate(world, seed)
+        team = owners.Owners(world, schedule, configs, events, allow_closure=allow_closure)
+        sim = _Simulation(
+            world,
+            schedule,
+            seed,
+            street_factor=street.store_factors(world, events, SIM_TICKS),
+            owners=team,
+        )
+        trips, skipped = sim.run(plan, pool)
+        team.finalize()
+        footfall = sim.footfall
+        extras = {
+            "owner_events": team.events(),
+            "street_events": [e.to_json() for e in events],
+            "schedules": team.schedules(),
+            "closed_from": team.closed_from(),
+        }
     present, visible = _concurrency(trips)
     return SimOutput(
         trips=trips,
         closed_events=sim.events,
         found_closed=sim.found_closed,
-        footfall_near=_footfall_near(trips, world.doors),
+        footfall_near=footfall,
         area_footfall=_area_footfall(trips),
         peak_present=present,
         peak_visible=visible,
         skipped_busy=skipped,
         schedule=schedule,
+        **extras,
     )
 
 
