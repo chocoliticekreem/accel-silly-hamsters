@@ -1,5 +1,5 @@
 // Real backend client. Every path matches docs/FRONTEND_PROMPT.md.
-import { ApiError, type Api, type AnalystStatus } from "./contract";
+import { ApiError, type AgentEvent, type Api, type AnalystStatus } from "./contract";
 import { overviewFromParts } from "./overviewFallback";
 
 export function httpApi(base: string): Api {
@@ -47,6 +47,8 @@ export function httpApi(base: string): Api {
     overview: async (storeId, run) =>
       (await getOptional(`/api/stores/${encodeURIComponent(storeId)}/overview${run === undefined ? "" : `?run=${run}`}`)) ??
       overviewFromParts(self, storeId, run),
+    agentSession: () => getOptional("/api/agents/session"),
+    agentLog: async (run) => (await getOptional<AgentEvent[]>(`/api/agents/log${run === undefined ? "" : `?run=${run}`}`)) ?? [],
     optimize: (storeId, maxRuns) => post<AnalystStatus>(`/api/stores/${encodeURIComponent(storeId)}/optimize`, maxRuns ? { maxRuns } : {}),
   };
   return self;

@@ -360,3 +360,41 @@ class StoreInsights(Model):
     benchmarks: InsightBenchmarks | None  # null when fewer than 3 anonymous peers exist at all
     insights: list[Insight]  # ranked by impact.gbpPerWeek, then severity; at most 5
     note: str = "Simulated, not guaranteed."
+
+
+# --- GET /api/agents/session, GET /api/agents/log -------------------------------------------
+# Additive: the frontend's Agents view (backend/api/routers/agents.py). Area-level, read-only.
+
+
+class AgentSession(Model):
+    """The analyst checkpoint (runs/analyst_state.json) as served to the Agents view."""
+
+    sessionId: str
+    state: Literal["running", "stopped"]
+    startedAt: str
+    updatedAt: str
+    backend: str  # heuristic | messages | managed
+    fresh: bool
+    seed: int
+    baselineRun: int | None = None
+    currentRun: int | None = None
+    bestRun: int | None = None
+    bestObjective: float | None = None
+    iterations: int = 0
+    runsThisSession: list[int] = Field(default_factory=list)
+    lowGainStreak: int = 0
+    step: str = "start"
+    stoppedReason: Literal["threshold", "max_runs", "budget", "error"] | None = None
+    spentGbp: float = 0.0
+    error: str | None = None
+
+
+class AgentEvent(Model):
+    """One step of the agents' story: a hand-off, proposals, a hypothesis, an experiment, a result..."""
+
+    at: str
+    agent: str  # analyst | store_owner | store_agents | training | ...
+    type: str
+    run: int | None = None
+    # scalar fields only (no prompts, responses or store id lists); lists become <name>Count
+    data: dict[str, str | int | float | bool | None] = Field(default_factory=dict)

@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 from backend import settings, store
 from backend.api import common
-from backend.api.routers import city, insights, reports, runs, training
+from backend.api.routers import agents, city, insights, reports, runs, training
 from backend.contract import Model
 
 # Any localhost port: Vite moves to the next free port when 5173 is taken.
@@ -34,7 +34,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-for module in (city, runs, training, reports, insights):
+for module in (city, runs, training, reports, insights, agents):
     app.include_router(module.router)
 
 

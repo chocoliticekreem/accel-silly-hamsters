@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { RUN_MINUTES } from "../api/contract";
 
 export type Speed = 1 | 10 | 100;
-export type Panel = null | "history" | "report" | "area";
+export type Panel = null | "history" | "report" | "area" | "agents";
 
 /** Sim minutes per real second. 100× plays 14 days in one minute (spec). */
 export const RATE: Record<Speed, number> = { 100: RUN_MINUTES / 60, 10: RUN_MINUTES / 600, 1: RUN_MINUTES / 6000 };

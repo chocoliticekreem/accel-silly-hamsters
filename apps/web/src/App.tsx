@@ -5,6 +5,8 @@ import { useEffect } from "react";
 import { useAnalyst, useHealth, useMap, useRuns, useRunStores } from "./state/data";
 import { RUN_FROM_URL, useSim } from "./state/store";
 import { AreaPanel } from "./ui/AreaPanel";
+import { AgentsPanel } from "./ui/AgentsPanel";
+import { Bot } from "lucide-react";
 import { AnalystChip } from "./ui/AnalystChip";
 import { CompareView } from "./ui/CompareView";
 import { HistoryPanel } from "./ui/HistoryPanel";
@@ -51,13 +53,16 @@ export default function App() {
       <div className="overlay">
         <div className="top-left">{!compare && <Hud />}</div>
         <div className="top-right">
-          <AnalystChip onClick={() => openPanel(panel === "history" ? null : "history")} />
+          <AnalystChip onClick={() => openPanel(panel === "agents" ? null : "agents")} />
           <div className="tool-row">
             <button className={`chip ${panel === "history" ? "on" : ""}`} onClick={() => openPanel(panel === "history" ? null : "history")}>
               <Icon name="chart" size={14} /> History
             </button>
             <button className={`chip ${compare ? "on" : ""}`} onClick={() => setCompare(!compare)}>
               <Icon name="split" size={14} /> {compare ? "Exit compare" : "Before vs after"}
+            </button>
+            <button className={`chip ${panel === "agents" ? "on" : ""}`} onClick={() => openPanel(panel === "agents" ? null : "agents")}>
+              <Bot size={14} /> Agents
             </button>
             <button className={`chip ${panel === "area" ? "on" : ""}`} onClick={() => openPanel(panel === "area" ? null : "area")}>
               <Icon name="bolt" size={14} /> Area
@@ -67,6 +72,7 @@ export default function App() {
         </div>
         {panel === "history" && <HistoryPanel />}
         {panel === "area" && <AreaPanel />}
+        {panel === "agents" && <AgentsPanel />}
         {!compare && <StoreCard />}
         {panel === "report" && <OwnerReport />}
         <div className="bottom">
