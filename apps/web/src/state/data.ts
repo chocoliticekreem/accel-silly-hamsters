@@ -6,6 +6,22 @@ import type { AgentDay, AgentEvent, AgentSession, AnalystStatus, Calibration, He
 import { DAYS_PER_RUN } from "../api/contract";
 import { resolveOverlaps } from "../sim/footprints";
 import { mergeDays, prepareAgents, type PreparedAgent } from "../sim/interp";
+import { task, watchBytes, type StageId } from "./loading";
+
+/** Start-up loads the loading screen follows: one task, byte progress from api/http.ts for paths under `prefix`. */
+function tracked<T>(stage: StageId, key: string, prefix: string, start: () => Promise<T>, optional = false): Promise<T> {
+  const t = task(stage, key);
+  let best = 0;
+  const unwatch = watchBytes(prefix, (p) => {
+    if (p > best) t.progress((best = p));
+  });
+  const p = start();
+  p.then(
+    () => (unwatch(), t.done()),
+    (e: unknown) => (unwatch(), optional ? t.done() : t.fail(e instanceof Error ? e.message : String(e))),
+  );
+  return p;
+}
 
 const cache = new Map<string, Promise<unknown>>();
 
@@ -84,8 +100,9 @@ export function useResource<T>(key: string | null, loader: () => Promise<T>): Re
 }
 
 // OSM bounding boxes overlap; trim them once so walls never run through each other (sim/footprints.ts)
-export const useMap = () => useResource<CityMap>("map", () => api.map().then((m) => ({ ...m, buildings: resolveOverlaps(m.buildings) })));
-export const useRuns = () => useResource<RunSummary[]>("runs", () => api.runs());
+export const useMap = () =>
+  useResource<CityMap>("map", () => tracked("map", "map", "/api/map", () => api.map().then((m) => ({ ...m, buildings: resolveOverlaps(m.buildings) }))));
+export const useRuns = () => useResource<RunSummary[]>("runs", () => tracked("run", "runs", "/api/runs", () => api.runs()));
 export const useAnalyst = () => useResource<AnalystStatus>("analyst", () => api.analyst());
 export const useHealth = () => useResource<Health | null>("health", () => api.health());
 export const useSummary = (run: number | null) => useResource<RunAreaSummary | null>(run == null ? null : `summary:${run}`, () => api.summary(run!));
@@ -95,7 +112,8 @@ export const useInsights = (storeId: string | null, run: number) =>
 export const useAgentSession = () => useResource<AgentSession | null>("agents:session", () => api.agentSession());
 export const useAgentLog = () => useResource<AgentEvent[]>("agents:log", () => api.agentLog());
 export const useCalibration = () => useResource<Calibration | null>("calibration", () => api.calibration());
-export const useRunStores = (run: number | null) => useResource<RunStores>(run == null ? null : `stores:${run}`, () => api.runStores(run!));
+export const useRunStores = (run: number | null) =>
+  useResource<RunStores>(run == null ? null : `stores:${run}`, () => tracked("run", `stores:${run}`, `/api/runs/${run}/stores`, () => api.runStores(run!), true));
 /** Owners' day-by-day decisions this run ([] when the backend doesn't serve them). */
 export const useOwnerEvents = (run: number | null) => useResource<OwnerEvent[]>(run == null ? null : `owner-events:${run}`, () => api.ownerEvents(run!));
 /** Roadworks, traffic, club nights... this run ([] when not served). */
@@ -117,20 +135,26 @@ interface PreparedDay {
 const preparedDays = new Map<string, PreparedDay>();
 const KEEP_PREPARED_DAYS = 8;
 
+const dayTracked = new Set<number>();
+
 /** Loads and prepares the agents around `day` once, shared by every module that draws them. */
 export function prepareDay(run: number, day: number): PreparedDay {
   const key = `${run}:${day}`;
   const known = preparedDays.get(key);
   if (known) return known;
   const days = [day - 1, day].filter((d) => d >= 1);
-  const entry: PreparedDay = {
-    promise: Promise.all(days.map((d) => loadDay(run, d))).then((ds) => {
+  const start = () =>
+    Promise.all(days.map((d) => loadDay(run, d))).then((ds) => {
       // trips past midnight sit in both files: draw (and count) each once
       const list: AgentDay[] = mergeDays(ds);
       entry.list = prepareAgents(list);
       return entry.list;
-    }),
-  };
+    });
+  // the first day drawn is part of start-up (the loading screen's "Today's run")
+  // (the first asked for per run: a default run the backend lacks fails quietly, the app then moves to a real one)
+  const first = !dayTracked.has(run);
+  dayTracked.add(run);
+  const entry: PreparedDay = { promise: first ? tracked("run", `day:${run}`, `/api/runs/${run}/days/`, start, true) : start() };
   entry.promise.catch(() => {
     if (preparedDays.get(key) === entry) preparedDays.delete(key); // let a later render retry
   });

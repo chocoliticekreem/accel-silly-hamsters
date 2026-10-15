@@ -176,7 +176,7 @@ function build(city: RealCity) {
 }
 
 export default function RealRoads() {
-  const city = useRealCityData();
+  const city = useRealCityData(2); // a turn of its own after the city arrives
   const geo = useMemo(() => (city ? build(city) : null), [city]);
   const mats = useMemo(
     () => ({

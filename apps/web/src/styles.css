@@ -2810,3 +2810,263 @@ button.chip:disabled {
 .ag-light.off { background: var(--ink); color: var(--muted); }
 .ag-light.low { background: var(--lamp-soft); color: var(--ink); }
 .ag-light.high { background: var(--lamp); color: var(--ink); font-weight: 600; }
+
+/* ---------- loading screen (ui/LoadingScreen.tsx) ---------- */
+
+.loading {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: radial-gradient(70% 55% at 50% 72%, #1d2742 0%, var(--ink) 72%);
+  transition: opacity 0.6s ease, visibility 0.6s;
+}
+.loading.leaving {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.ld-glow {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: min(900px, 120vw);
+  height: 260px;
+  transform: translateX(-50%);
+  background: radial-gradient(50% 60% at 50% 100%, rgba(255, 200, 87, 0.12), transparent 70%);
+  pointer-events: none;
+}
+.ld-skyline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: min(32vh, 260px);
+  pointer-events: none;
+}
+.ld-far {
+  fill: #141c2e;
+}
+.ld-near {
+  fill: #0a0f1a;
+}
+.ld-gas {
+  fill: none;
+  stroke: #26324c;
+  stroke-width: 2;
+}
+.ld-lit rect {
+  fill: var(--lamp);
+  opacity: 0.75;
+  animation: ld-twinkle 3.2s ease-in-out infinite;
+}
+.ld-lit rect:nth-child(2n) {
+  animation-delay: 1.1s;
+}
+.ld-lit rect:nth-child(3n) {
+  animation-delay: 2s;
+}
+@keyframes ld-twinkle {
+  50% {
+    opacity: 0.25;
+  }
+}
+.ld-card {
+  position: relative;
+  width: min(380px, 100%);
+  padding: 20px 20px 16px;
+  margin-bottom: 8vh;
+}
+.ld-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ld-roundel {
+  width: 34px;
+  height: 34px;
+  flex: none;
+}
+.ld-roundel circle {
+  fill: none;
+  stroke: var(--lamp);
+  stroke-width: 5;
+}
+.ld-roundel rect {
+  fill: var(--ink);
+  stroke: var(--lamp);
+  stroke-width: 1.5;
+}
+.ld-title {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.ld-sub {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 1px;
+}
+.ld-pct {
+  margin-left: auto;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--lamp);
+  font-variant-numeric: tabular-nums;
+}
+.ld-bar {
+  position: relative;
+  height: 4px;
+  margin: 16px 0 14px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.ld-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  background: linear-gradient(90deg, rgba(255, 200, 87, 0.55), var(--lamp));
+  box-shadow: 0 0 12px rgba(255, 200, 87, 0.5);
+  transition: transform 0.35s ease-out;
+}
+.ld-bar.indet .ld-fill {
+  width: 40%;
+  animation: ld-indet 1.4s ease-in-out infinite;
+}
+@keyframes ld-indet {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+.ld-stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.ld-stages li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--faint);
+  transition: color 0.3s;
+}
+.ld-stages li.on {
+  color: var(--text);
+}
+.ld-stages li.done {
+  color: var(--muted);
+}
+.ld-stages li.err {
+  color: var(--bad);
+}
+.ld-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  flex: none;
+}
+.ld-stages li.on .ld-dot {
+  border-color: var(--lamp);
+  animation: ld-pulse 1.2s ease-in-out infinite;
+}
+.ld-stages li.done .ld-dot {
+  background: var(--lamp);
+  border-color: var(--lamp);
+}
+.ld-stages li.err .ld-dot {
+  background: var(--bad);
+  border-color: var(--bad);
+}
+@keyframes ld-pulse {
+  50% {
+    box-shadow: 0 0 0 4px var(--lamp-soft);
+  }
+}
+.ld-val {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+}
+.ld-errors {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 138, 122, 0.08);
+  border: 1px solid rgba(255, 138, 122, 0.2);
+  font-size: 12px;
+  display: grid;
+  gap: 4px;
+}
+.ld-errors b {
+  color: var(--bad);
+  font-weight: 600;
+}
+.ld-errors .mono {
+  color: var(--muted);
+  font-size: 11px;
+  word-break: break-word;
+}
+.ld-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.ld-hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin-right: auto;
+}
+.ld-btn {
+  border: 1px solid rgba(255, 200, 87, 0.45);
+  background: var(--lamp-soft);
+  color: var(--lamp);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ld-btn:hover {
+  background: rgba(255, 200, 87, 0.26);
+}
+.ld-btn.ghost {
+  border-color: var(--line-strong);
+  background: transparent;
+  color: var(--text);
+}
+.gpu-lost {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(14, 20, 34, 0.55);
+}
+.gpu-card {
+  width: min(320px, 100%);
+  padding: 18px 20px;
+}
+.gpu-card .ld-bar {
+  margin-bottom: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ld-lit rect,
+  .ld-stages li.on .ld-dot,
+  .ld-bar.indet .ld-fill {
+    animation: none;
+  }
+}

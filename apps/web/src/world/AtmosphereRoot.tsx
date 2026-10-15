@@ -6,6 +6,7 @@ import { PrecomputedTexturesGenerator } from "@takram/three-atmosphere";
 import { Atmosphere } from "@takram/three-atmosphere/r3f";
 import { useMemo, type ReactNode } from "react";
 import type { WebGLRenderer } from "three";
+import { seal, track } from "../state/loading";
 import { PerfProbe } from "./PerfProbe";
 import { RenderTuning } from "./RenderTuning";
 
@@ -32,11 +33,12 @@ export function AtmosphereRoot({ children }: { children: ReactNode }) {
         return 0;
       }) as typeof window.requestIdleCallback;
       try {
-        g.update().catch((e: unknown) => console.error("atmosphere LUTs", e));
+        track("lighting", "atmosphere", g.update(), { optional: true }).catch((e: unknown) => console.error("atmosphere LUTs", e));
       } finally {
         window.requestIdleCallback = idle;
       }
     }
+    seal("lighting");
     return g;
   }, [gl]);
   return (

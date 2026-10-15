@@ -1,15 +1,14 @@
-// Mock simulation: persona agents live 14 days on the street grid, choosing open, lit stores.
+// Mock simulation: persona agents live 14 days on the map's real streets (mock/walk.ts), choosing open, lit stores.
 // Decisions are seeded per (day, agent), so two runs differ only because store configs differ (fixed seed rule).
 // KPIs are computed from the generated visits, so what you see in 3D matches the numbers in the HUD.
 // Owners adapt day by day (mock/owners.ts): opening, lighting and energy follow each owner's evolving schedule.
 import type { PersonDay } from "../api/economy";
 import { windowHours } from "../sim/economics";
-import type { AgentDay, CityMap, DayData, LightLevel, OwnerEvent, PathKey, RunDay, RunKpis, RunStores, StoreKpis, StoreType, StoreVisit, StreetEvent } from "../api/contract";
+import type { AgentDay, Building, CityMap, DayData, LightLevel, OwnerEvent, PathKey, RunDay, RunKpis, RunStores, StoreKpis, StoreType, StoreVisit, StreetEvent } from "../api/contract";
 import { DAYS_PER_RUN, MINUTES_PER_DAY } from "../api/contract";
-import { frontage } from "../sim/geometry";
 import { mergeDays } from "../sim/interp";
 import type { RunConfig } from "./configs";
-import { H_STREETS, V_STREETS } from "./map";
+import { buildWalkNet, type Place, type WalkNet } from "./walk";
 import { aggregateDaily } from "./daily";
 import { OwnerBook, type DayStats } from "./owners";
 import { generateStreetEvents, storeStreets } from "./streetEvents";
@@ -30,62 +29,22 @@ const isWeekend = (day: number) => dow(day) >= 5;
 
 export { LIGHT_KWH } from "./owners";
 
-// ---------- network: everyone walks the sidewalks of the street grid ----------
+// ---------- network: everyone walks the pavements of the map's streets (mock/walk.ts) ----------
 
-/** A point attached to a street line: on a north-south street at X ("v") or an east-west street at Z ("h"). */
-interface Loc {
-  x: number;
-  z: number;
-  axis: "v" | "h";
-  line: number;
-}
-
-const vWidth = new Map(V_STREETS.map((s) => [s.x, s.width]));
-const hWidth = new Map(H_STREETS.map((s) => [s.z, s.width]));
+/** A place on the walking network: a door, an entry point, a home, a street corner to wander to. */
+type Loc = Place;
 
 interface Walker {
-  /** +1 / -1: which sidewalk this agent prefers on each axis. */
+  /** +1 / -1: which pavement this agent keeps to (sz is drawn too, so seeded draws stay in step). */
   sx: number;
   sz: number;
 }
 
-function sideX(w: Walker, X: number) {
-  return X + w.sx * ((vWidth.get(X) ?? 10) / 2 + 2);
-}
-function sideZ(w: Walker, Z: number) {
-  return Z + w.sz * ((hWidth.get(Z) ?? 10) / 2 + 2);
-}
-
-function nearestLine(lines: number[], a: number, b: number) {
-  let best = lines[0];
-  for (const l of lines) if (Math.abs(a - l) + Math.abs(b - l) < Math.abs(a - best) + Math.abs(b - best)) best = l;
-  return best;
-}
-const VX = V_STREETS.map((s) => s.x);
-const HZ = H_STREETS.map((s) => s.z);
-
-/** Waypoints from a to b (contract coords), Manhattan-style along sidewalks. */
-function route(w: Walker, a: Loc, b: Loc): [number, number][] {
-  const pts: [number, number][] = [[a.x, a.z]];
-  const proj = (l: Loc): [number, number] => (l.axis === "v" ? [sideX(w, l.line), l.z] : [l.x, sideZ(w, l.line)]);
-  pts.push(proj(a));
-  if (a.axis === "v" && b.axis === "v") {
-    if (a.line !== b.line) {
-      const Z = nearestLine(HZ, a.z, b.z);
-      pts.push([sideX(w, a.line), sideZ(w, Z)], [sideX(w, b.line), sideZ(w, Z)]);
-    }
-  } else if (a.axis === "h" && b.axis === "h") {
-    if (a.line !== b.line) {
-      const X = nearestLine(VX, a.x, b.x);
-      pts.push([sideX(w, X), sideZ(w, a.line)], [sideX(w, X), sideZ(w, b.line)]);
-    }
-  } else if (a.axis === "v") {
-    pts.push([sideX(w, a.line), sideZ(w, b.line)]);
-  } else {
-    pts.push([sideX(w, b.line), sideZ(w, a.line)]);
-  }
-  pts.push(proj(b), [b.x, b.z]);
-  return pts.filter((p, i) => i === 0 || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 0.05);
+const nets = new WeakMap<CityMap, WalkNet>();
+function netOf(map: CityMap): WalkNet {
+  let n = nets.get(map);
+  if (!n) nets.set(map, (n = buildWalkNet(map.streets)));
+  return n;
 }
 
 // ---------- context ----------
@@ -116,9 +75,13 @@ interface Ctx {
   homes: Loc[];
   offices: Loc[];
   entries: Loc[];
+  /** Street corners near the shops that window-shoppers wander to. */
+  spots: Loc[];
   /** Where station arrivals appear today (the nearest street entry while the station is closed). */
   station: Loc;
   realStation: Loc;
+  /** The real map (1.7 km across, ~200 shops) rather than the schematic one: see dayAgents. */
+  big: boolean;
   altStation: Loc;
   tweaks: SimTweaks;
 }
@@ -153,37 +116,59 @@ const SURNAMES = ["Okafor", "Novak", "Shah", "Rossi", "Haddad", "Kowalski", "Men
 /** Owner person id for a shop: "s13" -> "o13". */
 export const ownerIdOf = (storeId: string) => `o${storeId.replace(/^s/, "")}`;
 
-function buildingLoc(map: CityMap, buildingId: string): Loc {
-  const b = map.buildings.find((x) => x.id === buildingId)!;
-  const f = frontage(b, map.streets);
-  const [[sx, sz], [ex, ez]] = [f.street.points[0], f.street.points[f.street.points.length - 1]];
-  const vertical = Math.abs(ex - sx) < Math.abs(ez - sz);
-  return { x: f.doorX, z: f.doorZ, axis: vertical ? "v" : "h", line: vertical ? sx : sz };
+/** Where a building's door meets the pavement of its street, as a place on the walking network. */
+function buildingLoc(net: WalkNet, b: Building): Loc {
+  const [dx, dz] = net.door(b.x, b.z);
+  return net.place(dx, dz);
 }
 
+/** Up to n items spread evenly through xs (deterministic). */
+function spread<T>(xs: T[], n: number): T[] {
+  if (xs.length <= n) return xs;
+  return Array.from({ length: n }, (_, i) => xs[Math.floor((i * xs.length) / n)]);
+}
+
+/** Pools of homes / offices / wander spots: enough variety, few enough shortest-path trees to stay fast. */
+const HOMES = 140;
+const OFFICES = 70;
+const SPOTS = 90;
+
 const ctxCache = new WeakMap<CityMap, Omit<Ctx, "cfg" | "missed" | "missedToday" | "book" | "streetCuts" | "station" | "altStation" | "tweaks">>();
+const byKey = (a: { x: number; z: number }, b: { x: number; z: number }) => a.x - b.x || a.z - b.z;
 
 function context(map: CityMap, cfg: RunConfig, street: StreetEvent[], run: number, tweaks: SimTweaks = {}): Ctx {
   let base = ctxCache.get(map);
   if (!base) {
+    const net = netOf(map);
     const streets = storeStreets(map);
+    const bById = new Map(map.buildings.map((b) => [b.id, b]));
     const stores = map.stores.map((s, idx) => {
-      const b = map.buildings.find((x) => x.id === s.buildingId)!;
-      return { id: s.id, idx, type: s.type, loc: buildingLoc(map, s.buildingId), area: b.w * b.d, streetId: streets.get(s.id) ?? "" };
+      const b = bById.get(s.buildingId)!;
+      return { id: s.id, idx, type: s.type, loc: buildingLoc(net, b), area: b.w * b.d, streetId: streets.get(s.id) ?? "" };
     });
-    const entries: Loc[] = map.entryPoints.map((e) =>
-      e.kind === "station" || Math.abs(e.z) >= Math.abs(e.x)
-        ? { x: e.x, z: e.z, axis: "v", line: e.x }
-        : { x: e.x, z: e.z, axis: "h", line: e.z },
-    );
+    const stations = map.entryPoints.filter((e) => e.kind === "station");
+    // wander spots: street corners near the shops (where window-shopping happens), spread over the whole map
+    const doors = stores.map((s) => s.loc);
+    const along: [number, number][] = [];
+    for (const st of map.streets)
+      for (let i = 1; i < st.points.length; i++) {
+        const [ax, az] = st.points[i - 1];
+        const [bx, bz] = st.points[i];
+        const n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 25));
+        for (let k = 0; k < n; k++) along.push([ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n]);
+      }
+    const nearShops = along.filter(([x, z]) => doors.some((d) => Math.abs(d.x - x) < 120 && Math.abs(d.z - z) < 120)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     base = {
       map,
       stores,
       byId: new Map(stores.map((s) => [s.id, s])),
-      homes: map.buildings.filter((b) => b.kind === "residential").map((b) => buildingLoc(map, b.id)),
-      offices: map.buildings.filter((b) => b.kind === "office").map((b) => buildingLoc(map, b.id)),
-      entries: entries.filter((_, i) => map.entryPoints[i].kind === "street"),
-      realStation: entries[map.entryPoints.findIndex((e) => e.kind === "station")],
+      homes: spread(map.buildings.filter((b) => b.kind === "residential").sort(byKey), HOMES).map((b) => buildingLoc(net, b)),
+      offices: spread(map.buildings.filter((b) => b.kind === "office").sort(byKey), OFFICES).map((b) => buildingLoc(net, b)),
+      // street entries, plus the other stations (Liverpool St, Old St, Moorgate on the real map) as ways in
+      entries: [...map.entryPoints.filter((e) => e.kind === "street"), ...stations.slice(1)].map((e) => net.place(e.x, e.z)),
+      spots: spread(nearShops, SPOTS).map(([x, z]) => net.place(x, z)),
+      realStation: net.place(stations[0]?.x ?? 0, stations[0]?.z ?? 0),
+      big: stores.length > 60,
     };
     ctxCache.set(map, base);
   }
@@ -267,7 +252,7 @@ function startAgent(id: string, persona: Persona, returning: boolean, at: Loc, t
 }
 
 function walkTo(a: Agent, to: Loc) {
-  const pts = route(a.walker, a.at, to);
+  const pts = to.net.route(a.at, to, a.walker.sx);
   for (let i = 1; i < pts.length; i++) {
     const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
     a.t += d / WALK_M_PER_MIN;
@@ -276,12 +261,9 @@ function walkTo(a: Agent, to: Loc) {
   a.at = to;
 }
 
-/** Window-shopping: wander to a random point on a random street. */
-function stroll(a: Agent, r: Rng) {
-  const vertical = r() < 0.5;
-  const line = vertical ? pick(r, VX) : pick(r, HZ);
-  const along = between(r, -200, 200);
-  walkTo(a, vertical ? { x: line, z: along, axis: "v", line } : { x: along, z: line, axis: "h", line });
+/** Window-shopping: wander to a street corner near the shops. */
+function stroll(ctx: Ctx, a: Agent, r: Rng) {
+  walkTo(a, pick(r, ctx.spots));
 }
 
 function wait(a: Agent, minutes: number) {
@@ -458,7 +440,7 @@ function dayAgents(ctx: Ctx, regs: Regular[], day: number, seed: number): AgentD
         if (r() > (weekend ? 0.85 : 0.4)) break;
         const s = go("", reg.home, at(day, between(r, 10.5, 16)));
         for (let k = intBetween(r, 1, 3); k > 0; k--) {
-          stroll(s, r);
+          stroll(ctx, s, r);
           visitOne(ctx, s, { prefs: { shop: 3, cafe: 1 }, outside: 0.3 }, r);
         }
         walkTo(s, reg.home);
@@ -485,7 +467,9 @@ function dayAgents(ctx: Ctx, regs: Regular[], day: number, seed: number): AgentD
       const byStation = r() < 0.5;
       if (stationClosed && byStation && !keep(id, "station", 0.4)) continue;
       if (!keep(id, "rain", rain)) continue;
-      const from = byStation ? ctx.station : pick(r, ctx.entries);
+      // on the real map the edge entries are up to a kilometre from most shops: half the street arrivals step out
+      // near the shops instead (buses, side streets, the flats above them)
+      const from = byStation ? ctx.station : ctx.big && r() < 0.5 ? pick(r, ctx.spots) : pick(r, ctx.entries);
       const a = startAgent(id, persona, false, from, at(day, between(r, hours[0], hours[1])), r);
       fn(a, r);
       out.push(finish(a));
@@ -493,7 +477,7 @@ function dayAgents(ctx: Ctx, regs: Regular[], day: number, seed: number): AgentD
   };
   oneOff("tourist", weekend ? 70 : 40, (a, r) => {
     for (let k = intBetween(r, 2, 4); k > 0; k--) {
-      stroll(a, r);
+      stroll(ctx, a, r);
       visitOne(ctx, a, { prefs: { shop: 2, cafe: 1.5, restaurant: 1, bar: 0.5 }, outside: 0.4 }, r);
     }
     walkTo(a, r() < 0.6 ? ctx.station : pick(r, ctx.entries));
@@ -503,13 +487,17 @@ function dayAgents(ctx: Ctx, regs: Regular[], day: number, seed: number): AgentD
     if (r() < 0.4) visitOne(ctx, a, { prefs: { bar: 2 }, outside: 0.6 }, r);
     walkTo(a, r() < 0.6 ? ctx.station : pick(r, ctx.entries));
   }, [18, 21]);
-  oneOff("night-owl", Math.round(110 * night), (a, r) => nightOut(ctx, a, day, r), [21.5, 23.8]);
+  // the night-out crowd scales with the clubs it fills (2 on the schematic map, 6 on the real one)
+  const clubs = ctx.stores.filter((s) => s.type === "club").length;
+  oneOff("night-owl", Math.round(110 * night * Math.max(1, clubs / 2)), (a, r) => nightOut(ctx, a, day, r), [21.5, 23.8]);
 
   // passers-by: the through-traffic of a busy high street. Most never stop; a lit, open shop can catch a few.
-  const PASSER_SCALE = 4;
+  // the real map's walks are long (1.7 km across, real street corners): half as many there keeps a run's keyframes
+  // (and the browser's memory) in check
+  const PASSER_SCALE = ctx.big ? 2 : 4;
   const through = (n: number, hours: [number, number]) =>
     oneOff("passer-by", Math.round(n * PASSER_SCALE), (a, r) => {
-      if (r() < 0.6) stroll(a, r);
+      if (r() < 0.6) stroll(ctx, a, r);
       visitOne(ctx, a, { prefs: { cafe: 1, takeaway: 1, shop: 0.8, offlicence: 0.8, bar: 0.6 }, outside: 14, maxDist: 120 }, r);
       walkTo(a, r() < 0.4 ? ctx.station : pick(r, ctx.entries));
     }, hours);

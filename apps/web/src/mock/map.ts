@@ -1,4 +1,5 @@
-// Mock map: a cartoon 500 m × 500 m Shoreditch on a street grid, in the exact map.json shape.
+// Schematic fallback map (mock/realMap.ts uses it only if data/processed/map.json is unusable; tests pin the story on
+// it): a cartoon 500 m × 500 m Shoreditch on a street grid, in the exact map.json shape.
 // ~25 stores, 2 clubs, 1 station, 4 street entry points. Seeded, so it's the same city every reload.
 import type { Building, BuildingKind, CityMap, EntryPoint, Store, StoreType, Street } from "../api/contract";
 import { frontage } from "../sim/geometry";

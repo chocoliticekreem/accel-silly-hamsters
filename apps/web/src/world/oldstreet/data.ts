@@ -1,6 +1,7 @@
 // Old Street junction as it is today (post-2024: the gyratory is gone, the north-west arm became a public space
 // with the new station entrance pavilion). Geometry from OpenStreetMap, baked once by scripts/fetch-oldstreet.py
 // into public/areas/oldstreet.json. Contract coords: x east, z north, metres from the map origin.
+import { fetchJsonTracked } from "../../state/loading";
 export type XZ = [number, number];
 
 export interface OldStreetData {
@@ -34,10 +35,7 @@ let pending: Promise<OldStreetData> | null = null;
 
 export function loadOldStreet(): Promise<OldStreetData> {
   if (!pending) {
-    pending = fetch(`${import.meta.env.BASE_URL}areas/oldstreet.json`).then((r) => {
-      if (!r.ok) throw new Error(`oldstreet.json ${r.status}`);
-      return r.json() as Promise<OldStreetData>;
-    });
+    pending = fetchJsonTracked<OldStreetData>(`${import.meta.env.BASE_URL}areas/oldstreet.json`, "landmarks", "oldstreet").then((d) => d!);
     pending.catch(() => (pending = null));
   }
   return pending;

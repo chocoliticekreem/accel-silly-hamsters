@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { RUN_MINUTES } from "../api/contract";
 
 export type Speed = 1 | 10 | 100;
-export type Panel = null | "history" | "report" | "area" | "agents";
+export type Panel = null | "history" | "report" | "area" | "agents" | "busy";
 /** "satellite" / "map" = free keyless aerial / OSM basemap draped as the ground (world/modules/MapGround.tsx);
  *  "photoreal" = Google Photorealistic 3D Tiles (world/modules/Photoreal.tsx), needs VITE_GOOGLE_MAPS_API_KEY. */
 export type GraphicsMode = "stylised" | "satellite" | "map" | "photoreal";

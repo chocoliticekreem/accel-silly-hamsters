@@ -3,6 +3,7 @@
 import type { CityMap, StreetEvent } from "../api/contract";
 import { MINUTES_PER_DAY, DAYS_PER_RUN } from "../api/contract";
 import { frontage } from "../sim/geometry";
+import { demoRoles } from "./roles";
 import { between, intBetween, pick, rng, seedOf } from "./rng";
 
 const dayStart = (day: number) => (day - 1) * MINUTES_PER_DAY;
@@ -26,7 +27,7 @@ export function generateStreetEvents(map: CityMap, seed: number): StreetEvent[] 
 
   // roadworks: 1–2 blocks of 1–3 days on shopping streets. The first sits outside the demo takeaway, mid-week one.
   const shopsOn = (id: string) => map.stores.filter((s) => s.type !== "club" && streetOf.get(s.id) === id).length;
-  const kebab = map.stores.find((s) => s.name === "Kebab Co");
+  const kebab = demoRoles(map).takeaway;
   const busy = [...new Set(streetOf.values())].filter((id) => shopsOn(id) >= 2).sort();
   const first = (kebab && streetOf.get(kebab.id)) || pick(r, busy);
   const works: { street: string; start: number; days: number }[] = [{ street: first, start: 3, days: intBetween(r, 1, 3) }];

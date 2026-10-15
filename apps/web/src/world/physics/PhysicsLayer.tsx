@@ -5,8 +5,10 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { ModuleBoundary } from "../ModuleBoundary";
 import { PHYSICS_ON } from "./engine";
+import { track } from "../../state/loading";
 
-const Runtime = lazy(() => import("./Runtime"));
+// the loading screen counts the Rapier chunk under "People and traffic" (a failed load just leaves physics off)
+const Runtime = lazy(() => track("people", "physics", import("./Runtime"), { weight: 2, optional: true }));
 
 export function PhysicsLayer({ children, enabled = true }: { children: ReactNode; enabled?: boolean }) {
   return (
