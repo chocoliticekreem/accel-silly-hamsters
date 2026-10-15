@@ -6,6 +6,7 @@ import type { Building, CityMap } from "../api/contract";
 import { rng, seedOf, type Rng } from "../mock/rng";
 import { closestOnStreet, frontage } from "./geometry";
 import { overgroundRoute, routeDistance, VIADUCT_W } from "./overground";
+import { OLD_STREET_KEEPOUTS } from "./oldStreetArea";
 
 export const CELL = 4;
 /** Clear margin around real buildings, stores (bigger, so awnings breathe) and the station. */
@@ -65,6 +66,7 @@ export function occupancy(map: CityMap, cell = CELL): Grid {
     else keepouts.push({ x: b.x, z: f.facadeZ + (f.nz * STORE_FRONT) / 2, w: b.w + STORE_PAD * 2, d: STORE_FRONT + STORE_PAD * 2 });
   }
   for (const e of map.entryPoints) keepouts.push({ x: e.x, z: e.z, w: 16, d: 16 });
+  keepouts.push(...OLD_STREET_KEEPOUTS);
   // the Overground viaduct's corridor (its arches stand there)
   const viaduct = overgroundRoute(map, 0);
 
