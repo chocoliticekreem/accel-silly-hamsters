@@ -18,6 +18,7 @@ import { Legend } from "./ui/Legend";
 import { PlaybackBar } from "./ui/PlaybackBar";
 import { StoreCard } from "./ui/StoreCard";
 import { Toast } from "./ui/Toast";
+import { SafetyToggle } from "./ui/SafetyToggle";
 import World from "./world/World";
 
 export default function App() {
@@ -78,6 +79,7 @@ export default function App() {
             <button className={`chip ${panel === "area" ? "on" : ""}`} aria-pressed={panel === "area"} onClick={() => openPanel(panel === "area" ? null : "area")}>
               <Icon name="bolt" size={14} /> Area
             </button>
+            <SafetyToggle />
             {dataTag && <span className="chip chip-mock" title={health ? `map: ${health.mapSource} · real runs: ${health.realRuns}` : undefined}>{dataTag}</span>}
           </div>
         </div>
