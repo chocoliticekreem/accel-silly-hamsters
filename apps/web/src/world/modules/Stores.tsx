@@ -146,7 +146,7 @@ function StoreBox({ store, b, nx, nz, span, events }: StoreBoxProps) {
   const gw = span ? Math.min(span.width, width * 0.82) : 0;
   return (
     <group position={[x, 0, z]} rotation-y={rot} name={`store-${store.id}`}>
-      <group onPointerOver={over} onPointerOut={out} onClick={click}>
+      <group name="store-body" onPointerOver={over} onPointerOut={out} onClick={click}>
         <mesh position-y={h / 2} castShadow receiveShadow>
           <boxGeometry args={[width, h, depth]} />
           <meshStandardMaterial color={colors.body} roughness={0.85} />
