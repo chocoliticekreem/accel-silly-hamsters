@@ -107,6 +107,24 @@ def test_cache_hit_returns_the_run_without_simulating(
     assert sorted(p.name for p in dirs.iterdir() if p.name.isdigit()) == [str(first)]
 
 
+def test_rebuilt_processed_data_never_reuses_a_run(dirs: Path) -> None:
+    configs = runner.baseline_configs()
+    first = runner.execute_run(configs, SEED)
+    sid, config = next(iter(configs.items()))
+    assert cache.store_config_tried(sid, config)
+
+    demand = settings.PROCESSED_DIR / "demand.json"
+    rebuilt = read(demand)
+    rebuilt["notes"] = [*rebuilt.get("notes", []), "rebuilt"]
+    demand.write_text(json.dumps(rebuilt))
+
+    assert cache.run_lookup(cache.run_key(configs, SEED)) is None
+    assert not cache.store_config_tried(sid, config)
+    second = runner.execute_run(configs, SEED)
+    assert second != first
+    assert cache.run_lookup(cache.run_key(configs, SEED)) == second
+
+
 def test_reserved_run_id_and_index_status(dirs: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     run = store.reserve_run_id()
     store.upsert_index(
