@@ -15,15 +15,23 @@ import Ground from "./modules/Ground";
 import Sky from "./modules/Sky";
 import Stores from "./modules/Stores";
 import StreetLights from "./modules/StreetLights";
+import Footfall from "./modules/Footfall";
+import Skyline from "./modules/Skyline";
+import StreetDressing from "./modules/StreetDressing";
 import Streets from "./modules/Streets";
+import Traffic from "./modules/Traffic";
 
 export const MODULES: Record<string, ComponentType> = {
   Sky,
   Ground,
+  Skyline,
   Streets,
   Buildings,
   Stores,
   StreetLights,
+  StreetDressing,
+  Traffic,
+  Footfall,
   Agents,
   CameraRig,
   Glow,
@@ -63,7 +71,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
     <Canvas
       shadows
       dpr={dpr}
-      camera={{ position: [230, 250, 330], fov: 42, near: 1, far: 3000 }}
+      camera={{ position: [300, 150, -340], fov: 42, near: 1, far: 4000 }}
       gl={{ antialias: true, powerPreference: "high-performance", stencil: false }}
     >
       <PerformanceMonitor onIncline={() => setDpr(Math.min(2, window.devicePixelRatio))} onDecline={() => setDpr(1)} />

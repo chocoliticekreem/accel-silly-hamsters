@@ -20,6 +20,9 @@ export function Legend() {
             </span>
           ))}
           <span className="legend-item">
+            <i style={{ background: "#9aa3b2" }} /> background crowd · 1 agent ≈ 48 people
+          </span>
+          <span className="legend-item">
             <i className="lg-column" /> people inside
           </span>
           <span className="legend-item">

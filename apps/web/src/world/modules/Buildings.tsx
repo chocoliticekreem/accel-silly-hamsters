@@ -47,7 +47,7 @@ export default function Buildings() {
       kinds.map((k) => [
         k,
         Array.from({ length: VARIANTS }, (_, v) => {
-          const t = windowTextures(BUILDING_COLORS[k], v + (k === "office" ? 10 : 0));
+          const t = windowTextures(BUILDING_COLORS[k], v + (k === "office" ? 10 : 0), k === "residential" ? "#efe9df" : undefined);
           return new MeshStandardMaterial({ map: t.map, emissiveMap: t.emissive, emissive: "#ffffff", emissiveIntensity: 0, roughness: 0.85 });
         }),
       ]),

@@ -19,8 +19,9 @@ interface Shared {
 const groups = new Map<string, Shared>();
 let rigSeq = 0;
 
-const HOME_POS = new Vector3(230, 250, 330);
-const HOME_TARGET = new Vector3(0, 0, -10);
+// From the north-east looking south-west: Shoreditch in front, the City of London skyline behind it.
+const HOME_POS = new Vector3(300, 150, -340);
+const HOME_TARGET = new Vector3(-30, 0, 40);
 const FOCUS_DIST = 150;
 /** Angle from straight down when focusing a store (radians); ~32°. */
 const FOCUS_POLAR = 0.55;
@@ -89,7 +90,7 @@ export default function CameraRig() {
       enableDamping
       dampingFactor={0.08}
       minDistance={30}
-      maxDistance={900}
+      maxDistance={1100}
       maxPolarAngle={Math.PI * 0.44}
       onStart={() => {
         shared.leader = id;
