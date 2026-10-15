@@ -29,13 +29,11 @@ from backend import settings, timeutil
 from backend.contract import (
     DAYS,
     MINUTES_PER_DAY,
-    DayAgent,
     DayData,
     EntryPoint,
     MapData,
     MapStore,
     OwnerEvent,
-    Visit,
 )
 from backend.schemas import ClubNight, DemandFile, EnergyFile, PersonasFile, StoreConfig
 from backend.sim import citizens, movement, owners, street
@@ -67,6 +65,7 @@ class World:
     sight: np.ndarray  # (places, n_stores) straight-line metres from each place to each door
     pull: np.ndarray  # (places, n_stores) distance decay for ordinary stops
     late_pull: np.ndarray  # (places, n_stores) distance decay for post-club food
+    exit_pull: np.ndarray  # (places, n_entries) distance decay for leaving
     club_nights: dict[int, list[ClubNight]]  # store index -> its nights
     pool_size: int
 
@@ -117,6 +116,7 @@ class World:
             sight=sight,
             pull=np.exp(-routes.dist[:, : len(stores)] / citizens.DECAY_M),
             late_pull=np.exp(-routes.dist[:, : len(stores)] / citizens.LATE_DECAY_M),
+            exit_pull=np.exp(-routes.dist[:, len(stores) :] / citizens.EXIT_DECAY_M),
             club_nights=nights,
             pool_size=int(round(demand.returningPoolSize * scale)),
         )
@@ -321,11 +321,11 @@ class _Simulation:
         )
 
     def walk_to(self, walker: _Walker, place: int) -> None:
-        corners = self.world.routes.corners(walker.loc, place)
+        legs = self.world.routes.legs(walker.loc, place)
         if walker.path[-1][0] < walker.t:
             _, x, z = walker.path[-1]
             walker.path.append((walker.t, x, z))
-        frames = movement.walk(corners, walker.t)
+        frames = movement.walk_legs(legs, walker.t)
         walker.path.extend(frames[1:])
         walker.t = frames[-1][0]
         walker.loc = place
@@ -426,14 +426,11 @@ class _Simulation:
         """Exit via a station or street edge: nearer is likelier, and so is the way they came."""
         world = self.world
         origin = walker.arrival.entry
-        weights = self.entry_weights(walker.model) * np.exp(
-            -world.routes.dist[walker.loc, world.n_stores :] / citizens.EXIT_DECAY_M
-        )
+        weights = self.entry_weights(walker.model) * world.exit_pull[walker.loc]
         weights[origin] *= citizens.ORIGIN_EXIT_BONUS
         if walker.loc == world.entry_place(origin) and len(weights) > 1:
             weights[origin] = 0.0  # nothing happened: they walk through instead of vanishing
-        with np.errstate(divide="ignore"):
-            scores = np.where(weights > 0, exit_draws / np.where(weights > 0, weights, 1.0), np.inf)
+        scores = np.where(weights > 0, exit_draws / np.where(weights > 0, weights, 1.0), np.inf)
         self.walk_to(walker, world.entry_place(int(np.argmin(scores))))
 
     def entry_weights(self, model: PersonaModel) -> np.ndarray:
@@ -518,19 +515,16 @@ def _footfall_near(trips: list[Trip], doors: np.ndarray) -> np.ndarray:
     for i, trip in enumerate(trips):
         by_day.setdefault(trip.day, []).append(i)
     for indices in by_day.values():
-        rows, owners = [], []
-        for i in indices:
-            path = trips[i].path
-            for (t0, x0, z0), (t1, x1, z1) in zip(path, path[1:], strict=False):
-                if x0 != x1 or z0 != z1:  # standing at a door is not passing by
-                    rows.append((t0, x0, z0, t1, x1, z1))
-                    owners.append(i)
-        seg_idx, door_idx, minute = movement.passes_near(
-            np.asarray(rows, dtype=float).reshape(-1, 6), doors, FOOTFALL_RADIUS_M
-        )
+        frames = np.asarray([f for i in indices for f in trips[i].path], dtype=float).reshape(-1, 3)
+        trip_of = np.repeat(indices, [len(trips[i].path) for i in indices])
+        # Walking segments: consecutive keyframes of one trip; standing at a door is not passing.
+        moved = (frames[1:, 1] != frames[:-1, 1]) | (frames[1:, 2] != frames[:-1, 2])
+        starts = np.flatnonzero((trip_of[1:] == trip_of[:-1]) & moved)
+        rows = np.hstack([frames[starts], frames[starts + 1]])
+        seg_idx, door_idx, minute = movement.passes_near(rows, doors, FOOTFALL_RADIUS_M)
         if len(seg_idx) == 0:
             continue
-        owner = np.asarray(owners)[seg_idx]
+        owner = trip_of[starts][seg_idx]
         abs_hour = minute // 60
         keys = np.unique((owner * len(doors) + door_idx) * HOUR_SPAN + abs_hour)
         hour_of_day = (keys % HOUR_SPAN) % 24
@@ -565,23 +559,33 @@ def _concurrency(trips: list[Trip]) -> tuple[int, int]:
     return int(np.max(p, initial=0)), int(np.max(p - np.cumsum(inside)[ticks], initial=0))
 
 
-def day_files(trips: list[Trip], stores: list[MapStore]) -> list[DayData]:
-    """Contract DayData for days 1..14. A trip appears in the day it starts and, if it runs past
-    midnight, also in the next day, so each file plays back its own 24 hours on its own."""
-    agents: list[list[tuple[int, str, DayAgent]]] = [[] for _ in range(DAYS)]
+def day_payloads(trips: list[Trip], stores: list[MapStore]) -> list[dict]:
+    """Days 1..14 as JSON-ready contract DayData (what runs/{run}/days/{day}.json holds). A trip
+    appears in the day it starts and, if it runs past midnight, also in the next day, so each
+    file plays back its own 24 hours on its own.
+
+    Plain dicts: building and then dumping pydantic models for the ~45,000 trips of a run cost
+    ~0.9 s on the 1.5 km map. day_files() validates the same data against the contract.
+    """
+    agents: list[list[tuple[int, str, dict]]] = [[] for _ in range(DAYS)]
     for trip in trips:
-        agent = DayAgent(
-            id=trip.agent_id,
-            persona=trip.persona,
-            returning=trip.returning,
-            path=trip.path,
-            visits=[Visit(storeId=stores[s].id, tIn=a, tOut=b) for s, a, b in trip.visits],
-        )
+        agent = {
+            "id": trip.agent_id,
+            "persona": trip.persona,
+            "returning": trip.returning,
+            "path": trip.path,
+            "visits": [{"storeId": stores[s].id, "tIn": a, "tOut": b} for s, a, b in trip.visits],
+        }
         first = timeutil.day_of(trip.path[0][0])
         last = timeutil.day_of(trip.path[-1][0])
         for day in range(first, min(last, DAYS) + 1):
             agents[day - 1].append((trip.path[0][0], trip.agent_id, agent))
     return [
-        DayData(day=d + 1, agents=[a for _, _, a in sorted(day, key=lambda x: (x[0], x[1]))])
+        {"day": d + 1, "agents": [a for _, _, a in sorted(day, key=lambda x: (x[0], x[1]))]}
         for d, day in enumerate(agents)
     ]
+
+
+def day_files(trips: list[Trip], stores: list[MapStore]) -> list[DayData]:
+    """Contract DayData for days 1..14 (day_payloads, validated)."""
+    return [DayData.model_validate(payload) for payload in day_payloads(trips, stores)]

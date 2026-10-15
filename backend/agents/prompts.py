@@ -22,7 +22,7 @@ _RULES = f"""Hard rules (checked in code; a proposal that breaks one is rejected
 - Never propose a store config that was already simulated; the config history shows past ones.
 - Clubs are fixed anchors and never change."""
 
-CITY_CONTEXT = f"""You advise independent store owners in Shoreditch, London (about 500 m x 500 m
+CITY_CONTEXT = f"""You advise independent store owners in Shoreditch, London (about 1.5 km x 1.5 km
 around Shoreditch High Street station). A simulation replays 14 days of the area: persona-driven
 people arrive at stations and street edges, walk, shop, eat and go to clubs. Clubs close around
 03:00 on club nights and their crowd spills out looking for late food and drink.
