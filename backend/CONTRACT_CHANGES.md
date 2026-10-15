@@ -19,7 +19,7 @@ not sent as `null`.
 | `GET /api/runs` | `status` adds `queued`, `running` and `failed`. `kpis` is `null` until the run is `done`. |
 | `POST /api/decision` | Optional `?run=` query parameter pins the run whose report the owner saw. Default: the report endpoint's default run. |
 | New `GET /files/reports/{run}/{storeId}.pdf` | The PDF behind `pdfUrl` (`application/pdf`). |
-| New `GET /api/runs/{run}/summary` | `RunSummary` (`backend/schemas.py`) for the city view: `kpis`, `objective`, `objectiveValue`, `peakKw`, `peakHour`, `co2Kg`, `energyCostGbp`, `demandByHourKw[24]`, `footfallByHour[24]`, `agents`, `durationSec`, `cost`, `cache`. Area totals only, no store ids. |
+| New `GET /api/runs/{run}/summary` | `RunSummary` (`backend/schemas.py`) for the city view: `kpis`, `objective`, `objectiveValue`, `peakKw`, `peakHour`, `co2Kg`, `energyCostGbp`, `demandByHourKw[24]`, `footfallByHour[24]`, `agents`, `durationSec`, `cost`, `cache`. Area totals only, no store ids. Optional `daily`: the in-run learning curve, 14 entries `{day, visits, kwh, visitsPerKwh, profitGbp, ownerActions}` (e.g. `{"day": 1, "visits": 1012, "kwh": 1603.4, "visitsPerKwh": 0.631, "profitGbp": 412.5, "ownerActions": 3}`): that sim day's area totals over non-club stores; `profitGbp` = margin on the visits (spend per visit x gross margin by store type, `backend/economics.py`) minus that day's energy bill; `ownerActions` = owner events dated that day (0 with adaptation off). Visits count on the day they start (a trip past midnight of day 14 counts on day 14), so the 14 entries sum to `kpis.visits` and, within rounding, to `kpis.kwh`. Every new run has it; runs from before it was added omit it. |
 | New `GET /api/notebook` | Analyst lab notebook: `[{run, line, objectiveValue, at}]`, one line per run. |
 | New `GET /api/health` | `{ok, simVersion, mapSource, realRuns}`. `mapSource` is `processed`, `sample` or `missing`. |
 | New `GET /api/stores/{storeId}/insights?run=` | `StoreInsights` (`backend/contract.py`): one shop's 14-day `kpis`, `funnel` (passers-by → visits → returning), `hourly` (visits, footfall, missedDemand, kWh, lighting, openFraction), `weekdayVsWeekend`, `personas`, `energy` (incl. kWh while closed), anonymised `benchmarks` (peer count ≥ 3, percentiles only; may be `null`) and up to 5 ranked `insights` (kind, severity, title, detail, metric, impact, confidence, `suggestion` or `null`, evidence). Store-scoped: no other shop's id, name or numbers. Default run as for the report. 404 for clubs, unknown stores/runs and runs without store stats; 503 when processed data is missing. |
@@ -43,7 +43,16 @@ not sent as `null`.
   `schedule`: apply them from the events. Every decision passes the hard rules (licence hours,
   minimum open/closed time). `closed_permanently` never happens in a run whose parent is the
   baseline. Street events cut (roadworks, heavy traffic) or lift (event) stop-ins at the shops on
-  that street; walking routes are unchanged.
+  that street; walking routes are unchanged. Owners decide with money in mind
+  (`backend/economics.py`): a later close only when the margin on the expected extra visits beats
+  the extra energy bill (lights included); a first/last hour is trimmed when its visits don't pay
+  for its energy (an extension that didn't pay is taken back); window lights go off while shut and
+  sign lights in daylight (a lit window only draws people at night while open). `day_closed`
+  comes from a weekly review at the end of day 7: a weekday that was clearly dead in week 1 (under
+  10% of an average day's visits and its margin below its energy bill) is closed from week 2;
+  `day_reopened` (`trigger.kind` `dead_day`) follows when people keep trying the door or the
+  footfall past the shut door is close to an open day's (it applies from the next week, which may
+  be past day 14).
 - **Sample run 0** (`runs/0/`, hand-made, not simulated). `GET /api/runs` lists it while
   `runs/index.json` has no real run and drops it once one exists. Its files stay readable at
   `/api/runs/0/...`.

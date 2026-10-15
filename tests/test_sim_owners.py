@@ -25,8 +25,8 @@ from backend.contract import (
     StreetEvent,
     dump,
 )
-from backend.schemas import RunConfig
-from backend.sim import citizens, engine, owners, runner, street
+from backend.schemas import RunConfig, RunSummary
+from backend.sim import citizens, engine, kpis, owners, runner, street
 from tests.test_sim_engine import baseline, index, with_changes, world
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -329,6 +329,15 @@ def test_run_files_with_adaptation(dirs: Path, monkeypatch: pytest.MonkeyPatch) 
         assert (stores[sid].open, stores[sid].close) == (configs[sid].open, configs[sid].close)
         assert stores[sid].schedule[0].fromDay == 1
     assert runner.execute_run(configs, SEED) in (a, b)  # cached under the adaptation key
+    for run in (off, a):
+        summary = read(store.run_dir(run) / "summary.json")
+        assert [d["day"] for d in summary["daily"]] == list(range(1, DAYS + 1))
+        assert set(summary["daily"][0]) == {
+            "day", "visits", "kwh", "visitsPerKwh", "profitGbp", "ownerActions",
+        }  # fmt: skip
+        assert sum(d["visits"] for d in summary["daily"]) == summary["kpis"]["visits"]
+    assert read(da / "summary.json")["daily"] == read(db / "summary.json")["daily"]
+    assert sum(d["ownerActions"] for d in read(da / "summary.json")["daily"]) == len(events)
 
 
 def test_closures_only_below_a_non_baseline_parent(
@@ -396,5 +405,184 @@ def test_contract_changes_document_the_additions() -> None:
         "owner-events",
         "street-events",
         "OWNER_ADAPTATION",
+        "`daily`",
+        "profitGbp",
+        "ownerActions",
     ):
         assert key in changes, key
+
+
+# --- weekday closures from one dead week (driven tallies) ---------------------------------------
+
+
+def fresh_team() -> owners.Owners:
+    """Owners on the fixture world with no street events; tests feed the day tallies."""
+    schedule = engine.build_schedule(world(), baseline())
+    return owners.Owners(world(), schedule, baseline(), [], allow_closure=False)
+
+
+def window_hours(store_id: str) -> np.ndarray:
+    config = baseline()[store_id]
+    return np.asarray(timeutil.open_hours_fraction(config.open, config.close)) > 0
+
+
+def live_days(
+    team: owners.Owners, store_id: str, *, dead_day: int, last_day: int, passing: float
+) -> None:
+    """Days 1..last_day for one shop: 3 visits and 20 passers-by an open hour, except dead_day
+    (no visits) and, while a weekday is closed, `passing` passers-by an hour at the shut door."""
+    i, hours = index(store_id), window_hours(store_id)
+    for day in range(1, last_day + 1):
+        footfall = np.zeros((world().n_stores, 24))
+        if team.owners[i].window(day) is None:
+            footfall[i, hours] = passing
+        else:
+            footfall[i, hours] = 20.0
+            if day != dead_day:
+                team.visits[i, day, hours] = 3.0
+        team.end_day(day, footfall)
+
+
+def test_a_clearly_dead_weekday_in_week_one_closes_from_week_two() -> None:
+    team = fresh_team()
+    live_days(team, "s5", dead_day=3, last_day=owners.REVIEW_DAY, passing=0.0)
+    s5 = index("s5")
+    [closed] = [e for e in team.events() if e.action == "day_closed"]
+    assert (closed.storeId, closed.day, closed.to) == ("s5", owners.REVIEW_DAY + 1, "wed")
+    assert closed.t == owners.REVIEW_DAY * MINUTES_PER_DAY and closed.trigger.kind == "dead_day"
+    assert closed.reason == "Wednesdays are dead, closing Wednesdays."
+    assert team.schedules()["s5"][-1] == {
+        "fromDay": owners.REVIEW_DAY + 1,
+        "week": [None if k == 2 else {"open": "12:00", "close": "23:00"} for k in range(7)],
+    }
+    ticks = team.schedule.open_ticks[s5].reshape(-1, engine.TICKS_PER_DAY)
+    assert ticks[2].any() and not ticks[9].any()  # open Wednesday day 3, shut Wednesday day 10
+    assert ticks[7].any() and ticks[10].any()
+    assert not any(e.storeId == "c1" for e in team.events())  # clubs are never touched
+
+
+def test_a_quiet_weekday_that_still_pays_stays_open() -> None:
+    team = fresh_team()
+    s5, hours = index("s5"), window_hours("s5")
+    for day in range(1, owners.REVIEW_DAY + 1):
+        team.visits[s5, day, hours] = 0.25 if day == 3 else 3.0
+        team.end_day(day, np.zeros((world().n_stores, 24)))
+    quiet, usual = 0.25 * hours.sum(), 3.0 * hours.sum()
+    assert quiet < owners.DEAD_DAY_SHARE * usual  # dead by visits ...
+    margin = economics.SPEND_GBP_PER_VISIT["restaurant"] * economics.GROSS_MARGIN
+    assert quiet * margin > team._open_cost(team.owners[s5], 12 * 60, 11 * 60)  # ... but it pays
+    assert not [e for e in team.events() if e.action == "day_closed"]
+
+
+@pytest.mark.parametrize(("passing", "reopens"), [(20.0, True), (17.0, True), (5.0, False)])
+def test_a_closed_weekday_people_walk_past_reopens(passing: float, reopens: bool) -> None:
+    team = fresh_team()
+    live_days(team, "s5", dead_day=3, last_day=10, passing=passing)
+    events = [e for e in team.events() if e.action == "day_reopened"]
+    if not reopens:
+        assert not events
+        assert team.schedules()["s5"][-1]["week"][2] is None
+        return
+    [event] = events
+    assert (event.storeId, event.day, event.to) == ("s5", 11, "wed")
+    assert event.trigger.value >= owners.REOPEN_FOOTFALL_SHARE
+    assert "walking past" in event.reason
+    assert team.schedules()["s5"][-1]["fromDay"] == 11
+    assert team.schedules()["s5"][-1]["week"][2] == {"open": "12:00", "close": "23:00"}
+
+
+# --- profit-aware decisions -------------------------------------------------------------------
+
+
+def test_open_cost_counts_the_open_load_and_the_lights() -> None:
+    team = fresh_team()
+    s7 = index("s7")
+    o = team.owners[s7]
+    e = world().energy
+    rate = world().floor_area[s7] * (
+        e.kwhPerM2PerOpenHour["offlicence"] - e.standbyKwhPerM2PerHour["offlicence"]
+    )
+    lighting = baseline()["s7"].lighting
+    assert lighting[23] == "low"  # shut at 23:00 with the window lit low, and low when open
+    expected = rate * e.priceGbpPerKwh[23]
+    assert team._open_cost(o, 23 * 60, 60) == pytest.approx(expected)
+    assert team._open_cost(o, 23 * 60, 30) == pytest.approx(expected / 2)
+    assert lighting[3] == "off"  # 03:00 shut and dark: opening it lights the window high
+    expected = (rate + e.lightingKw["high"]) * e.priceGbpPerKwh[3]
+    assert team._open_cost(o, 3 * 60, 60) == pytest.approx(expected)
+
+
+def test_an_extension_whose_power_costs_more_than_its_margin_is_not_taken(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    taken = [e for e in late_offlicence().owner_events if e.storeId == "s7"]
+    assert any(e.trigger.kind == "missed_demand" for e in taken)
+    spend = dict(economics.SPEND_GBP_PER_VISIT, offlicence=0.05)  # a sale barely buys a light
+    monkeypatch.setattr(economics, "SPEND_GBP_PER_VISIT", spend)
+    out = engine.simulate(world(), with_changes(s7={"close": "17:00"}), SEED, adapt=True)
+    assert not [
+        e for e in out.owner_events if e.storeId == "s7" and e.trigger.kind == "missed_demand"
+    ]
+
+
+def run_money(out: engine.SimOutput) -> tuple[float, float]:
+    results = kpis.build_results(world(), baseline(), out)
+    return sum(d.profitGbp for d in results.daily), results.kpis.visitsPerKwh
+
+
+@pytest.mark.parametrize("seed", SEEDS)
+def test_adapting_owners_make_more_profit_and_visits_per_kwh(seed: int) -> None:
+    profit_off, per_kwh_off = run_money(engine.simulate(world(), baseline(), seed, adapt=False))
+    profit_on, per_kwh_on = run_money(adapted(seed))
+    assert profit_on >= profit_off
+    assert per_kwh_on >= per_kwh_off
+
+
+def test_lights_that_bring_nobody_in_go_off() -> None:
+    out = adapted()
+    events = [e for e in out.owner_events if e.action == "lighting_changed"]
+    assert events and all(e.trigger.kind == "lights_waste" for e in events)
+    for e in events:
+        i = index(e.storeId)
+        later = out.schedule.lit[i, e.day - 1 :]
+        assert (later[:, ~owners.NIGHT] == 0).all()  # no lights in daylight ...
+        assert (later[out.schedule.open_fraction[i, e.day - 1 :] == 0] == 0).all()  # ... or shut
+
+
+# --- the per-day learning curve ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("adapt", [False, True])
+def test_daily_kpis_add_up_to_the_run(adapt: bool) -> None:
+    out = adapted() if adapt else engine.simulate(world(), baseline(), SEED, adapt=False)
+    results = kpis.build_results(world(), baseline(), out)
+    daily = results.daily
+    assert [d.day for d in daily] == list(range(1, DAYS + 1))
+    assert sum(d.visits for d in daily) == results.kpis.visits
+    assert sum(d.kwh for d in daily) == pytest.approx(results.kpis.kwh, abs=0.1)
+    assert sum(d.ownerActions for d in daily) == len(out.owner_events)
+    price = np.asarray(world().energy.priceGbpPerKwh)
+    shops = ~world().is_club
+    margin = sum(
+        results.stores[s.id].kpis.visits
+        * economics.SPEND_GBP_PER_VISIT[s.type]
+        * economics.GROSS_MARGIN
+        for s in world().stores
+    )
+    bill = float((kpis.store_kwh(world(), out)[shops] * price).sum())
+    assert sum(d.profitGbp for d in daily) == pytest.approx(margin - bill, abs=0.1)
+    for d in daily:
+        assert d.visitsPerKwh == round(d.visits / d.kwh, 4)
+    assert kpis.build_results(world(), baseline(), out).daily == daily  # deterministic
+    assert (sum(d.ownerActions for d in daily) > 0) == adapt
+
+
+def test_sample_summary_daily_fits_its_totals() -> None:
+    summary = RunSummary.model_validate(read(ROOT / "runs" / "0" / "summary.json"))
+    assert summary.daily is not None and len(summary.daily) == DAYS
+    assert sum(d.visits for d in summary.daily) == summary.kpis.visits
+    assert sum(d.kwh for d in summary.daily) == pytest.approx(summary.kpis.kwh, abs=0.1)
+    events = read(ROOT / "runs" / "0" / "owner_events.json")
+    assert sum(d.ownerActions for d in summary.daily) == len(events)
+    older = summary.model_copy(update={"daily": None})
+    assert "daily" not in older.model_dump(mode="json")  # omitted when unset (older runs)

@@ -138,6 +138,17 @@ class CacheStats(Model):
     misses: dict[str, int] = Field(default_factory=dict)
 
 
+class DailyKpis(Model):
+    """One sim day of a run, area totals over non-club stores (the in-run learning curve)."""
+
+    day: int  # 1..14
+    visits: int  # visits starting that day (a trip past midnight of day 14 counts on day 14)
+    kwh: float
+    visitsPerKwh: float
+    profitGbp: float  # margin on the visits minus that day's energy bill (backend/economics.py)
+    ownerActions: int  # owner events dated that day
+
+
 class RunSummary(Model):
     """runs/{run}/summary.json."""
 
@@ -156,6 +167,8 @@ class RunSummary(Model):
     durationSec: float
     cost: CostSummary = Field(default_factory=CostSummary)
     cache: CacheStats = Field(default_factory=CacheStats)
+    # Per sim day, 14 entries; every new run has it, runs from before it was added do not.
+    daily: list[DailyKpis] | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class NotebookEntry(Model):

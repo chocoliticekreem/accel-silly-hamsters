@@ -15,9 +15,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from backend import timeutil
+from backend import economics, timeutil
 from backend.contract import DAYS, Kpis, ScheduleEntry, StoreKpis, StoreRunResult
-from backend.schemas import StoreConfig, StoreStats
+from backend.schemas import DailyKpis, StoreConfig, StoreStats
 from backend.sim import energy as energy_model
 from backend.sim.engine import SimOutput, World
 
@@ -42,6 +42,7 @@ class RunResults:
     city: CityMetrics
     footfall_by_hour: list[float]
     agents: dict[str, int]
+    daily: list[DailyKpis]
 
 
 def store_kwh(world: World, out: SimOutput) -> np.ndarray:
@@ -67,9 +68,11 @@ def build_results(world: World, configs: Mapping[str, StoreConfig], out: SimOutp
     weekend = np.zeros((n, 24))
     visit_days: list[dict[str, set[int]]] = [defaultdict(set) for _ in range(n)]
     by_persona: list[Counter[str]] = [Counter() for _ in range(n)]
+    by_day = np.zeros((n, DAYS))
     for trip in out.trips:
         for store, t_in, _ in trip.visits:
             hour, day = (t_in // 60) % 24, timeutil.day_of(t_in)
+            by_day[store, min(day, DAYS) - 1] += 1
             by_hour[store, hour] += 1
             (weekend if timeutil.is_weekend_day(day) else weekday)[store, hour] += 1
             visit_days[store][trip.agent_id].add(day)
@@ -116,7 +119,38 @@ def build_results(world: World, configs: Mapping[str, StoreConfig], out: SimOutp
         city=city_metrics(stats, club_ids),
         footfall_by_hour=_round(out.area_footfall / DAYS),
         agents={"returning": len(returning), "oneOff": one_off, "total": len(returning) + one_off},
+        daily=daily_kpis(world, out, by_day, kwh),
     )
+
+
+def daily_kpis(
+    world: World, out: SimOutput, visits: np.ndarray, kwh: np.ndarray
+) -> list[DailyKpis]:
+    """Area totals per sim day over non-club stores (the in-run learning curve). visits:
+    (n_stores, DAYS); kwh: (n_stores, DAYS, 24). profitGbp = margin on the visits minus the
+    energy bill (backend/economics.py); ownerActions = owner events dated that day."""
+    shops = ~world.is_club
+    margin = np.array(
+        [economics.SPEND_GBP_PER_VISIT[s.type] * economics.GROSS_MARGIN for s in world.stores]
+    )
+    price = np.asarray(world.energy.priceGbpPerKwh)
+    actions = Counter(e.day for e in out.owner_events)
+    days = []
+    for d in range(DAYS):
+        v = int(visits[shops, d].sum())
+        k = round(float(kwh[shops, d].sum()), 2)  # ratio from the rounded value, like run_kpis
+        bill = float((kwh[shops, d] * price).sum())
+        days.append(
+            DailyKpis(
+                day=d + 1,
+                visits=v,
+                kwh=k,
+                visitsPerKwh=round(v / k, 4) if k > 0 else 0.0,
+                profitGbp=round(float((visits[shops, d] * margin[shops]).sum()) - bill, 2),
+                ownerActions=actions.get(d + 1, 0),
+            )
+        )
+    return days
 
 
 def _schedule(entries: list[dict] | None) -> list[ScheduleEntry] | None:
