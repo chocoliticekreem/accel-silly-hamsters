@@ -62,8 +62,8 @@ export function actionLabel(e: OwnerEvent): string {
   }
 }
 
-/** "Day 3 · 15:00" */
-export const momentLabel = (t: number) => `Day ${dayAt(t)} · ${formatHHMM(t)}`;
+/** "Wed · 15:00" */
+export const momentLabel = (t: number) => `${WEEKDAY_NAMES[weekdayIndex(dayAt(t))].slice(0, 3)} · ${formatHHMM(t)}`;
 /** "Wed 15:00" */
 export const weekdayTime = (t: number) => `${WEEKDAY_NAMES[weekdayIndex(dayAt(t))].slice(0, 3)} ${formatHHMM(t)}`;
 

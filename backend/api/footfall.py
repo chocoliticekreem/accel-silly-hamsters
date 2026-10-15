@@ -18,39 +18,23 @@ from __future__ import annotations
 
 import itertools
 import logging
-import re
 from pathlib import Path
 
-from backend import contract, store
+from backend import contract, economics, store
 from backend.api import common
 from backend.contract import DAYS, MINUTES_PER_DAY, DayData, RunFootfall
-from backend.sim import citizens
 
 log = logging.getLogger(__name__)
 
 CACHE_FILE = "footfall.json"
 # Bump whenever on_street_by_hour counts differently, so finished runs rebuild their cached table.
 CACHE_VERSION = 1
-# demand.py writes "Scale: 1 sim agent ~ {n:.0f} real arrivals." into demand.json's notes.
-SCALE_NOTE = re.compile(r"1 sim agent ~ ([\d,]+(?:\.\d+)?) real arrivals")
 
 
 def people_per_agent() -> float | None:
-    """Real people per sim agent; None while demand.json or the processed map is missing, or the
-    notes state no scale. Never raises: GET /api/health serves it."""
-    try:
-        demand = store.load_demand()
-        entries = store.load_map().entryPoints
-    except FileNotFoundError:
-        return None
-    except ValueError as e:  # corrupt JSON or schema drift (pydantic errors are ValueErrors)
-        log.warning("people per agent unavailable: %s", e)
-        return None
-    match = SCALE_NOTE.search(" ".join(demand.notes))
-    sampled = citizens.arrival_scale(demand, entries)
-    if match is None or sampled <= 0:
-        return None
-    return round(float(match.group(1).replace(",", "")) / sampled, 1)
+    """Real people per sim agent (economics.real_people_per_agent); None while the data cannot
+    say. Never raises: GET /api/health serves it."""
+    return economics.real_people_per_agent()
 
 
 def on_street_by_hour(day: DayData) -> list[float]:

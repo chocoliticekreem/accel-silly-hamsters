@@ -3,15 +3,27 @@
 SPEND_GBP_PER_VISIT matches the frontend mock (apps/web/src/sim/economics.ts: SPEND_GBP). The mock
 still uses a flat 30% margin and no wages; it only feeds the no-backend demo.
 A run is 14 days = 2 weeks, so 14-day deltas are halved to get per-week figures.
+
+Visit counts are sim agents; one stands for people_per_agent() real people. Wages and kWh are real,
+so takings are scaled up to real people before they are set against them.
 """
 
 from __future__ import annotations
 
+import logging
+import re
 from statistics import fmean
 
 from backend import settings, store, timeutil
-from backend.contract import DAYS, StoreKpis, StoreRunResult, StoreType, Suggestion
-from backend.schemas import EnergyFile
+from backend.contract import DAYS, EntryPoint, StoreKpis, StoreRunResult, StoreType, Suggestion
+from backend.schemas import DemandFile, EnergyFile
+from backend.sim import citizens
+
+log = logging.getLogger(__name__)
+
+# backend/pipeline/demand.py writes "Scale: 1 sim agent ~ {n:.0f} real arrivals." into its notes.
+SCALE_NOTE = re.compile(r"1 sim agent ~ ([\d,]+(?:\.\d+)?) real arrivals")
+_scale_cache: dict[tuple, float | None] = {}
 
 # Average spend per visit (GBP). Clubs are fixed anchors and never get advice.
 SPEND_GBP_PER_VISIT: dict[StoreType, float] = {
@@ -64,9 +76,43 @@ def area_price_gbp_per_kwh() -> float:
         return settings.DEFAULT_PRICE_GBP_PER_KWH
 
 
+def people_per_agent_of(demand: DemandFile, entries: list[EntryPoint]) -> float | None:
+    """demand.json's real arrivals per sim arrival over the sim's own arrival rescaling
+    (citizens.arrival_scale); None when the notes state no scale."""
+    match = SCALE_NOTE.search(" ".join(demand.notes))
+    sampled = citizens.arrival_scale(demand, entries)
+    if match is None or sampled <= 0:
+        return None
+    return round(float(match.group(1).replace(",", "")) / sampled, 1)
+
+
+def real_people_per_agent() -> float | None:
+    """people_per_agent_of the processed data, cached until demand.json or map.json changes; None
+    while either is missing or unreadable. Never raises: GET /api/health serves it."""
+    paths = [store.processed_path(n) for n in ("demand.json", "map.json")]
+    try:
+        key = tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in paths)
+    except FileNotFoundError:
+        return None
+    if key not in _scale_cache:
+        try:
+            _scale_cache[key] = people_per_agent_of(
+                store.load_demand(), store.load_map().entryPoints
+            )
+        except (FileNotFoundError, ValueError) as e:
+            log.warning("people per agent unavailable: %s", e)
+            return None
+    return _scale_cache[key]
+
+
+def people_per_agent() -> float:
+    """Real people one sim visit stands for; 1.0 when the data cannot say."""
+    return real_people_per_agent() or 1.0
+
+
 def margin_per_visit(store_type: StoreType) -> float:
-    """GBP one visit leaves after the cost of what was sold."""
-    return SPEND_GBP_PER_VISIT[store_type] * GROSS_MARGIN[store_type]
+    """GBP one sim visit leaves after the cost of what was sold, in real people."""
+    return SPEND_GBP_PER_VISIT[store_type] * GROSS_MARGIN[store_type] * people_per_agent()
 
 
 def staff_gbp_per_open_hour(store_type: StoreType) -> float:

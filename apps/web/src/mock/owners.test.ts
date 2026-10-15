@@ -3,16 +3,16 @@
 import { describe, expect, it } from "vitest";
 import { MINUTES_PER_DAY } from "../api/contract";
 import { daySpan, eventsByStore, storeStateAt, toSpan } from "../sim/storeState";
-import { createMockState, mockApi } from ".";
+import { schematicMockState, mockApi } from ".";
 import { MOCK_RUN_COUNT } from "./configs";
 
-const state = createMockState();
+const state = schematicMockState();
 const api = mockApi(state);
 const kebab = () => state.map.stores.find((s) => s.name === "Kebab Co")!;
 
 describe("street events", () => {
   it("are deterministic and the same in every run (fixed seed)", async () => {
-    const other = mockApi(createMockState());
+    const other = mockApi(schematicMockState());
     const a = await api.streetEvents(1);
     expect(a).toEqual(await other.streetEvents(1));
     expect(a).toEqual(await api.streetEvents(4));
@@ -41,7 +41,7 @@ describe("street events", () => {
 
 describe("owner events", () => {
   it("are deterministic", async () => {
-    const other = mockApi(createMockState());
+    const other = mockApi(schematicMockState());
     for (const run of [1, 3]) expect(await api.ownerEvents(run)).toEqual(await other.ownerEvents(run));
   });
 

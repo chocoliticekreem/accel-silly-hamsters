@@ -10,15 +10,24 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
+# Vercel's filesystem is read-only outside /tmp: runs and caches live there, and the API seeds
+# /tmp/runs from the bundled runs/ on a cold start (backend/api/main.py).
+ON_VERCEL = os.getenv("VERCEL") == "1"
+
 DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
-CACHE_DIR = DATA_DIR / "cache"
+CACHE_DIR = Path("/tmp/cache") if ON_VERCEL else DATA_DIR / "cache"
 LLM_CACHE_DIR = CACHE_DIR / "llm"
-RUNS_DIR = Path(os.getenv("RUNS_DIR", ROOT / "runs"))
+BUNDLED_RUNS_DIR = ROOT / "runs"
+RUNS_DIR = Path(os.getenv("RUNS_DIR", "/tmp/runs" if ON_VERCEL else BUNDLED_RUNS_DIR))
+# Day files are the 3D replay (about 5 MB a day on the 209-shop map); Vercel's /tmp holds 500 MB.
+WRITE_DAY_FILES = os.getenv("WRITE_DAY_FILES", "0" if ON_VERCEL else "1") == "1"
+# A session must finish inside one Vercel invocation (maxDuration 300 s, about 20 s a run).
+MAX_SESSION_RUNS = int(os.getenv("MAX_SESSION_RUNS", "12" if ON_VERCEL else "40"))
 
 # Simulation
-SIM_VERSION = "0.3.0"  # bump on any change that alters sim output; it is part of the run-cache key
+SIM_VERSION = "0.3.1"  # bump on any change that alters sim output; it is part of the run-cache key
 DEFAULT_SEED = 42
 TICK_MINUTES = 5
 # Self-learning city (docs/OWNER_ACTIONS.md): street events, and every shop's owner adapting day by
@@ -55,9 +64,10 @@ DEFAULT_PRICE_GBP_PER_KWH = 0.27
 # Force the offline (no-LLM) agent backends even when credentials exist: OFFLINE=1
 OFFLINE = os.getenv("OFFLINE", "") == "1"
 
-# The hosted demo replays pre-computed runs: requests that start or reconfigure work (training
-# start/stop and config writes, POST .../optimize) answer 403.
-READ_ONLY = os.getenv("VERCEL") == "1" or os.getenv("READ_ONLY") == "1"
+# A read-only demo replays pre-computed runs: requests that start or reconfigure work (training
+# start/stop and config writes, POST .../optimize, .../experiment) answer 403. On Vercel it is
+# read-only unless ALLOW_WRITES=1.
+READ_ONLY = os.getenv("READ_ONLY") == "1" or (ON_VERCEL and os.getenv("ALLOW_WRITES") != "1")
 
 # Analyst backend: "auto" (messages when credentials exist, else heuristic), "heuristic",
 # "messages" (Messages API tool-use loop) or "managed" (Managed Agents session).
