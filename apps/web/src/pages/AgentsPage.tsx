@@ -7,7 +7,8 @@ import { absoluteUrl } from "../api/http";
 import { navigate, storePath } from "../router";
 import { SuggestionRow } from "../ui/SuggestionList";
 
-const DEMO_STORE = "s65";
+// the demo shop, found by name so a map rebuild that renumbers stores keeps the link working
+const DEMO_STORE_NAME = "City Best Wine";
 
 type Level = "off" | "low" | "high";
 const LEVELS: Level[] = ["off", "low", "high"];
@@ -97,7 +98,7 @@ export function AgentsPage({ storeId: requested }: { storeId: string | null }) {
     void api.map().then((m) => {
       const shops = m.stores.filter((s) => s.type !== "club");
       if (storeId && shops.some((s) => s.id === storeId)) return;
-      setStoreId(shops.find((s) => s.id === DEMO_STORE)?.id ?? shops[0]?.id ?? null);
+      setStoreId(shops.find((s) => s.name === DEMO_STORE_NAME)?.id ?? shops[0]?.id ?? null);
     });
   }, [storeId]);
 
