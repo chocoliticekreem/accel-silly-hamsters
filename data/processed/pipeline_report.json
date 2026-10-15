@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-15T11:57:34Z",
+  "at": "2026-10-15T12:12:37Z",
   "steps": [
     {
       "step": "map",
@@ -9,11 +9,15 @@
         {
           "label": "OpenStreetMap data \u00a9 OpenStreetMap contributors, ODbL 1.0 (via Overpass API)",
           "url": "https://overpass-api.de/api/interpreter",
-          "fetchedAt": "2026-10-15T10:40:45Z"
+          "fetchedAt": "2026-10-15T12:11:19Z"
         },
         {
           "label": "OpenStreetMap copyright and licence (ODbL 1.0)",
           "url": "https://www.openstreetmap.org/copyright"
+        },
+        {
+          "label": "The Skyscraper Center (CTBUH): art'otel London Hoxton, 92.2 m, 26 storeys (static reference, checked 2026-10-15)",
+          "url": "https://www.skyscrapercenter.com/building/artotel-london-hoxton/39457"
         }
       ],
       "notes": []
@@ -129,34 +133,34 @@
       "fallback": false,
       "sources": [
         {
-          "label": "TfL NUMBAT 2025, typical Monday: station exits by quarter hour (Liverpool Street LU, Liverpool Street NR, Shoreditch High Street)",
+          "label": "TfL NUMBAT 2025, typical Monday: station exits by quarter hour (Liverpool Street LU, Liverpool Street NR, Moorgate, Old Street, Shoreditch High Street)",
           "url": "https://crowding.data.tfl.gov.uk/NUMBAT/NUMBAT%202025/NBT25MON_Outputs.xlsx",
-          "fetchedAt": "2026-10-15T10:59:12Z"
+          "fetchedAt": "2026-10-15T12:12:31Z"
         },
         {
-          "label": "TfL NUMBAT 2025, typical Tuesday-Thursday: station exits by quarter hour (Liverpool Street LU, Liverpool Street NR, Shoreditch High Street)",
+          "label": "TfL NUMBAT 2025, typical Tuesday-Thursday: station exits by quarter hour (Liverpool Street LU, Liverpool Street NR, Moorgate, Old Street, Shoreditch High Street)",
           "url": "https://crowding.data.tfl.gov.uk/NUMBAT/NUMBAT%202025/NBT25TWT_Outputs.xlsx",
-          "fetchedAt": "2026-10-15T10:59:12Z"
+          "fetchedAt": "2026-10-15T12:12:32Z"
         },
         {
-          "label": "TfL NUMBAT 2025, typical Friday: station exits by quarter hour (Liverpool Street LU, Liverpool Street NR, Shoreditch High Street)",
+          "label": "TfL NUMBAT 2025, typical Friday: station exits by quarter hour (Liverpool Street LU, Liverpool Street NR, Moorgate, Old Street, Shoreditch High Street)",
           "url": "https://crowding.data.tfl.gov.uk/NUMBAT/NUMBAT%202025/NBT25FRI_Outputs.xlsx",
-          "fetchedAt": "2026-10-15T10:59:12Z"
+          "fetchedAt": "2026-10-15T12:12:33Z"
         },
         {
-          "label": "TfL NUMBAT 2025, typical Saturday: station exits by quarter hour (Liverpool Street LU, Liverpool Street NR, Shoreditch High Street)",
+          "label": "TfL NUMBAT 2025, typical Saturday: station exits by quarter hour (Liverpool Street LU, Liverpool Street NR, Moorgate, Old Street, Shoreditch High Street)",
           "url": "https://crowding.data.tfl.gov.uk/NUMBAT/NUMBAT%202025/NBT25SAT_Outputs.xlsx",
-          "fetchedAt": "2026-10-15T10:59:12Z"
+          "fetchedAt": "2026-10-15T12:12:34Z"
         },
         {
-          "label": "TfL NUMBAT 2025, typical Sunday: station exits by quarter hour (Liverpool Street LU, Liverpool Street NR, Shoreditch High Street)",
+          "label": "TfL NUMBAT 2025, typical Sunday: station exits by quarter hour (Liverpool Street LU, Liverpool Street NR, Moorgate, Old Street, Shoreditch High Street)",
           "url": "https://crowding.data.tfl.gov.uk/NUMBAT/NUMBAT%202025/NBT25SUN_Outputs.xlsx",
-          "fetchedAt": "2026-10-15T10:59:12Z"
+          "fetchedAt": "2026-10-15T12:12:36Z"
         },
         {
           "label": "TfL Unified API: Windrush line Night route stop sequence",
           "url": "https://api.tfl.gov.uk/Line/windrush/Route/Sequence/outbound?serviceTypes=Night",
-          "fetchedAt": "2026-10-15T09:13:24Z"
+          "fetchedAt": "2026-10-15T11:50:53Z"
         },
         {
           "label": "Approved Document B vol 2 (2026), Table D1: floor space factor 0.5 m2/person for clubs (static reference, checked 2026-10-15)",
@@ -164,13 +168,13 @@
         }
       ],
       "notes": [
-        "Units: sim agents per hour (expected values; sample e.g. Poisson per hour), not real people. Scale: 1 sim agent ~ 34 real arrivals.",
-        "Scale derivation: station exits per weekday / weekend day (TfL NUMBAT 2025, mean of calendar days) x the share walking into the map area (assumption): Liverpool Street 189,726 / 120,404 x 20% = 37,945 / 24,081; Shoreditch High Street 11,495 / 10,023 x 90% = 10,345 / 9,021; rail arrivals into the area 48,291 per weekday and 33,102 per weekend day. Assumed station share 40% of all arrivals into the area gives 120,727 real arrivals per weekday; weekday sim total fixed at 3,500 (BUILD_NOTES budget 2,000-4,000 a day for the 1.5 km x 1.5 km map); weekend total 2,399 follows the measured weekend/weekday ratio of those rail arrivals, 0.69.",
-        "Station entries: hour-of-day = each station's own exits (people arriving; quarter-hour bands summed to hours), TfL traffic days (05:00-05:00) mapped to calendar days; the stations split the station budget by their arrivals into the area, and several entries of one station split its share equally. Into-area shares (assumptions): Liverpool Street 20%: the station sits ~150 m inside the south edge and ~300 m inside the west edge; most of its commuters walk south and west into the City (Bank, Bishopsgate south, Leadenhall, Moorgate), outside the map, while Broadgate's offices north of the station, Spitalfields and the walk up Bishopsgate to Shoreditch are inside: one exit in five assumed to head into the area; Shoreditch High Street 90%: the map origin, 700-800 m (about a 10-minute walk) from every edge, so nearly every exit stays in the area; 10% assumed to walk on past the edges or change to a bus.",
-        "Night services: TfL lists Shoreditch High Street on the Windrush Night route (Unified API); NUMBAT exits 01:00-05:00 by night: Liverpool Street: Mon 19, Tue-Thu (each) 31, Fri 492, Sat 703, Sun 16; Shoreditch High Street: Mon 0, Tue-Thu (each) 0, Fri 76, Sat 108, Sun 0. Late station arrivals therefore sit in the 00-04 hours of the weekend profile (Sat/Sun mornings) and are ~0 on weekday nights.",
-        "Street entries (assumption): hourly arrivals at street edges are not measured here; timing = 70% weekday / 60% weekend exit timing of the stations' arrivals into the area plus 30% / 40% night-time-economy walk-ins (weekday 11:00-01:00, peak 17-23; weekend 10:00-04:00, peak 20-24). Split across street entries by the width of the street each sits on: e1 14 m, e2 8 m, e3 8 m, e4 8 m, e5 8 m, e6 8 m, e7 8 m, e8 12 m, e9 8 m, e10 8 m, e11 8 m, e12 8 m, e13 14 m, e14 5 m, e15 12 m, e16 12 m, e17 8 m, e18 8 m, e19 8 m, e20 8 m, e21 14 m, e22 10 m, e23 8 m, e24 8 m, e25 8 m, e26 8 m, e27 14 m, e28 12 m, e29 8 m, e30 14 m, e31 8 m, e32 8 m, e33 8 m, e34 10 m, e35 8 m, e36 8 m, e37 14 m, e38 10 m, e39 14 m, e40 8 m, e41 14 m, e42 8 m, e43 8 m, e44 10 m, e45 3 m, e46 8 m, e47 10 m, e48 8 m, e49 8 m, e50 8 m, e51 8 m, e52 8 m, e53 14 m, e54 8 m, e55 8 m, e56 8 m, e57 8 m, e58 8 m, e59 8 m, e60 10 m, e61 8 m, e62 8 m, e63 8 m, e64 14 m, e65 8 m, e66 8 m, e67 6 m.",
-        "Club nights: one per club store, nights thu/fri/sat, hours from map.json defaultHours when they describe a night (open from 18:00, close after midnight by 08:00), else 22:00-03:00 (assumption; club events are not scraped). Club-goers are NOT in entryPoints: the sim adds `capacity` club-goers per club night; capacity is already in sim agents (do not rescale). capacity = floor area / 0.5 m2 per person (Approved Document B) x 60% typical fill, clamped 150-1500 real (500 without floor area), x scale 0.0290: c1 22:00-03:00 (map hours), 193 real -> 6 agents; c2 22:00-03:00 (map hours), 216 real -> 6 agents; c3 22:00-03:00 (map hours), 515 real -> 15 agents; c4 22:00-03:00 (map hours), 448 real -> 13 agents.",
-        "returningShare and returningPoolSize (estimate; open question in the spec): commuters = arrivals in the TfL AM peak band 07:00-10:00 (31% of weekday, 7% of weekend arrivals) plus 25% of all other arrivals assumed regulars (residents, regular diners and drinkers, club regulars); weekly mix = 0.44. Pool = share x busiest daily total / 0.9 (a regular arrives on ~9 of 10 days) = 1717.",
+        "Units: sim agents per hour (expected values; sample e.g. Poisson per hour), not real people. Scale: 1 sim agent ~ 40 real arrivals.",
+        "Scale derivation: station exits per weekday / weekend day (TfL NUMBAT 2025, mean of calendar days) x the share walking into the map area (assumption): Liverpool Street 189,726 / 120,404 x 20% = 37,945 / 24,081; Moorgate 41,813 / 14,257 x 5% = 2,091 / 713; Old Street 25,787 / 16,401 x 50% = 12,894 / 8,201; Shoreditch High Street 11,495 / 10,023 x 90% = 10,345 / 9,021; rail arrivals into the area 63,275 per weekday and 42,015 per weekend day. Assumed station share 45% of all arrivals into the area gives 140,611 real arrivals per weekday; weekday sim total fixed at 3,500 (BUILD_NOTES budget 2,000-4,000 a day for the 1.5 km x 1.5 km map); weekend total 2,324 follows the measured weekend/weekday ratio of those rail arrivals, 0.66.",
+        "Station entries: hour-of-day = each station's own exits (people arriving; quarter-hour bands summed to hours), TfL traffic days (05:00-05:00) mapped to calendar days; the stations split the station budget by their arrivals into the area, and several entries of one station split its share equally. Into-area shares (assumptions): Liverpool Street 20%: the station sits ~150 m inside the south edge and ~300 m inside the west edge; most of its commuters walk south and west into the City (Bank, Bishopsgate south, Leadenhall, Moorgate), outside the map, while Broadgate's offices north of the station, Spitalfields and the walk up Bishopsgate to Shoreditch are inside: one exit in five assumed to head into the area; Moorgate 5%: the station sits ~40 m inside the south-west corner, so the City (Moorgate, London Wall, Finsbury Circus) it serves is outside the map: one exit in twenty assumed to walk north-east into the area; Old Street 50%: the Northern line station under Old Street roundabout, ~170 m inside the west edge: the map holds the roundabout's east and north sides (Old Street east to Shoreditch, Great Eastern Street, City Road and East Road north, Silicon Roundabout's offices, Hoxton), while Bunhill, Clerkenwell and Finsbury to the west and south are outside: half its exits assumed to head into the area; Shoreditch High Street 90%: the map origin, 700-800 m (about a 10-minute walk) from every edge, so nearly every exit stays in the area; 10% assumed to walk on past the edges or change to a bus.",
+        "Night services: TfL lists Shoreditch High Street on the Windrush Night route (Unified API); NUMBAT exits 01:00-05:00 by night: Liverpool Street: Mon 19, Tue-Thu (each) 31, Fri 492, Sat 703, Sun 16; Moorgate: Mon 4, Tue-Thu (each) 5, Fri 19, Sat 24, Sun 0; Old Street: Mon 3, Tue-Thu (each) 4, Fri 25, Sat 31, Sun 0; Shoreditch High Street: Mon 0, Tue-Thu (each) 0, Fri 76, Sat 108, Sun 0. Late station arrivals therefore sit in the 00-04 hours of the weekend profile (Sat/Sun mornings) and are ~0 on weekday nights.",
+        "Street entries (assumption): hourly arrivals at street edges are not measured here; timing = 70% weekday / 60% weekend exit timing of the stations' arrivals into the area plus 30% / 40% night-time-economy walk-ins (weekday 11:00-01:00, peak 17-23; weekend 10:00-04:00, peak 20-24). Split across street entries by the width of the street each sits on: e1 14 m, e2 8 m, e3 8 m, e4 8 m, e5 8 m, e6 8 m, e7 8 m, e8 12 m, e9 8 m, e10 8 m, e11 8 m, e12 8 m, e13 14 m, e14 5 m, e15 12 m, e16 12 m, e17 8 m, e18 8 m, e19 8 m, e20 8 m, e21 14 m, e22 10 m, e23 8 m, e24 8 m, e25 8 m, e26 8 m, e27 14 m, e28 12 m, e29 8 m, e30 14 m, e31 8 m, e32 8 m, e33 8 m, e34 10 m, e35 8 m, e36 8 m, e37 14 m, e38 10 m, e39 14 m, e40 8 m, e41 6 m, e42 8 m, e43 10 m, e44 8 m, e45 14 m, e46 8 m, e47 8 m, e48 12 m, e49 8 m, e50 14 m, e51 8 m, e52 14 m, e53 8 m, e54 8 m, e55 3 m, e56 8 m, e57 14 m, e58 10 m, e59 8 m, e60 8 m, e61 8 m, e62 14 m, e63 8 m, e64 8 m, e65 6 m.",
+        "Club nights: one per club store, nights thu/fri/sat, hours from map.json defaultHours when they describe a night (open from 18:00, close after midnight by 08:00), else 22:00-03:00 (assumption; club events are not scraped). Club-goers are NOT in entryPoints: the sim adds `capacity` club-goers per club night; capacity is already in sim agents (do not rescale). capacity = floor area / 0.5 m2 per person (Approved Document B) x 60% typical fill, clamped 150-1500 real (500 without floor area), x scale 0.0249: c1 22:00-03:00 (map hours), 193 real -> 5 agents; c2 22:00-03:00 (map hours), 216 real -> 5 agents; c3 22:00-03:00 (map hours), 515 real -> 13 agents; c4 22:00-03:00 (map hours), 448 real -> 11 agents.",
+        "returningShare and returningPoolSize (estimate; open question in the spec): commuters = arrivals in the TfL AM peak band 07:00-10:00 (32% of weekday, 7% of weekend arrivals) plus 25% of all other arrivals assumed regulars (residents, regular diners and drinkers, club regulars); weekly mix = 0.45. Pool = share x busiest daily total / 0.9 (a regular arrives on ~9 of 10 days) = 1750.",
         "Checked 2026-10-15, not used: TfL crowding API (/crowding/910GSHRDHST returns isFound=false); ONS Time Use Survey tables (OTUS, March 2024) give daily minutes per activity with no hour-of-day split, so hour-of-day comes from NUMBAT; TfL BUSTO bus demand files are 55-125 MB (over the download cap); Resident Advisor, Dice and Eventbrite are not scraped (terms)."
       ]
     },
@@ -182,9 +186,9 @@
       "notes": [
         "PLACEHOLDER, NOT MEASURED: 5 of 5 venues (measured=false) are hand-written shapes of the hourly pattern Google Popular Times typically shows for the venue type, not data for these venues. They cannot validate the sim: calibration error and report confidence must leave them out.",
         "Scale: 0-100 = share of the venue's busiest hour of the week (Popular Times scale). weekday = mean of the Mon-Fri calendar days, weekend = Sat-Sun; an hour after midnight belongs to the next calendar day (Fri 01:00 counts as Saturday), as in StoreStats.",
-        "s12 Quaker Street Coffee & Bubble Tea (cafe) is the cafe nearest the station; placeholder (weekday commuter rush 08-10 and lunch, weekend brunch peak 11-14).",
-        "s27 Rochelle Canteen (restaurant) is the restaurant nearest the station; placeholder (lunch 12-14 and a bigger dinner peak 19-21, busiest on Saturday).",
-        "s45 Pavilion Bar (bar) is the bar nearest the station; placeholder (after-work rise from 17:00, latest and busiest on Friday and Saturday nights).",
+        "s11 Quaker Street Coffee & Bubble Tea (cafe) is the cafe nearest the station; placeholder (weekday commuter rush 08-10 and lunch, weekend brunch peak 11-14).",
+        "s28 The Knave of Clubs (restaurant) is the restaurant nearest the station; placeholder (lunch 12-14 and a bigger dinner peak 19-21, busiest on Saturday).",
+        "s44 Pavilion Bar (bar) is the bar nearest the station; placeholder (after-work rise from 17:00, latest and busiest on Friday and Saturday nights).",
         "c3 Village Underground (club) is the club nearest Bagel buzz; placeholder (open Thu-Sat 22:00-03:00, peak 01-02 on Friday and Saturday nights).",
         "s29 Bagel buzz (takeaway) is the takeaway nearest a club (Village Underground, 79 m); placeholder (lunch, dinner 18-21 and an after-club peak 02-04 on Friday and Saturday nights).",
         "Popular Times needs a paid API key: BESTTIME_API_KEY and OUTSCRAPER_API_KEY are not set (SerpAPI is key-gated too and not wired in), so no venue was measured.",
@@ -197,7 +201,89 @@
     "calibration"
   ],
   "cacheHitRates": {
-    "pipeline": 0.0,
-    "scrape": 1.0
+    "pipeline": 0.6,
+    "scrape": 0.6666666666666666
+  },
+  "calibration": {
+    "venues": [
+      {
+        "name": "Typical cafe",
+        "storeId": "s11",
+        "type": "cafe",
+        "measured": false,
+        "weekday": {
+          "mae": 0.1271,
+          "r": 0.8264
+        },
+        "weekend": {
+          "mae": 0.1348,
+          "r": 0.7906
+        },
+        "mae": 0.131
+      },
+      {
+        "name": "Typical restaurant",
+        "storeId": "s28",
+        "type": "restaurant",
+        "measured": false,
+        "weekday": {
+          "mae": 0.1245,
+          "r": 0.8413
+        },
+        "weekend": {
+          "mae": 0.1626,
+          "r": 0.7639
+        },
+        "mae": 0.1436
+      },
+      {
+        "name": "Typical bar",
+        "storeId": "s44",
+        "type": "bar",
+        "measured": false,
+        "weekday": {
+          "mae": 0.096,
+          "r": 0.9327
+        },
+        "weekend": {
+          "mae": 0.25,
+          "r": 0.6402
+        },
+        "mae": 0.173
+      },
+      {
+        "name": "Typical club",
+        "storeId": "c3",
+        "type": "club",
+        "measured": false,
+        "weekday": {
+          "mae": 0.1293,
+          "r": 0.5354
+        },
+        "weekend": {
+          "mae": 0.0893,
+          "r": 0.6731
+        },
+        "mae": 0.1093
+      },
+      {
+        "name": "Typical late-night takeaway",
+        "storeId": "s29",
+        "type": "takeaway",
+        "measured": false,
+        "weekday": {
+          "mae": 0.1754,
+          "r": 0.7324
+        },
+        "weekend": {
+          "mae": 0.2641,
+          "r": 0.421
+        },
+        "mae": 0.2198
+      }
+    ],
+    "measuredCount": 0,
+    "meanError": null,
+    "note": "No measured targets yet: all calibration shapes are placeholders, so the sim is uncalibrated and report confidence is capped."
   }
 }

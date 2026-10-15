@@ -192,7 +192,7 @@ export default function OldStreet() {
         );
       })}
       <primitive object={people.group} name="old-street-people" />
-      <Html position={[cx, 34, cz]} center distanceFactor={160} zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}>
+      <Html position={[cx, 34, cz]} center distanceFactor={320} zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}>
         <div className="map-label">Old Street · Northern line</div>
       </Html>
     </group>

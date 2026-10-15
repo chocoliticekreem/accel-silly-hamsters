@@ -59,6 +59,8 @@ LIVERPOOL_STREET_EXITS = {
     },
     "Liverpool Street NR": {d: _hourly(17, 1000.0) for d in SYNTHETIC_EXITS},
 }
+# Old Street (Northern line): twice Shoreditch High Street's exits, peaking at 08:00 too.
+OLD_STREET_EXITS = {d: [2 * v for v in SYNTHETIC_EXITS[d]] for d in SYNTHETIC_EXITS}
 
 
 def numbat_workbook(
@@ -142,7 +144,10 @@ class FakeTfl:
         day_type = url.rsplit("NBT25", 1)[1].split("_", 1)[0]
         return numbat_workbook(
             [0.0] * 24 if self.zero_exits else SYNTHETIC_EXITS[day_type],
-            others={name: rows[day_type] for name, rows in LIVERPOOL_STREET_EXITS.items()},
+            others={
+                **{name: rows[day_type] for name, rows in LIVERPOOL_STREET_EXITS.items()},
+                "Old Street": OLD_STREET_EXITS[day_type],
+            },
         )
 
     def fetch(self, source: str, url: str, **kwargs: object) -> tuple[object, str]:
@@ -494,3 +499,40 @@ def test_parse_station_exits_reads_96_quarter_hours_per_station() -> None:
 def test_parse_station_exits_rejects_unexpected_files(payload: bytes, message: str) -> None:
     with pytest.raises(demand.SourceFormatError, match=message):
         demand.parse_station_exits(payload, ["Shoreditch High Street"])
+
+
+def test_old_street_entrances_share_its_arrivals(tfl: FakeTfl) -> None:
+    """Old Street's street entrances are several station entries with one name: the station's
+    budget (its exits x its into-area share) is split equally between them."""
+    entries = [
+        EntryPoint(id="north", kind="street", x=0, z=100),
+        EntryPoint(id="st1", kind="station", name="Shoreditch High Street", x=10, z=0),
+        EntryPoint(id="st2", kind="station", name="Old Street", x=-50, z=50),
+        EntryPoint(id="st3", kind="station", name="Old Street", x=-60, z=50),
+        EntryPoint(id="st4", kind="station", name="Old Street", x=-70, z=50),
+    ]
+
+    result = demand.build(map_data=synthetic_map(entries))
+
+    shs = sum(result.entryPoints["st1"].weekday)
+    old_street = [sum(result.entryPoints[e].weekday) for e in ("st2", "st3", "st4")]
+    assert max(old_street) - min(old_street) < 0.05, "entrances share equally"
+    old_street_share = demand.RAIL_STATIONS["Old Street"].into_area
+    expected = 2 * old_street_share / SHS_INTO_AREA
+    assert sum(old_street) / shs == pytest.approx(expected, rel=2e-3)
+    station_budget = demand.SIM_WEEKDAY_ARRIVALS * demand.STATION_SHARE
+    assert shs + sum(old_street) == pytest.approx(station_budget, abs=0.5)
+    assert any("Old Street 50%" in n for n in result.notes)
+
+
+def test_old_street_has_a_snapshot_for_the_fallback(tfl: FakeTfl) -> None:
+    tfl.numbat_down = True
+    entries = [
+        EntryPoint(id="st1", kind="station", name="Shoreditch High Street", x=10, z=0),
+        EntryPoint(id="st2", kind="station", name="Old Street", x=-50, z=50),
+    ]
+
+    result = demand.build(map_data=synthetic_map(entries))
+
+    assert result.fallback is True
+    assert sum(result.entryPoints["st2"].weekday) > 0
