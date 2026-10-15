@@ -1,23 +1,53 @@
-/* Night-shift instrument panel: frosted ink-blue glass over the city, one warm lamp-yellow accent
-   (the same yellow as lit shop windows in 3D). Numbers in mono; labels in Bricolage Grotesque. */
+/* Night-shift instrument panel: warm soot plates over the blue city, bone ink, one sodium accent
+   (the colour of London street light, and of the shop lights in 3D: world/palette.ts LAMP).
+   Headings in Hammersmith One (Johnston/Underground lineage); everything people read or count in
+   Atkinson Hyperlegible Next with tabular figures. */
 
 :root {
-  --ink: #0e1422;
-  --glass: rgba(18, 25, 40, 0.74);
-  --glass-strong: rgba(15, 21, 34, 0.9);
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.16);
-  --text: #e9edf5;
-  --muted: #8b97ad;
-  --faint: #5c6880;
-  --lamp: #ffc857;
-  --lamp-soft: rgba(255, 200, 87, 0.16);
-  --good: #6fd3a0;
-  --bad: #ff8a7a;
-  --blue: #7fb2ff;
-  --radius: 14px;
-  --font: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --ink: #12110f;
+  --plate: #181613;
+  --panel: color-mix(in srgb, var(--plate) 94%, transparent);
+  --panel-solid: color-mix(in srgb, var(--plate) 97%, transparent);
+  --shade: rgba(0, 0, 0, 0.22);
+  --scrim: rgba(8, 7, 6, 0.5);
+  --shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+
+  --text: #f0eadd;
+  --muted: #bfb6a6;
+  --faint: #a59c8c;
+
+  --well: color-mix(in srgb, var(--text) 4%, transparent);
+  --cell: color-mix(in srgb, var(--text) 7%, transparent);
+  --hover: color-mix(in srgb, var(--text) 9%, transparent);
+  --line: color-mix(in srgb, var(--text) 12%, transparent);
+  --raised: color-mix(in srgb, var(--text) 14%, var(--plate));
+  --line-strong: color-mix(in srgb, var(--text) 24%, transparent);
+  --ghost: color-mix(in srgb, var(--text) 35%, transparent);
+
+  --lamp: #ff9a3d;
+  --lamp-hover: #ffad5c;
+  --lamp-dim: #d9a273;
+  --lamp-soft: color-mix(in srgb, var(--lamp) 10%, transparent);
+  --lamp-line: color-mix(in srgb, var(--lamp) 50%, transparent);
+  --on-lamp: var(--plate);
+
+  --good: #57d68d;
+  --bad: #ff66a0;
+  --warn: #e1dc8d;
+  /* must stay the OPEN-sign green the 3D stores use, so the legend matches the scene */
+  --open: #57d68d;
+
+  --data: color-mix(in srgb, var(--text) 55%, transparent);
+  --context: color-mix(in srgb, var(--text) 50%, transparent);
+  --grid: color-mix(in srgb, var(--text) 8%, transparent);
+
+  --roundel-red: #dc241f;
+  --roundel-blue: #2a4bd7;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  --font: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", Verdana, sans-serif;
+  --display: "Hammersmith One", "Gill Sans", var(--font);
   color-scheme: dark;
 }
 
@@ -34,6 +64,7 @@ body,
   color: var(--text);
   font-family: var(--font);
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
 button {
@@ -44,14 +75,16 @@ button {
 h2,
 h3 {
   margin: 0;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-family: var(--display);
+  font-weight: 400;
+  font-synthesis: none;
+  letter-spacing: -0.005em;
 }
 .muted {
   color: var(--muted);
 }
 .mono {
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- shell ---------- */
@@ -73,20 +106,22 @@ h3 {
   height: 100%;
   display: grid;
   place-items: center;
+  font-family: var(--display);
   font-size: 22px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
+  font-weight: 400;
+  font-synthesis: none;
+  letter-spacing: 0.01em;
   color: var(--muted);
-  background: radial-gradient(60% 50% at 50% 60%, #1d2742 0%, var(--ink) 70%);
+  background: var(--ink);
 }
 
 .panel {
-  background: var(--glass);
-  backdrop-filter: blur(14px) saturate(1.2);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: var(--shadow);
 }
 
 .top-left {
@@ -128,11 +163,11 @@ h3 {
   align-items: center;
   gap: 6px;
   padding: 7px 12px;
-  border-radius: 999px;
-  background: var(--glass);
-  backdrop-filter: blur(12px);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--line);
-  font-size: 12.5px;
+  font-size: 13px;
   white-space: nowrap;
   transition: border-color 0.15s, background 0.15s;
 }
@@ -140,9 +175,8 @@ button.chip:hover {
   border-color: var(--line-strong);
 }
 .chip.on {
-  border-color: var(--lamp);
-  color: var(--lamp);
-  background: rgba(40, 33, 18, 0.75);
+  border-color: var(--line-strong);
+  background: var(--raised);
 }
 .chip-mock {
   color: var(--faint);
@@ -159,7 +193,7 @@ button.chip:hover {
 }
 .chip-analyst.running .pulse {
   background: var(--good);
-  box-shadow: 0 0 0 0 rgba(111, 211, 160, 0.6);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 60%, transparent);
   animation: pulse 1.8s infinite;
 }
 .chip-analyst.stopped .pulse {
@@ -167,25 +201,23 @@ button.chip:hover {
 }
 @keyframes pulse {
   70% {
-    box-shadow: 0 0 0 8px rgba(111, 211, 160, 0);
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--good) 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(111, 211, 160, 0);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 0%, transparent);
   }
 }
 
 .tag {
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 2px 6px;
-  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.3;
+  padding: 1px 6px;
+  border-radius: 3px;
   border: 1px solid var(--line-strong);
   color: var(--muted);
 }
 .tag-lamp {
-  color: var(--ink);
+  color: var(--on-lamp);
   background: var(--lamp);
   border-color: var(--lamp);
   font-weight: 600;
@@ -197,17 +229,17 @@ button.chip:hover {
   justify-content: center;
   gap: 6px;
   padding: 8px 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line-strong);
-  background: rgba(255, 255, 255, 0.04);
-  font-size: 13px;
+  background: var(--well);
+  font-size: 14px;
   font-weight: 600;
   color: inherit;
   text-decoration: none;
   transition: transform 0.08s, background 0.15s, border-color 0.15s;
 }
 .btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hover);
 }
 .btn:active:not(:disabled) {
   transform: translateY(1px);
@@ -218,30 +250,30 @@ button.chip:hover {
 }
 .btn-lamp {
   background: var(--lamp);
-  color: var(--ink);
+  color: var(--on-lamp);
   border-color: var(--lamp);
 }
 .btn-lamp:hover:not(:disabled) {
-  background: #ffd47a;
+  background: var(--lamp-hover);
 }
 .btn-approve {
-  border-color: rgba(111, 211, 160, 0.5);
+  border-color: color-mix(in srgb, var(--good) 50%, transparent);
   color: var(--good);
 }
 .btn-approve:hover:not(:disabled) {
-  background: rgba(111, 211, 160, 0.12);
+  background: color-mix(in srgb, var(--good) 12%, transparent);
 }
 .btn-reject {
-  border-color: rgba(255, 138, 122, 0.4);
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
   color: var(--bad);
 }
 .btn-reject:hover:not(:disabled) {
-  background: rgba(255, 138, 122, 0.1);
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
 }
 .btn-report {
   width: 100%;
   margin-top: 8px;
-  border-color: var(--lamp);
+  border-color: var(--lamp-line);
   color: var(--lamp);
 }
 .icon-btn {
@@ -250,7 +282,7 @@ button.chip:hover {
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
@@ -266,7 +298,7 @@ button.chip:hover {
   margin-left: 8px;
   color: var(--muted);
   text-decoration: underline;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 /* ---------- HUD ---------- */
@@ -280,7 +312,6 @@ button.chip:hover {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  font-family: var(--mono);
 }
 .clock-day {
   font-size: 15px;
@@ -292,19 +323,16 @@ button.chip:hover {
 }
 .clock-day small {
   margin-left: 6px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: 13px;
 }
 .clock-sep {
   color: var(--faint);
 }
 .clock-time {
   font-size: 34px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--lamp);
-  text-shadow: 0 0 18px rgba(255, 200, 87, 0.35);
   font-variant-numeric: tabular-nums;
 }
 .hud-run {
@@ -316,14 +344,13 @@ button.chip:hover {
 }
 .hud-run b {
   color: var(--text);
-  font-family: var(--mono);
 }
 .roundel {
   position: relative;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 3px solid #dc241f;
+  border: 3px solid var(--roundel-red);
 }
 .roundel i {
   position: absolute;
@@ -332,7 +359,7 @@ button.chip:hover {
   top: 50%;
   height: 4px;
   transform: translateY(-50%);
-  background: #2a4bd7;
+  background: var(--roundel-blue);
 }
 .kpis {
   display: grid;
@@ -345,42 +372,38 @@ button.chip:hover {
   flex-direction: column;
   gap: 2px;
   padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-sm);
+  background: var(--well);
   border: 1px solid var(--line);
 }
 .kpi-main {
-  border-color: rgba(255, 200, 87, 0.35);
+  border-color: var(--lamp-line);
   background: var(--lamp-soft);
 }
 .kpi-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 .kpi-value {
-  font-family: var(--mono);
-  font-size: 19px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .hud-foot,
 .foot-note {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--faint);
 }
 
 .delta {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
 }
 .delta-md {
   font-size: 20px;
-  font-weight: 600;
+  font-weight: 700;
 }
 .delta-good {
   color: var(--good);
@@ -411,25 +434,27 @@ button.chip:hover {
   border-radius: 50%;
   border: 0;
   background: var(--lamp);
-  color: var(--ink);
+  color: var(--on-lamp);
   display: grid;
   place-items: center;
-  box-shadow: 0 0 22px rgba(255, 200, 87, 0.35);
-  transition: transform 0.1s;
+  transition: background 0.15s, transform 0.08s;
 }
 .play:hover {
-  transform: scale(1.05);
+  background: var(--lamp-hover);
+}
+.play:active {
+  transform: scale(0.96);
 }
 .track {
   position: relative;
   flex: 1;
   height: 38px;
   display: flex;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   cursor: ew-resize;
   touch-action: none;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--well);
   outline: none;
 }
 .track:focus-visible {
@@ -441,13 +466,13 @@ button.chip:hover {
   border-right: 1px solid var(--line);
 }
 .day.weekend {
-  background: rgba(127, 178, 255, 0.05);
+  background: var(--well);
 }
 .night {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: rgba(10, 14, 30, 0.55);
+  background: var(--scrim);
 }
 .night-am {
   left: 0;
@@ -461,9 +486,9 @@ button.chip:hover {
   position: absolute;
   left: 5px;
   bottom: 3px;
-  font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--faint);
+  white-space: nowrap;
   pointer-events: none;
 }
 .track-fill {
@@ -471,7 +496,7 @@ button.chip:hover {
   left: 0;
   top: 0;
   bottom: 0;
-  background: linear-gradient(90deg, rgba(255, 200, 87, 0.05), rgba(255, 200, 87, 0.18));
+  background: var(--lamp-soft);
   pointer-events: none;
 }
 .track-head {
@@ -481,28 +506,26 @@ button.chip:hover {
   width: 2px;
   margin-left: -1px;
   background: var(--lamp);
-  box-shadow: 0 0 10px var(--lamp);
   pointer-events: none;
 }
 .speeds {
   display: flex;
   padding: 3px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-sm);
+  background: var(--well);
   border: 1px solid var(--line);
 }
 .speeds button {
   border: 0;
   background: none;
   padding: 6px 10px;
-  border-radius: 6px;
-  font-family: var(--mono);
-  font-size: 12px;
+  border-radius: 3px;
+  font-size: 13px;
   color: var(--muted);
 }
 .speeds button.on {
-  background: var(--lamp);
-  color: var(--ink);
+  background: var(--raised);
+  color: var(--text);
   font-weight: 600;
 }
 
@@ -520,7 +543,7 @@ button.chip:hover {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .legend-item {
   display: flex;
@@ -541,17 +564,16 @@ button.chip:hover {
 }
 .legend-item .lg-open {
   border-radius: 2px;
-  background: #57d68d;
+  background: var(--open);
 }
 .legend-item .lg-glow {
   border-radius: 2px;
   background: var(--lamp);
-  box-shadow: 0 0 10px var(--lamp);
+  box-shadow: 0 0 0 3px var(--lamp-soft);
 }
 .legend-keys {
   margin-top: 4px;
-  font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--faint);
 }
 
@@ -602,18 +624,16 @@ button.chip:hover {
   margin-bottom: 10px;
 }
 .card-head h2 {
-  font-size: 19px;
+  font-size: 20px;
+  line-height: 1.15;
 }
 .card-sub {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
-  font-family: var(--mono);
 }
 .eyebrow {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--lamp);
+  font-size: 13px;
+  color: var(--muted);
 }
 .type-badge {
   flex: none;
@@ -621,7 +641,7 @@ button.chip:hover {
   height: 38px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--radius);
   font-size: 19px;
   background: color-mix(in srgb, var(--accent, #555) 30%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent, #555) 70%, transparent);
@@ -636,27 +656,26 @@ button.chip:hover {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11.5px;
-  font-family: var(--mono);
-  padding: 3px 8px;
-  border-radius: 6px;
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   color: var(--muted);
 }
 .status-open {
-  color: #57d68d;
-  border-color: rgba(87, 214, 141, 0.4);
+  color: var(--open);
+  border-color: color-mix(in srgb, var(--open) 40%, transparent);
 }
 .status-closed {
   color: var(--bad);
-  border-color: rgba(255, 138, 122, 0.35);
+  border-color: color-mix(in srgb, var(--bad) 35%, transparent);
 }
 .status-light.light-high {
   color: var(--lamp);
-  border-color: rgba(255, 200, 87, 0.5);
+  border-color: var(--lamp-line);
 }
 .status-light.light-low {
-  color: #d7b46a;
+  color: var(--lamp-dim);
 }
 
 .section-title {
@@ -664,16 +683,12 @@ button.chip:hover {
   align-items: baseline;
   justify-content: space-between;
   margin: 16px 0 8px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
+  font-size: 16px;
+  color: var(--text);
 }
 .section-title .muted {
-  font-family: var(--mono);
-  text-transform: none;
-  letter-spacing: 0;
+  font-family: var(--font);
+  font-size: 12px;
   color: var(--faint);
 }
 .mini-kpis {
@@ -682,15 +697,15 @@ button.chip:hover {
   gap: 6px;
 }
 .mini-kpi .kpi-value {
-  font-size: 16px;
+  font-size: 17px;
 }
 .empty {
   padding: 12px;
   text-align: center;
-  font-size: 12px;
-  color: var(--faint);
-  border: 1px dashed var(--line);
-  border-radius: 10px;
+  font-size: 14px;
+  color: var(--muted);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
 }
 .btn-row {
   display: grid;
@@ -704,8 +719,8 @@ button.chip:hover {
 .strip {
   position: relative;
   padding: 8px 8px 4px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
+  background: var(--shade);
   border: 1px solid var(--line);
 }
 .strip-row {
@@ -729,47 +744,41 @@ button.chip:hover {
   bottom: 0;
   min-height: 1px;
   border-radius: 2px 2px 0 0;
-  background: var(--blue);
-  opacity: 0.85;
+  background: var(--data);
 }
 .bar.ghost {
   background: none;
-  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border: 1px dashed var(--ghost);
   border-bottom: 0;
-  opacity: 1;
 }
 .strip-open .cell,
 .strip-light .cell {
   height: 9px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--cell);
 }
 .strip-open {
   margin-bottom: 2px;
 }
 .strip-open .cell.on {
-  background: #57d68d;
+  background: var(--open);
 }
 .strip-light .cell {
-  background: color-mix(in srgb, var(--lamp) calc(var(--lv) * 100%), rgba(255, 255, 255, 0.06));
-}
-.strip-light .cell.light-high {
-  box-shadow: 0 0 6px rgba(255, 200, 87, 0.6);
+  background: color-mix(in srgb, var(--lamp) calc(var(--lv) * 100%), var(--cell));
 }
 .cell.changed {
-  outline: 1.5px solid #fff;
+  outline: 1.5px solid var(--text);
   outline-offset: -1px;
 }
 .strip-axis {
   position: relative;
-  height: 16px;
+  height: 18px;
   margin-top: 2px;
 }
 .strip-axis span {
   position: absolute;
   transform: translateX(-50%);
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 12px;
   color: var(--faint);
 }
 .strip-axis span:first-child {
@@ -781,19 +790,18 @@ button.chip:hover {
 .strip-cursor {
   position: absolute;
   top: 4px;
-  bottom: 40px;
+  bottom: 44px;
   width: 2px;
   margin-left: 7px;
-  background: var(--lamp);
-  box-shadow: 0 0 8px var(--lamp);
+  background: var(--text);
   pointer-events: none;
 }
 .strip-legend {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  font-size: 10.5px;
-  color: var(--faint);
+  font-size: 12px;
+  color: var(--muted);
   padding-top: 2px;
 }
 .sw {
@@ -805,16 +813,16 @@ button.chip:hover {
   vertical-align: -1px;
 }
 .sw-bar {
-  background: var(--blue);
+  background: var(--data);
 }
 .sw-open {
-  background: #57d68d;
+  background: var(--open);
 }
 .sw-light {
   background: var(--lamp);
 }
 .sw-changed {
-  outline: 1.5px solid #fff;
+  outline: 1.5px solid var(--text);
   outline-offset: -1.5px;
 }
 
@@ -830,33 +838,31 @@ button.chip:hover {
 }
 .sugg {
   padding: 9px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-sm);
+  background: var(--well);
   border: 1px solid var(--line);
 }
 .sugg-diff {
   display: flex;
   align-items: baseline;
   gap: 7px;
-  font-family: var(--mono);
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .sugg-what {
-  font-family: var(--font);
   font-weight: 700;
   min-width: 82px;
 }
 .sugg-from {
   color: var(--muted);
   text-decoration: line-through;
-  text-decoration-color: rgba(255, 138, 122, 0.7);
+  text-decoration-color: color-mix(in srgb, var(--bad) 70%, transparent);
 }
 .sugg-arrow {
   color: var(--faint);
 }
 .sugg-to {
   color: var(--lamp);
-  font-weight: 600;
+  font-weight: 700;
 }
 .sugg-deltas {
   display: flex;
@@ -865,7 +871,7 @@ button.chip:hover {
   margin-top: 4px;
 }
 .sugg-deltas .unit {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--faint);
   margin-right: 8px;
 }
@@ -878,7 +884,7 @@ button.chip:hover {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 600;
 }
 .decided-approve {
@@ -908,31 +914,32 @@ button.chip:hover {
   gap: 10px;
   padding: 7px 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: none;
   text-align: left;
-  font-size: 12.5px;
+  font-size: 14px;
+  line-height: 1.35;
   color: var(--muted);
 }
 .notebook button:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--well);
   color: var(--text);
 }
 .notebook li.on button {
-  border-color: rgba(255, 200, 87, 0.4);
+  border-color: var(--lamp-line);
   background: var(--lamp-soft);
   color: var(--text);
 }
 .nb-run {
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  font-family: var(--mono);
-  font-size: 11px;
+  border-radius: 3px;
+  background: var(--cell);
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text);
 }
 .nb-text {
@@ -940,7 +947,7 @@ button.chip:hover {
 }
 .nb-icon {
   flex: none;
-  opacity: 0.4;
+  opacity: 0.5;
 }
 
 /* ---------- owner report ---------- */
@@ -950,7 +957,7 @@ button.chip:hover {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(8, 11, 20, 0.45);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
   animation: fade 0.2s ease-out both;
 }
@@ -964,11 +971,11 @@ button.chip:hover {
   max-height: calc(100vh - 120px);
   overflow-y: auto;
   padding: 18px;
-  background: var(--glass-strong);
+  background: var(--panel-solid);
   animation: rise 0.3s ease-out both;
 }
 .report .card-head h2 {
-  font-size: 24px;
+  font-size: 26px;
 }
 .impact {
   display: grid;
@@ -981,18 +988,17 @@ button.chip:hover {
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-sm);
+  background: var(--well);
   border: 1px solid var(--line);
 }
 .impact-gbp {
-  border-color: rgba(255, 200, 87, 0.4);
+  border-color: var(--lamp-line);
   background: var(--lamp-soft);
 }
 .gbp {
-  font-family: var(--mono);
   font-size: 22px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--lamp);
 }
 .confidence {
@@ -1000,15 +1006,14 @@ button.chip:hover {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 12px;
-  font-family: var(--mono);
+  font-size: 13px;
   color: var(--muted);
 }
 .confidence i {
   width: 14px;
   height: 6px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--line);
 }
 .confidence i:last-of-type {
   margin-right: 6px;
@@ -1028,10 +1033,10 @@ button.chip:hover {
   align-items: center;
   gap: 5px;
   padding: 5px 9px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   text-decoration: none;
 }
 .evidence-chip:hover {
@@ -1048,7 +1053,7 @@ button.chip:hover {
   border-top: 1px solid var(--line);
 }
 .disclaimer {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--faint);
 }
 
@@ -1086,12 +1091,12 @@ button.chip:hover {
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  border-radius: 999px;
-  background: var(--glass-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel-solid);
   border: 1px solid var(--line-strong);
   font-family: var(--font);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text);
   white-space: nowrap;
   transform: translateY(-50%);
@@ -1102,11 +1107,11 @@ button.chip:hover {
   bottom: 92px;
   transform: translateX(-50%);
   padding: 9px 16px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--lamp);
-  color: var(--ink);
+  color: var(--on-lamp);
   font-weight: 700;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow);
   animation: rise 0.2s ease-out both;
 }
 
@@ -1140,14 +1145,14 @@ button.chip:hover {
   width: 9px;
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--raised);
 }
 .pips i.on {
   background: var(--lamp);
 }
 .sugg-reason {
   margin-top: 4px;
-  font-size: 11.5px;
+  font-size: 14px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -1159,13 +1164,13 @@ button.chip:hover {
 .strip-licence .cell {
   height: 3px;
   border-radius: 2px;
-  background: rgba(255, 138, 122, 0.35);
+  background: color-mix(in srgb, var(--bad) 35%, transparent);
 }
 .strip-licence .cell.on {
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--ghost);
 }
 .sw-licence {
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--ghost);
   height: 3px !important;
 }
 .legend-sources {
@@ -1177,7 +1182,7 @@ button.chip:hover {
   border-top: 1px solid var(--line);
 }
 .legend-sources a {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -1188,8 +1193,8 @@ button.chip:hover {
   gap: 2px;
   padding: 3px;
   margin-bottom: 10px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-sm);
+  background: var(--well);
   border: 1px solid var(--line);
 }
 .tabs button {
@@ -1197,20 +1202,20 @@ button.chip:hover {
   border: 0;
   background: none;
   padding: 6px;
-  border-radius: 6px;
-  font-size: 12.5px;
+  border-radius: 3px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--muted);
 }
 .tabs button.on {
-  background: var(--lamp);
-  color: var(--ink);
+  background: var(--raised);
+  color: var(--text);
 }
 .calib-legend {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   margin-bottom: 8px;
 }
@@ -1219,16 +1224,16 @@ button.chip:hover {
   height: 3px !important;
 }
 .sw-target {
-  background: rgba(127, 178, 255, 0.5);
+  background: var(--context);
 }
 .calib-warn {
   margin-bottom: 8px;
   padding: 6px 9px;
-  border-radius: 8px;
-  font-size: 11.5px;
-  color: #ffb27a;
-  background: rgba(255, 150, 80, 0.08);
-  border: 1px dashed rgba(255, 150, 80, 0.4);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--warn) 45%, transparent);
 }
 .calib-list {
   list-style: none;
@@ -1245,9 +1250,9 @@ button.chip:hover {
   align-items: center;
   gap: 8px;
   padding: 7px 8px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--well);
   text-align: left;
 }
 .calib-row:disabled {
@@ -1262,25 +1267,25 @@ button.chip:hover {
   flex-direction: column;
   gap: 1px;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: 14px;
 }
 .calib-name .muted {
-  font-size: 11px;
+  font-size: 12px;
 }
 .calib-name .tag {
   align-self: flex-start;
   margin-top: 2px;
 }
 .tag-warn {
-  color: #ffb27a;
-  border-color: rgba(255, 150, 80, 0.5);
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
 }
 .calib-target-area {
-  fill: rgba(127, 178, 255, 0.12);
+  fill: var(--grid);
 }
 .calib-target {
   fill: none;
-  stroke: rgba(127, 178, 255, 0.7);
+  stroke: var(--context);
   stroke-width: 1.2;
   stroke-dasharray: 3 2;
 }
@@ -1290,7 +1295,7 @@ button.chip:hover {
   stroke-width: 1.8;
 }
 .calib-gap {
-  font-size: 12px;
+  font-size: 13px;
   text-align: right;
   color: var(--text);
 }
