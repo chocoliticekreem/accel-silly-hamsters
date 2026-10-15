@@ -7,6 +7,7 @@ import { PerformanceMonitor, Stats } from "@react-three/drei";
 import { Suspense, useMemo, useState, type ComponentType } from "react";
 import type { CityMap, RunStores } from "../api/contract";
 import { GraphicsMenu } from "./GraphicsMenu";
+import { createRenderer } from "./renderer";
 import { ModuleBoundary } from "./ModuleBoundary";
 import { PRESETS, useQuality } from "./quality";
 import { newLive, WorldContext, type WorldCtx } from "./context";
@@ -127,7 +128,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
       shadows="percentage"
       dpr={dpr}
       camera={{ position: [190, 105, -230], fov: 42, near: 1, far: 4000 }}
-      gl={{ antialias: false, powerPreference: "high-performance", stencil: false }}
+      gl={createRenderer}
     >
       {/* auto quality: step down when the frame rate sags, back up when there's headroom */}
       <PerformanceMonitor bounds={() => [42, 58]} flipflops={4} onDecline={() => useQuality.getState().step(-1)} onIncline={() => useQuality.getState().step(1)} />

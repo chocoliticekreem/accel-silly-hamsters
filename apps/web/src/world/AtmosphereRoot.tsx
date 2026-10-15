@@ -6,6 +6,13 @@ import { PrecomputedTexturesGenerator } from "@takram/three-atmosphere";
 import { Atmosphere } from "@takram/three-atmosphere/r3f";
 import { useMemo, type ReactNode } from "react";
 import type { WebGLRenderer } from "three";
+import { PerfProbe } from "./PerfProbe";
+import { RenderTuning } from "./RenderTuning";
+
+const Q = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+const STATS = Q.has("stats");
+/** ?notune: renderer tuning off (A/B benchmarks). */
+const TUNE = !Q.has("notune");
 
 const generators = new WeakMap<WebGLRenderer, PrecomputedTexturesGenerator>();
 
@@ -34,6 +41,8 @@ export function AtmosphereRoot({ children }: { children: ReactNode }) {
   }, [gl]);
   return (
     <Atmosphere textures={generator.textures} correctAltitude>
+      {TUNE && <RenderTuning />}
+      {STATS && <PerfProbe />}
       {children}
     </Atmosphere>
   );
