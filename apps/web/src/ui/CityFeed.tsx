@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import { useMap, useOwnerEvents, useStreetEvents } from "../state/data";
 import { useSim } from "../state/store";
 import { IncidentFeed } from "./IncidentFeed";
-import { ACTION_ICON, feedItems, momentLabel, STREET_ICON, type FeedItem } from "./ownerFormat";
+import { ACTION_ICON, feedItems, feedRows, momentLabel, STREET_ICON, type FeedItem } from "./ownerFormat";
 
 export interface CityFeedProps {
   /** Run to show; defaults to the run on screen. */
@@ -37,7 +37,11 @@ export function CityFeed({ run: runProp, windowHours = 24, limit = 6, className 
 
   const live = items.filter((i): i is Extract<FeedItem, { kind: "street" }> => i.kind === "street" && i.live && i.events[0].kind !== "heavy_traffic");
   const traffic = items.some((i) => i.kind === "street" && i.live && i.events[0].kind === "heavy_traffic");
-  const rows = items.filter((i) => !(i.kind === "street" && i.live && i.events[0].kind !== "heavy_traffic")).slice(0, limit);
+  // live street events sit in the "now" strip above; owners' decisions get the rows first
+  const rows = feedRows(
+    items.filter((i) => !(i.kind === "street" && i.live)),
+    limit,
+  );
 
   const jump = (item: FeedItem) => {
     const s = useSim.getState();
