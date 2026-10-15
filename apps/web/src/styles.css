@@ -1983,3 +1983,153 @@ button.chip:hover {
 .ag-bars .mono {
   text-align: right;
 }
+
+/* ---------- spec pass: honesty notes, focus, demo bar, narrow screens ---------- */
+
+/* the honesty notes must stay readable: muted (about 6:1 on ink), not faint */
+.disclaimer,
+.sp-note {
+  color: var(--muted);
+}
+.card-note {
+  display: block;
+  margin-top: 8px;
+}
+
+/* one visible keyboard focus style for every control */
+:focus-visible {
+  outline: 2px solid var(--lamp);
+  outline-offset: 2px;
+}
+.track:focus-visible {
+  outline: none;
+}
+button.chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.demo-bar {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  width: max-content;
+  max-width: min(640px, calc(100vw - 32px));
+  background: var(--glass-strong);
+  border-color: rgba(255, 200, 87, 0.35);
+  animation: fade 0.2s ease-out both;
+  z-index: 3;
+}
+.demo-steps {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.demo-steps button {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0;
+}
+.demo-steps button.done {
+  border-color: rgba(255, 200, 87, 0.45);
+  color: var(--lamp);
+}
+.demo-steps button.on {
+  background: var(--lamp);
+  border-color: var(--lamp);
+  color: var(--ink);
+  font-weight: 600;
+}
+.demo-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.25;
+}
+.demo-text b {
+  font-size: 13px;
+}
+.demo-text .muted {
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.demo-bar .demo-next {
+  flex: none;
+}
+.store-page .demo-bar {
+  position: fixed;
+  top: auto;
+  bottom: 16px;
+}
+
+.sp-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.sp-evidence .kpi-label {
+  margin-right: 4px;
+}
+.sp-evidence .evidence-chip {
+  max-width: 100%;
+}
+.sp-evidence .evidence-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+.sp-certainty b {
+  color: var(--text);
+  font-weight: 600;
+}
+.sp-table-wrap {
+  overflow-x: auto;
+}
+
+@media (max-width: 900px) {
+  .agents {
+    width: calc(100vw - 32px);
+  }
+  .tool-row {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .demo-bar {
+    top: auto;
+    bottom: 90px;
+    left: 16px;
+    right: 16px;
+    width: auto;
+    transform: none;
+    max-width: none;
+  }
+}
+@media (max-width: 640px) {
+  .demo-steps {
+    display: none;
+  }
+  .sp-advice-actions {
+    flex-wrap: wrap;
+  }
+}

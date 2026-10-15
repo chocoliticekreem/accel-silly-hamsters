@@ -1,15 +1,17 @@
 // The shop owner's page (docs/STORE_PAGE.md): a plain-English weekly report. Headline, three numbers vs the
 // shop's original settings, 1–3 pieces of advice with Apply, "Optimise for me", the run history, and the
 // granular analytics only behind "Details". No emoji; always "simulated, not guaranteed".
-import { ArrowLeft, Check, ChevronDown, ChevronRight, FlaskConical, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Download, ExternalLink, FlaskConical, PlayCircle, Sparkles, X } from "lucide-react";
 import { useState } from "react";
-import { USING_MOCK, api } from "../api/client";
+import { API_URL, USING_MOCK, api } from "../api/client";
+import { absoluteUrl } from "../api/http";
 import { ApiError, type StoreOverview } from "../api/contract";
 import { navigate, storePath } from "../router";
-import { invalidate, useResource, watchRun } from "../state/data";
+import { invalidate, useReport, useResource, watchRun } from "../state/data";
 import { useSim } from "../state/store";
 import { fmtInt, fmtPct, TYPE_LABEL } from "../ui/format";
 import { InsightsPanel } from "../ui/InsightsPanel";
+import { DemoBar } from "../ui/DemoBar";
 import { Toast } from "../ui/Toast";
 import { TypeIcon } from "../ui/TypeIcon";
 import { STORE_COLORS } from "../world/palette";
@@ -38,6 +40,9 @@ function Change({ value, upIsGood = true }: { value: number; upIsGood?: boolean 
 
 const money = (n: number) => `${n < 0 ? "−" : ""}£${fmtInt(Math.abs(n))}`;
 
+/** Sim replay evidence (/api/runs/{run}/days/{day}) → that run and day from 18:00, in the 3D city. */
+const replayLink = (url: string) => url.match(/\/api\/runs\/(\d+)\/days\/(\d+)/);
+
 export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
   const key = `overview:${storeId}:${run ?? "default"}`;
   const { data: o, error, loading } = useResource<StoreOverview | null>(key, () => api.overview(storeId, run));
@@ -45,6 +50,8 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [decided, setDecided] = useState<Record<number, "applied" | "rejected">>({});
   const toast = useSim((s) => s.showToast);
+  // evidence links and the PDF come from the weekly report for the same run
+  const report = useReport(o ? storeId : null, o?.run ?? 0).data;
 
   const refresh = () => {
     invalidate("overview:");
@@ -60,7 +67,7 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
       await api.decision({ run: o.run, storeId, suggestionIndex: i, decision: "approve" });
       const res = await api.apply({ run: o.run, scope: "store", storeIds: [storeId] });
       setDecided((d) => ({ ...d, [i]: "applied" }));
-      toast(`Testing it: run ${res.queuedRun}`);
+      toast(`Approved · testing it in run ${res.queuedRun}`);
       void watchRun(res.queuedRun).then((s) => {
         if (s === "done") {
           toast(`Run ${res.queuedRun} ready`);
@@ -124,7 +131,6 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
                 <h1>{o.name}</h1>
                 <div className="card-sub">
                   {TYPE_LABEL[o.type]} · weekly report · run {o.run}
-                  {o.bestRun === o.run && " (area best)"}
                 </div>
               </div>
               <span className={`sp-status ${o.status}`}>{STATUS_LABEL[o.status]}</span>
@@ -173,21 +179,23 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
                     <p>{a.text}</p>
                     <div className="sp-advice-meta">
                       <span className={`gbp-chip ${a.gbpPerWeek >= 0 ? "pos" : "neg"}`}>{money(a.gbpPerWeek)}/week</span>
-                      <span className="sp-certainty">{a.certainty}</span>
+                      <span className="sp-certainty">
+                        how sure: <b>{a.certainty}</b>
+                      </span>
                       {tag && <span className="tag">{tag}</span>}
                     </div>
                     <div className="sp-advice-actions">
                       {d ? (
                         <span className={`decided decided-${d === "applied" ? "approve" : "reject"}`}>
-                          {d === "applied" ? <Check size={14} /> : <X size={14} />} {d === "applied" ? "Applied: testing it now" : "Skipped"}
+                          {d === "applied" ? <Check size={14} /> : <X size={14} />} {d === "applied" ? "Approved: testing it now" : "Rejected"}
                         </span>
                       ) : (
                         <>
                           <button className="btn btn-approve" disabled={!!busy || a.status === "applied"} onClick={() => apply(i)}>
-                            <Check size={14} /> Apply
+                            <Check size={14} /> Approve
                           </button>
                           <button className="btn btn-reject" disabled={!!busy} onClick={() => reject(i)}>
-                            <X size={14} /> Not for me
+                            <X size={14} /> Reject
                           </button>
                         </>
                       )}
@@ -196,6 +204,39 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
                 );
               })}
             </ol>
+            {report && (report.evidence.length > 0 || report.pdfUrl) && (
+              <div className="sp-evidence">
+                <span className="kpi-label">Evidence</span>
+                {report.evidence.map((e) => {
+                  const m = replayLink(e.url);
+                  return (
+                    <a
+                      key={e.url + e.label}
+                      className="evidence-chip"
+                      href={e.url}
+                      title={e.label}
+                      target={m ? undefined : "_blank"}
+                      rel="noreferrer"
+                      onClick={(ev) => {
+                        if (!m) return;
+                        ev.preventDefault();
+                        const s = useSim.getState();
+                        s.selectStore(storeId);
+                        s.replay(Number(m[1]), (Number(m[2]) - 1) * 1440 + 18 * 60);
+                        navigate("/");
+                      }}
+                    >
+                      {m ? <PlayCircle size={13} /> : <ExternalLink size={13} />} <span>{e.label}</span>
+                    </a>
+                  );
+                })}
+                {report.pdfUrl && (
+                  <a className="evidence-chip" href={absoluteUrl(API_URL, report.pdfUrl)} download={`${o.name} weekly report.pdf`} target="_blank" rel="noreferrer">
+                    <Download size={13} /> PDF report
+                  </a>
+                )}
+              </div>
+            )}
           </section>
 
           <section className="sp-card">
@@ -203,6 +244,7 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
               <h2>What we tried</h2>
               <span className="muted">same 14 days, re-simulated</span>
             </div>
+            <div className="sp-table-wrap">
             <table className="sp-history">
               <thead>
                 <tr>
@@ -228,6 +270,7 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
                 ))}
               </tbody>
             </table>
+            </div>
             <button
               className="sp-link"
               onClick={() => {
@@ -252,6 +295,7 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
           <footer className="sp-note">{o.note ?? "Simulated, not guaranteed."} · You approve every change · Only your shop's data</footer>
         </main>
       )}
+      <DemoBar />
       <Toast />
     </div>
   );

@@ -2,6 +2,7 @@
 import { useRef } from "react";
 import { DAYS_PER_RUN, RUN_MINUTES } from "../api/contract";
 import { useSim, type Speed } from "../state/store";
+import { clockLabel } from "../sim/time";
 import { WEEKDAYS } from "./format";
 import { Icon } from "./icons";
 
@@ -33,6 +34,7 @@ export function PlaybackBar() {
         aria-valuemin={0}
         aria-valuemax={RUN_MINUTES}
         aria-valuenow={Math.round(t)}
+        aria-valuetext={clockLabel(t)}
         tabIndex={0}
         onPointerDown={(e) => {
           (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -52,7 +54,7 @@ export function PlaybackBar() {
       </div>
       <div className="speeds" role="group" aria-label="Speed">
         {SPEEDS.map((s) => (
-          <button key={s} className={s === speed ? "on" : ""} onClick={() => setSpeed(s)}>
+          <button key={s} className={s === speed ? "on" : ""} aria-pressed={s === speed} title={s === 100 ? "14 days in about a minute" : undefined} onClick={() => setSpeed(s)}>
             {s}×
           </button>
         ))}

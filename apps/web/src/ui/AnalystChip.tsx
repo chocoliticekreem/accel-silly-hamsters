@@ -1,9 +1,8 @@
 // "Analyst running · 9h 12m · 10 experiments". Running: live clock since startedAt. Stopped: until the last run.
 import { useEffect, useState } from "react";
 import { useAnalyst, useRuns } from "../state/data";
-import { duration } from "./format";
+import { duration, STOP_LABELS } from "./format";
 
-const STOP_LABELS = { threshold: "plateau", max_runs: "max runs", budget: "budget cap", error: "crashed, resumable" } as const;
 
 export function AnalystChip({ onClick }: { onClick?: () => void }) {
   const a = useAnalyst().data;
@@ -22,7 +21,7 @@ export function AnalystChip({ onClick }: { onClick?: () => void }) {
   const reason = a.stoppedReason ? STOP_LABELS[a.stoppedReason] : null;
 
   return (
-    <button className={`chip chip-analyst ${a.state}`} onClick={onClick} title="Open history">
+    <button className={`chip chip-analyst ${a.state}`} onClick={onClick} title="Open the agents view" aria-label="Analyst status: open the agents view">
       <span className="pulse" aria-hidden />
       <span>
         Analyst <b>{a.state}</b>
