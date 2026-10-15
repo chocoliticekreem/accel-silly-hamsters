@@ -9,7 +9,8 @@ export type TileSource = "satellite" | "light" | "dark";
 
 const URLS: Record<TileSource, (z: number, x: number, y: number) => string> = {
   satellite: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
-  light: (z, x, y) => `https://basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`,
+  // Voyager: CARTO's coloured OSM style (keyless, same terms as light_all), far more legible than light_all under 3D light
+  light: (z, x, y) => `https://basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`,
   dark: (z, x, y) => `https://basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`,
 };
 

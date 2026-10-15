@@ -84,7 +84,7 @@ function Drape({ kind }: { kind: "satellite" | "map" }) {
   useFrame(() => {
     const night = nightLevel(hourOf(useSim.getState().t));
     // the scene lights dim the photo at night; a little self-light keeps streets readable under the glows
-    if (dayMat.current) dayMat.current.emissiveIntensity = kind === "satellite" ? 0.08 + 0.12 * night : 0.15 + 0.2 * night;
+    if (dayMat.current) dayMat.current.emissiveIntensity = kind === "satellite" ? 0.08 + 0.12 * night : 0.05 * night;
     if (nightMat.current) {
       nightMat.current.opacity = night;
       nightMat.current.emissiveIntensity = 0.55 * night;
@@ -107,7 +107,7 @@ function Drape({ kind }: { kind: "satellite" | "map" }) {
       </mesh>
       <mesh rotation-x={-Math.PI / 2} position={[cx, 0.01, cz]} receiveShadow>
         <planeGeometry args={[w, d]} />
-        <meshStandardMaterial ref={dayMat} map={layers.day.tex} emissiveMap={layers.day.tex} emissive="#ffffff" roughness={1} metalness={0} />
+        <meshStandardMaterial ref={dayMat} map={layers.day.tex} emissiveMap={layers.day.tex} emissive="#ffffff" color={kind === "map" ? "#d2d2d2" : "#ffffff"} roughness={1} metalness={0} />
       </mesh>
       {layers.night && (
         <mesh rotation-x={-Math.PI / 2} position={[cx, 0.02, cz]} receiveShadow renderOrder={1}>
