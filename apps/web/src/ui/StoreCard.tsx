@@ -16,7 +16,7 @@ import { Icon } from "./icons";
 import { InsightsPanel } from "./InsightsPanel";
 import { SuggestionList } from "./SuggestionList";
 import { TypeIcon } from "./TypeIcon";
-import { navigate, storePath } from "../router";
+import { agentsPath, navigate, storePath } from "../router";
 import { SafetyCardExtras } from "./SafetyCardExtras";
 
 export function StoreCard() {
@@ -115,8 +115,14 @@ export function StoreCard() {
       {tab === "insights" && !isClub ? (
         <>
           <InsightsPanel storeId={id} run={run} onApply={() => apply("store")} />
-          <button className="btn btn-report" onClick={() => navigate(storePath(id))}>
-            <Icon name="report" /> Open report
+          <button className="btn btn-report" onClick={() => useSim.getState().openPanel("report")}>
+            <Icon name="report" /> Weekly report
+          </button>
+          <button className="btn btn-report" onClick={() => navigate(agentsPath(id))}>
+            Run the agents
+          </button>
+          <button className="btn" onClick={() => navigate(storePath(id))}>
+            Open shop page
           </button>
         </>
       ) : (
@@ -157,8 +163,14 @@ export function StoreCard() {
             </button>
           </div>
           <div className="disclaimer card-note">Simulated, not guaranteed · licence hours enforced · the owner approves every change</div>
-          <button className="btn btn-report" onClick={() => navigate(storePath(id))}>
-            <Icon name="report" /> Open report
+          <button className="btn btn-report" onClick={() => useSim.getState().openPanel("report")}>
+            <Icon name="report" /> Weekly report
+          </button>
+          <button className="btn btn-report" onClick={() => navigate(agentsPath(id))}>
+            Run the agents
+          </button>
+          <button className="btn" onClick={() => navigate(storePath(id))}>
+            Open shop page
           </button>
         </>
       )}

@@ -121,7 +121,7 @@ def expected_city_gain(
     visit at its store type's margin and each kWh at the mean tariff.
     """
     advised = [s.id for s in advised_stores(map_data)]
-    deltas: list[tuple[str, float, float]] = []  # (store, visits, kWh) over the 14 days
+    deltas: list[tuple[str, float, float, float]] = []  # (store, visits, kWh, open h), 14 days
     for change in changes:
         result = files.stores.get(change.storeId)
         if result is None:
@@ -132,6 +132,7 @@ def expected_city_gain(
                 change.storeId,
                 change.expectedDelta.visits * result.kpis.visits * share,
                 change.expectedDelta.kwh * result.kpis.kwh,
+                economics.suggestion_open_hours_delta(result, change),
             )
         )
     if objective == NET_VALUE:
@@ -143,11 +144,11 @@ def expected_city_gain(
 
 
 def _expected_net_value_gain(
-    deltas: list[tuple[str, float, float]], files: RunFiles, map_data: MapData
+    deltas: list[tuple[str, float, float, float]], files: RunFiles, map_data: MapData
 ) -> float:
     types, price = store_types(map_data), economics.area_price_gbp_per_kwh()
     value = net_value_gbp({sid: r.kpis for sid, r in files.stores.items()}, types, price)
-    delta = sum(economics.gbp_per_week(types[sid], dv, dk, price) for sid, dv, dk in deltas)
+    delta = sum(economics.gbp_per_week(types[sid], dv, dk, dh, price) for sid, dv, dk, dh in deltas)
     return delta / abs(value) if value else 0.0
 
 

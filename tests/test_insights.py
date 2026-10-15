@@ -186,12 +186,13 @@ def numbers(value: Any) -> list[float]:
 
 
 def test_gbp_per_week_is_margin_on_visits_minus_energy_over_two_weeks() -> None:
-    # takeaway: +20 visits and +10 kWh over 14 days -> 10 visits x 9 x 0.3 - 5 kWh x 0.3
-    assert economics.gbp_per_week("takeaway", 20, 10, 0.3) == pytest.approx(25.5)
-    # cafe: -10 visits and -40 kWh -> -5 x 6 x 0.3 + 20 x 0.25
-    assert economics.gbp_per_week("cafe", -10, -40, 0.25) == pytest.approx(-4.0)
-    # clubs earn nothing per visit: only the energy line remains
-    assert economics.gbp_per_week("club", 100, 4, 0.5) == pytest.approx(-1.0)
+    # takeaway: +20 visits, +10 kWh and +4 open hours over 14 days
+    # -> 10 visits x 9 x 0.6 - 5 kWh x 0.3 - 2 h x 2 staff x 12.71 = 54 - 1.5 - 50.84
+    assert economics.gbp_per_week("takeaway", 20, 10, 4, 0.3) == pytest.approx(1.66)
+    # cafe: -10 visits, -40 kWh and -6 open hours -> -5 x 6 x 0.65 + 20 x 0.25 + 3 x 1 x 12.71
+    assert economics.gbp_per_week("cafe", -10, -40, -6, 0.25) == pytest.approx(23.63)
+    # clubs earn nothing per visit and pay no modelled staff: only the energy line remains
+    assert economics.gbp_per_week("club", 100, 4, 10, 0.5) == pytest.approx(-1.0)
 
 
 def test_price_is_the_mean_of_the_hourly_tariff() -> None:
@@ -209,7 +210,6 @@ def test_spend_constants_match_the_frontend_mock() -> None:
         "offlicence": 8,
         "club": 0,
     }
-    assert economics.GROSS_MARGIN == 0.3
 
 
 # --- payload shape ---------------------------------------------------------------------------
@@ -308,17 +308,19 @@ def test_clubs_get_no_insights() -> None:
 
 
 def test_missed_demand_extends_the_close_over_late_demand() -> None:
-    case = make_case(missed={23: 3.0, 0: 3.0, 1: 3.0})
+    case = make_case(missed={23: 12.0, 0: 12.0, 1: 12.0})
     insights = build(case).insights
     assert [i.id for i in insights] == ["missed-demand-close"]
     insight = insights[0]
-    # 9 found shut a day -> 63 a week; x 14 days x 0.6 capture = 75.6 visits for 3 h x 2.0 kWh
-    # x 14 = 84 kWh: 37.8 x 9 x 0.3 - 42 x 0.3 = GBP 89.46 a week, the best of every 30-min step
+    # 36 found shut a day -> 252 a week; x 14 days x 0.6 capture = 302.4 visits for 3 h x 2.0 kWh
+    # x 14 = 84 kWh and 3 h x 14 = 42 staff hours:
+    # 151.2 x 9 x 0.6 - 42 x 0.3 - 21 x 2 x 12.71 = 816.48 - 12.6 - 533.82 = GBP 270.06 a week,
+    # the best of every 30-min step
     assert insight.kind == "missed_demand"
-    assert insight.metric == InsightMetric(label="Missed visits / week", value=63, unit="people")
-    assert insight.impact == Impact(visits=0.09, kwh=round(84 / 575.4, 4), gbpPerWeek=89.46)
-    assert (insight.confidence, insight.severity) == ("medium", "medium")
-    assert insight.title == "63 people a week find you shut after 23:00"
+    assert insight.metric == InsightMetric(label="Missed visits / week", value=252, unit="people")
+    assert insight.impact == Impact(visits=0.36, kwh=round(84 / 575.4, 4), gbpPerWeek=270.06)
+    assert (insight.confidence, insight.severity) == ("high", "high")
+    assert insight.title == "252 people a week find you shut after 23:00"
     suggestion = insight.suggestion
     assert suggestion is not None
     assert (suggestion.storeId, suggestion.field, suggestion.from_, suggestion.to) == (
@@ -332,14 +334,14 @@ def test_missed_demand_extends_the_close_over_late_demand() -> None:
         insight.impact.visits,
         insight.impact.kwh,
     )
-    assert suggestion.confidence == "medium"
+    assert suggestion.confidence == "high"
     assert [(e.label, e.url) for e in insight.evidence] == [
         ("Sim run 9, Fri 23:00-02:00", "/api/runs/9/days/5")
     ]
 
 
 def test_missed_demand_extends_the_open_over_early_demand() -> None:
-    case = make_case(missed={9: 3.0, 10: 3.0})
+    case = make_case(missed={9: 12.0, 10: 12.0})
     insight = insight_map(build(case))["missed-demand-open"]
     assert insight.suggestion is not None
     assert (insight.suggestion.field, insight.suggestion.from_, insight.suggestion.to) == (
@@ -347,18 +349,27 @@ def test_missed_demand_extends_the_open_over_early_demand() -> None:
         "11:00",
         "09:00",
     )
-    # 6 a day x 14 x 0.6 = 50.4 visits for 2 h x 2.0 x 14 = 56 kWh
-    assert insight.impact.gbpPerWeek == pytest.approx(25.2 * 9 * 0.3 - 28 * 0.3)
-    assert insight.title == "42 people a week find you shut before 11:00"
+    # 24 a day x 14 x 0.6 = 201.6 visits for 2 h x 2.0 x 14 = 56 kWh and 2 h x 14 = 28 staff hours
+    assert insight.impact.gbpPerWeek == pytest.approx(100.8 * 9 * 0.6 - 28 * 0.3 - 14 * 2 * 12.71)
+    assert insight.title == "168 people a week find you shut before 11:00"
 
 
 def test_missed_demand_extends_at_most_five_hours_a_side() -> None:
     # Demand all day long (citizens walk up unless they see the shop shut) must not send an
     # evening shop to open at dawn: the opening move stops 5 h before the current open.
-    case = make_case(missed={h: 3.0 for h in range(4, 11)})
+    case = make_case(missed={h: 12.0 for h in range(4, 11)})
     insight = insight_map(build(case))["missed-demand-open"]
     assert insight.suggestion is not None
     assert (insight.suggestion.from_, insight.suggestion.to) == ("11:00", "06:00")
+
+
+def test_missed_demand_stays_silent_when_the_margin_covers_energy_but_not_wages() -> None:
+    # 9 found shut a day over 23:00-02:00: 37.8 visits a week x 9 x 0.6 = GBP 204.12 of margin
+    # beats the 42 kWh x 0.3 = GBP 12.60 energy, but not 21 staff hours x 2 x 12.71 = GBP 533.82
+    assert economics.gbp_per_week("takeaway", 75.6, 84, 0, 0.3) == pytest.approx(191.52)
+    assert economics.gbp_per_week("takeaway", 75.6, 84, 42, 0.3) == pytest.approx(-342.3)
+    case = make_case(missed={23: 3.0, 0: 3.0, 1: 3.0})
+    assert build(case).insights == []
 
 
 def test_missed_demand_stays_silent_below_two_people_a_day() -> None:
@@ -372,7 +383,7 @@ def test_missed_demand_stays_inside_the_licence() -> None:
         store_type="cafe",
         hours=("10:00", "18:00"),
         licence=None,
-        missed={h: 3.0 for h in [*range(18, 24), 0, 1, 2]},
+        missed={h: 12.0 for h in [*range(18, 24), 0, 1, 2]},
     )
     suggestion = insight_map(build(case))["missed-demand-close"].suggestion
     assert suggestion is not None
@@ -385,7 +396,7 @@ def test_missed_demand_stops_on_the_grid_before_an_off_grid_licence_end() -> Non
         store_type="cafe",
         hours=("10:30", "20:00"),
         licence=("06:00", "23:45"),
-        missed={h: 3.0 for h in range(20, 24)},
+        missed={h: 12.0 for h in range(20, 24)},
     )
     suggestion = insight_map(build(case))["missed-demand-close"].suggestion
     assert suggestion is not None
@@ -398,8 +409,8 @@ def test_missed_demand_is_silent_when_the_licence_has_no_room() -> None:
 
 
 def test_missed_demand_lands_on_the_30_minute_grid_from_an_off_grid_close() -> None:
-    # 1 found shut a day in 22:45-23:00 and 3 in 23:00-24:00: the best step is 00:00.
-    case = make_case(hours=("11:00", "22:45"), missed={22: 1.0, 23: 3.0})
+    # 4 found shut a day in 22:45-23:00 and 12 in 23:00-24:00: the best step is 00:00.
+    case = make_case(hours=("11:00", "22:45"), missed={22: 4.0, 23: 12.0})
     suggestion = insight_map(build(case))["missed-demand-close"].suggestion
     assert suggestion is not None
     assert (suggestion.from_, suggestion.to) == ("22:45", "00:00")
@@ -407,7 +418,7 @@ def test_missed_demand_lands_on_the_30_minute_grid_from_an_off_grid_close() -> N
 
 
 def test_both_extensions_together_keep_the_rules() -> None:
-    case = make_case(licence=("00:00", "00:00"), missed={23: 3.0, 10: 3.0})
+    case = make_case(licence=("00:00", "00:00"), missed={23: 12.0, 10: 12.0})
     found = insight_map(build(case))
     close = found["missed-demand-close"].suggestion
     open_ = found["missed-demand-open"].suggestion
@@ -423,7 +434,7 @@ def test_extensions_never_close_the_last_30_minutes() -> None:
     # takeaway to its 17 h day cap, so no open-side move can follow; the day it leaves keeps
     # plenty of closed time.
     closed_hours = [*range(23, 24), *range(0, 11)]
-    case = make_case(licence=("00:00", "00:00"), missed={h: 3.0 for h in closed_hours})
+    case = make_case(licence=("00:00", "00:00"), missed={h: 12.0 for h in closed_hours})
     found = insight_map(build(case))
     close = found["missed-demand-close"].suggestion
     assert close is not None and close.to == "04:00"
@@ -460,7 +471,7 @@ def test_wasted_energy_turns_off_lights_in_closed_hours() -> None:
 
 def test_wasted_energy_skips_hours_an_extension_would_open() -> None:
     dark: dict[int, LightingLevel] = {h: "low" for h in [23, *range(0, 7)]}
-    case = make_case(lighting=dark, missed={23: 3.0, 0: 3.0, 1: 3.0})
+    case = make_case(lighting=dark, missed={23: 12.0, 0: 12.0, 1: 12.0})
     found = insight_map(build(case))
     extension = found["missed-demand-close"].suggestion
     waste = found["wasted-energy-low"].suggestion
@@ -482,8 +493,9 @@ def test_dead_hours_trims_a_quiet_close() -> None:
     payload = build(case)
     assert [i.id for i in payload.insights] == ["dead-hours-close"]
     insight = payload.insights[0]
-    # 2 h saved: 2 x 2.0 x 14 = 56 kWh; lost 0.2 a day x 14 = 2.8 visits -> GBP 8.40 - 3.78
-    assert insight.impact.gbpPerWeek == pytest.approx(4.62)
+    # 2 h saved: 2 x 2.0 x 14 = 56 kWh and 2 x 14 = 28 staff hours; lost 0.2 a day x 14 = 2.8
+    # visits -> 28 x 0.3 + 14 x 2 x 12.71 - 1.4 x 9 x 0.6 = 8.40 + 355.88 - 7.56
+    assert insight.impact.gbpPerWeek == pytest.approx(356.72)
     assert insight.impact.visits == round(-2.8 / case.result.kpis.visits, 4)
     assert insight.impact.kwh == round(-56 / case.result.kpis.kwh, 4)
     assert insight.severity == "medium"
@@ -500,8 +512,12 @@ def test_dead_hours_trims_a_quiet_close() -> None:
     assert payload.energy.kwhLowTrafficOpen == pytest.approx(3.1 * 2 * DAYS)
 
 
-def test_dead_hours_stays_silent_when_trimming_loses_money() -> None:
-    # 0.45 visits an hour is quiet, but its margin beats the 2 kWh the hour costs
+def test_dead_hours_stays_silent_when_trimming_loses_money(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Under 0.5 visits an hour no store type's margin covers its default wages, so only an
+    # owner-run shop with no paid staff can lose money by trimming.
+    monkeypatch.setitem(economics.STAFF_ON_SHIFT, "takeaway", 0)
+    # 0.45 visits an hour is quiet, but its margin beats the 2 kWh the hour costs:
+    # 0.45 x 7 x 9 x 0.6 = GBP 17.01 a week against 2 x 7 x 0.3 = GBP 4.20
     case = make_case(visits={22: 0.45})
     assert build(case).insights == []
     assert build(case).energy.kwhLowTrafficOpen > 0
@@ -548,7 +564,7 @@ def test_lighting_opportunity_raises_dim_busy_night_hours() -> None:
     assert [i.id for i in insights] == ["lighting-opportunity-low"]
     insight = insights[0]
     # 6 h x 5 visits x 0.15 uplift x 14 = 63 visits; 6 h x 0.35 kW x 14 = 29.4 kWh
-    assert insight.impact.gbpPerWeek == pytest.approx(31.5 * 9 * 0.3 - 14.7 * 0.3)
+    assert insight.impact.gbpPerWeek == pytest.approx(31.5 * 9 * 0.6 - 14.7 * 0.3)
     assert insight.impact.visits == round(63 / 840, 4)
     assert insight.severity == "medium"
     # 2100 passers-by a week would be high, but the uplift is an assumption: capped at medium
@@ -656,17 +672,18 @@ def test_rank_by_gbp_then_severity_and_keep_five() -> None:
 
 def test_ranked_payload_mixes_kinds_in_gbp_order() -> None:
     case = make_case(
-        missed={23: 3.0, 0: 3.0, 1: 3.0},
+        missed={23: 12.0, 0: 12.0, 1: 12.0},
         lighting={**{h: "low" for h in range(17, 23)}, 4: "low", 5: "low", 6: "low", 3: "low"},
         visits={11: 0.05},
     )
     payload = build(case, [c.peer() for c in peer_cases("takeaway", [2.0, 4.0, 8.0])])
     ids = [i.id for i in payload.insights]
-    # GBP 89.46, 80.64, 3.26 (trim 11:00 -> 12:00), 2.10 (03:00-07:00 lit low), 0
+    # GBP 270.06, 180.25 (trim 11:00 -> 12:00 saves 7 staff hours a week), 165.69 (17:00-23:00
+    # lit low), 2.10 (03:00-07:00 lit low), 0
     assert ids == [
         "missed-demand-close",
-        "lighting-opportunity-low",
         "dead-hours-open",
+        "lighting-opportunity-low",
         "wasted-energy-low",
         "benchmark-visits-per-kwh",
     ]
@@ -680,12 +697,12 @@ def test_ranked_payload_mixes_kinds_in_gbp_order() -> None:
 
 def test_every_hours_suggestion_respects_the_rules() -> None:
     cases = [
-        make_case(missed={23: 3.0, 0: 3.0, 1: 3.0, 2: 3.0, 3: 6.0, 4: 6.0}),
-        make_case(hours=("17:00", "22:30"), missed={22: 1.0, 23: 2.0, 3: 8.0}),
+        make_case(missed={23: 12.0, 0: 12.0, 1: 12.0, 2: 12.0, 3: 24.0, 4: 24.0}),
+        make_case(hours=("17:00", "22:30"), missed={22: 8.0, 23: 16.0, 3: 64.0}),
         make_case(
-            store_type="bar", hours=("16:00", "00:00"), licence=None, missed={0: 3, 1: 3, 2: 9}
+            store_type="bar", hours=("16:00", "00:00"), licence=None, missed={0: 12, 1: 12, 2: 36}
         ),
-        make_case(hours=("06:30", "23:00"), missed={h: 4.0 for h in range(0, 7)}),
+        make_case(hours=("06:30", "23:00"), missed={h: 16.0 for h in range(0, 7)}),
         make_case(hours=("07:00", "23:00"), visit_rate=0.05),
     ]
     for case in cases:

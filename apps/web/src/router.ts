@@ -23,10 +23,12 @@ export function useLocation() {
   );
 }
 
-export type Route = { page: "area" } | { page: "store"; storeId: string; run?: number };
+export type Route = { page: "area" } | { page: "store"; storeId: string; run?: number } | { page: "agents"; storeId: string | null };
 
 export function parseRoute(location: string): Route {
   const url = new URL(location, "http://x");
+  const a = url.pathname.match(/^\/agents(?:\/([^/]+))?\/?$/);
+  if (a) return { page: "agents", storeId: a[1] ? decodeURIComponent(a[1]) : null };
   const m = url.pathname.match(/^\/store\/([^/]+)\/?$/);
   if (m) {
     const run = url.searchParams.get("run");
@@ -36,3 +38,4 @@ export function parseRoute(location: string): Route {
 }
 
 export const storePath = (storeId: string, run?: number) => `/store/${encodeURIComponent(storeId)}${run === undefined ? "" : `?run=${run}`}`;
+export const agentsPath = (storeId: string) => `/agents/${encodeURIComponent(storeId)}`;

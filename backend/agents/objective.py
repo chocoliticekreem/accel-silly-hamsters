@@ -1,9 +1,10 @@
 """The training objective: which value it reads, which way is better, and how gains are measured.
 
 The objective (TrainingConfig.objective, default settings.OBJECTIVE) is a contract.Kpis field
-(visitsPerKwh, visits) or netValueGbp: the area's weekly margin on visits minus its energy bill,
-summed over non-club stores, visits x SPEND_GBP_PER_VISIT[type] x GROSS_MARGIN - kWh x price
-(backend/economics.py; price = the mean tariff). Higher is better except for `kwh`. A gain is
+(visitsPerKwh, visits) or netValueGbp: the area's weekly margin on visits minus its energy bill
+and wages, summed over non-club stores: visits x margin_per_visit(type) - kWh x price - open hours
+x staff wage (backend/economics.py; price = the mean tariff). Higher is better except for `kwh`.
+A gain is
 always expressed so that positive means better (0.02 = 2% better than the reference).
 
 storeProfitGbp is a one-shop session's objective (training.py): the shop's profit change per week
@@ -38,7 +39,7 @@ def city_value(kpis: Kpis, objective: str) -> float:
 
 def value_per_visit(store_type: StoreType) -> float:
     """GBP of margin one visit is worth to a store of this type."""
-    return economics.SPEND_GBP_PER_VISIT[store_type] * economics.GROSS_MARGIN
+    return economics.margin_per_visit(store_type)
 
 
 def net_value_gbp(
@@ -46,7 +47,7 @@ def net_value_gbp(
 ) -> float:
     """netValueGbp from 14-day store KPIs: GBP per week, clubs and unknown stores excluded."""
     return sum(
-        economics.gbp_per_week(types[sid], kpis.visits, kpis.kwh, price)
+        economics.gbp_per_week(types[sid], kpis.visits, kpis.kwh, kpis.openHours, price)
         for sid, kpis in stores.items()
         if types.get(sid, "club") != "club"
     )
@@ -68,7 +69,7 @@ def store_value(
     if objective == NET_VALUE:
         if store_type is None:
             raise ValueError("netValueGbp needs the store type")
-        return economics.gbp_per_week(store_type, kpis.visits, kpis.kwh, price)
+        return economics.gbp_per_week(store_type, kpis.visits, kpis.kwh, kpis.openHours, price)
     return float(getattr(kpis, objective))
 
 

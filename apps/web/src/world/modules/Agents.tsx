@@ -167,6 +167,8 @@ export default function Agents() {
     };
     const onClick = (e: MouseEvent) => {
       if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+      // a shop under the pointer wins: the shop card is how owners see their store
+      if (useSim.getState().hoveredStoreId) return;
       const { agents: list, n, xs, zs } = shown.current;
       const rect = el.getBoundingClientRect();
       let best = -1;
