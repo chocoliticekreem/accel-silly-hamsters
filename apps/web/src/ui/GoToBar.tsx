@@ -28,11 +28,11 @@ function places(map: CityMap | null): Place[] {
     return b ? { x: b.x, z: b.z } : { x, z };
   };
   return [
-    { key: "encode", label: "Encode Hub", Icon: Building2, dist: 150, ...at("encode", -540, 630) },
+    { key: "encode", label: "Encode Hub", Icon: Building2, dist: 150, ...at("encode", -645, 481) },
     { key: "xoyo", label: "XOYO", Icon: Music, dist: 150, ...club(/^xoyo$/i, -786, 248) },
-    { key: "artotel", label: "art'otel", Icon: Hotel, dist: 260, ...at("artotel", -530, 345) },
-    { key: "oldstreet", label: "Old Street", Icon: MapPin, dist: 240, ...at("oldstreet", -850, 270) },
-    { key: "boxpark", label: "Boxpark", Icon: ShoppingBag, dist: 160, ...at("boxpark", -60, -40) },
+    { key: "artotel", label: "art'otel", Icon: Hotel, dist: 260, ...at("artotel", -601, 339) },
+    { key: "oldstreet", label: "Old Street", Icon: MapPin, dist: 240, ...at("oldstreet", -880, 255) },
+    { key: "boxpark", label: "Boxpark", Icon: ShoppingBag, dist: 160, ...at("boxpark", -124, 26) },
     { key: "station", label: "Shoreditch High St", Icon: TrainFront, dist: 220, x: 0, z: 0 },
   ];
 }

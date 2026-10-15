@@ -111,8 +111,8 @@ export interface ResolvedLandmark extends Landmark {
 
 /** Fallbacks when the backend serves no `map.landmarks`. Boxpark is found on the map (see resolveLandmarks). */
 export const LANDMARK_FALLBACKS: Landmark[] = [
-  { id: "artotel-hoxton", name: "art'otel London Hoxton", kind: "hotel", x: -530, z: 345, h: 92, note: "Hotel tower at Old Street & Great Eastern Street" },
-  { id: "encode-hub", name: "Encode Hub", kind: "venue", x: -540, z: 630, h: 16, note: "41 Pitfield Street: the hackathon venue" },
+  { id: "artotel-hoxton", name: "art'otel London Hoxton", kind: "hotel", x: -601, z: 339, h: 92, note: "Hotel tower at Old Street & Great Eastern Street" },
+  { id: "encode-hub", name: "Encode Hub", kind: "venue", x: -645, z: 481, h: 19, note: "41 Pitfield Street: the hackathon venue" },
   { id: "old-street", name: "Old Street", kind: "station", x: OLD_STREET.x, z: OLD_STREET.z, h: 0, note: "Northern line, under the roundabout" },
 ];
 
