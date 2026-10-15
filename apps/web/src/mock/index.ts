@@ -1,6 +1,7 @@
 // mockApi(): the full backend contract served from memory. Same interface as http.ts.
 // Runs are simulated lazily and cached; everything is deterministic (seed 42).
-import type { AgentEvent, AgentSession, AnalystStatus, Api, Calibration, RunAreaSummary, CalibrationVenue, CityMap, DecisionRequest, RunSummary } from "../api/contract";
+import { ApiError, type AgentEvent, type AgentSession, type AnalystStatus, type Api, type Calibration, type RunAreaSummary, type CalibrationVenue, type CityMap, type DecisionRequest, type RunSummary } from "../api/contract";
+import { OPTIMISE_MS, optimiseProgress } from "./optimise";
 // The backend pipeline's calibration targets (placeholder shapes until Popular Times is measured).
 import calibrationData from "../../../../data/processed/calibration.json";
 // The pipeline's live London carbon and price profile, so mock area totals use real numbers.
@@ -97,6 +98,9 @@ export const sharedMockState = () => (shared ??= createMockState());
 export function mockApi(state: MockState = sharedMockState()): Api {
   let self: Api;
   const { map } = state;
+  // the "Optimise for me" session (one at a time, like the backend's 409)
+  let opt: { storeId: string; startedAt: number } | null = null;
+  const optimising = () => !!opt && Date.now() - opt.startedAt < OPTIMISE_MS;
   const storeName = (id: string) => map.stores.find((s) => s.id === id)?.name ?? id;
   const areas = Object.fromEntries(
     map.stores.map((s) => {
@@ -127,7 +131,7 @@ export function mockApi(state: MockState = sharedMockState()): Api {
     apply: (req) => later(() => ({ queuedRun: Math.min(req.run + 1, MOCK_RUN_COUNT) })),
     analyst: () =>
       later<AnalystStatus>(() => ({
-        state: "stopped",
+        state: optimising() ? "running" : "stopped",
         startedAt: new Date(STARTED_AT).toISOString(),
         iterations: MOCK_RUN_COUNT,
         bestRun: state.bestRun(),
@@ -193,6 +197,7 @@ export function mockApi(state: MockState = sharedMockState()): Api {
           footfallByHour: r.footfallByHour,
           agents: r.agents,
           durationSec: 0,
+          daily: r.daily,
         };
       }),
     insights: (storeId, run) =>
@@ -205,6 +210,22 @@ export function mockApi(state: MockState = sharedMockState()): Api {
     agentSession: () =>
       later<AgentSession>(() => {
         const runs = state.runs();
+        if (opt) {
+          const p = optimiseProgress(Date.now() - opt.startedAt, state.bestRun());
+          return {
+            sessionId: `mock-optimise-${opt.storeId}`,
+            startedAt: new Date(opt.startedAt).toISOString(),
+            updatedAt: new Date().toISOString(),
+            backend: "heuristic",
+            fresh: false,
+            seed: MOCK_SEED,
+            baselineRun: 1,
+            ...p,
+            bestObjective: p.bestRun ? runs.find((r) => r.run === p.bestRun)!.kpis!.visitsPerKwh : null,
+            lowGainStreak: p.state === "stopped" ? 2 : 0,
+            spentGbp: 0,
+          };
+        }
         return {
           sessionId: "mock-session",
           state: "stopped",
@@ -253,14 +274,13 @@ export function mockApi(state: MockState = sharedMockState()): Api {
         ev.push({ at: at(runs.length, 65), agent: "training", type: "stopped", run: null, data: { reason: "threshold", bestRun: state.bestRun() } });
         return ev;
       }),
-    optimize: () =>
-      later<AnalystStatus>(() => ({
-        state: "stopped",
-        startedAt: new Date(STARTED_AT).toISOString(),
-        iterations: MOCK_RUN_COUNT,
-        bestRun: state.bestRun(),
-        stoppedReason: "threshold",
-      })),
+    // a short scoped session: running for a few seconds of wall time, then stopped at the best run
+    optimize: (storeId) =>
+      later<AnalystStatus>(() => {
+        if (optimising()) throw new ApiError("POST /api/stores/optimize → 409", 409);
+        opt = { storeId, startedAt: Date.now() };
+        return { state: "running", startedAt: new Date(opt.startedAt).toISOString(), iterations: 0, bestRun: null, stoppedReason: null, baselineRun: 1 };
+      }),
     ownerEvents: (run) => later(() => state.result(run).ownerEvents),
     streetEvents: (run) => later(() => state.result(run).streetEvents),
     health: () => later(() => ({ ok: true, simVersion: "mock", mapSource: "sample" as const, realRuns: MOCK_RUN_COUNT })),

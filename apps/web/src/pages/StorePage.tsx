@@ -1,7 +1,7 @@
 // The shop owner's page (docs/STORE_PAGE.md): a plain-English weekly report. Headline, three numbers vs the
 // shop's original settings, 1–3 pieces of advice with Apply, "Optimise for me", the run history, and the
 // granular analytics only behind "Details". No emoji; always "simulated, not guaranteed".
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Download, ExternalLink, FlaskConical, PlayCircle, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Download, ExternalLink, FlaskConical, NotebookPen, PlayCircle, Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import { API_URL, USING_MOCK, api } from "../api/client";
 import { absoluteUrl } from "../api/http";
@@ -11,6 +11,7 @@ import { invalidate, useReport, useResource, watchRun } from "../state/data";
 import { useSim } from "../state/store";
 import { fmtInt, fmtPct, TYPE_LABEL } from "../ui/format";
 import { InsightsPanel } from "../ui/InsightsPanel";
+import { OptimiseStrip } from "../ui/OptimiseStrip";
 import { OwnerTimeline } from "../ui/OwnerTimeline";
 import { WeekSchedule } from "../ui/WeekSchedule";
 import { DemoBar } from "../ui/DemoBar";
@@ -61,6 +62,13 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
     invalidate("analyst");
     invalidate("insights:");
   };
+  // "Optimise for me": bumped per start, so each session gets a fresh progress strip (0 = none)
+  const [optimising, setOptimising] = useState(0);
+  const optimiseDone = () => {
+    refresh();
+    invalidate("agents:");
+    invalidate("summary:");
+  };
 
   const apply = async (i: number) => {
     if (!o) return;
@@ -100,8 +108,7 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
     setBusy("optimise");
     try {
       await api.optimize(storeId);
-      toast("Optimising your shop: new runs will appear below");
-      refresh();
+      setOptimising((n) => n + 1);
     } catch (e) {
       toast(e instanceof ApiError && e.status === 409 ? "Already optimising: check back in a minute" : e instanceof ApiError && e.status === 403 ? "Read-only demo: optimising is off here" : "Couldn't start optimising");
     } finally {
@@ -162,6 +169,11 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
                 {money(o.numbers.profitChangePerWeekGbp)} a week {o.numbers.profitChangePerWeekGbp > 0 ? "better off" : "worse off"} than your original settings
               </div>
             )}
+            {o.ownerChanges != null && (
+              <p className="sp-owner-changes">
+                <NotebookPen size={14} aria-hidden /> Owner adapted <b>{o.ownerChanges}</b> time{o.ownerChanges === 1 ? "" : "s"} this fortnight
+              </p>
+            )}
           </section>
 
           <section className="sp-card">
@@ -171,6 +183,7 @@ export function StorePage({ storeId, run }: { storeId: string; run?: number }) {
                 <Sparkles size={14} /> {busy === "optimise" ? "Starting…" : "Optimise for me"}
               </button>
             </div>
+            {optimising > 0 && <OptimiseStrip key={optimising} storeId={storeId} onDone={optimiseDone} onClose={() => setOptimising(0)} />}
             {o.advice.length === 0 && <div className="empty">Nothing to change this week</div>}
             <ol className="sp-advice">
               {o.advice.map((a, i) => {

@@ -3,11 +3,12 @@
 // KPIs are computed from the generated visits, so what you see in 3D matches the numbers in the HUD.
 // Owners adapt day by day (mock/owners.ts): opening, lighting and energy follow each owner's evolving schedule.
 import type { PersonDay } from "../api/economy";
-import type { AgentDay, CityMap, DayData, LightLevel, OwnerEvent, PathKey, RunKpis, RunStores, StoreKpis, StoreType, StoreVisit, StreetEvent } from "../api/contract";
+import type { AgentDay, CityMap, DayData, LightLevel, OwnerEvent, PathKey, RunDay, RunKpis, RunStores, StoreKpis, StoreType, StoreVisit, StreetEvent } from "../api/contract";
 import { DAYS_PER_RUN, MINUTES_PER_DAY } from "../api/contract";
 import { frontage } from "../sim/geometry";
 import type { RunConfig } from "./configs";
 import { H_STREETS, V_STREETS } from "./map";
+import { aggregateDaily } from "./daily";
 import { OwnerBook, type DayStats } from "./owners";
 import { generateStreetEvents, storeStreets } from "./streetEvents";
 import { between, intBetween, pick, rng, seedOf, weighted, type Rng } from "./rng";
@@ -536,6 +537,8 @@ export interface RunResult {
   ownerEvents: OwnerEvent[];
   /** What the owners reacted to (same in every run: fixed seed). */
   streetEvents: StreetEvent[];
+  /** Shops' totals per sim day: the inner learning loop (RunAreaSummary.daily). */
+  daily: RunDay[];
   /** storeId -> kWh drawn on each day (14 values). */
   kwhByDay: Record<string, number[]>;
   /** storeId -> people who found it shut on each day (14 values). */
@@ -650,11 +653,12 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number, run = 1,
       const t1 = a.path[a.path.length - 1][0];
       for (let hh = Math.floor(t0 / 60); hh <= Math.floor(t1 / 60); hh++) footfall[hh % 24] += 1;
     }
-  // owners join the day files last, so they never count as customers, footfall or regulars
+  const ownerEvents = ctx.book.allEvents();
+  const kwhRaw = Object.fromEntries(ctx.stores.map((s) => [s.id, Array.from({ length: DAYS_PER_RUN }, (_, i) => ctx.book.kwhByHour(ctx.book.shops[s.idx], i + 1).reduce((a, b) => a + b, 0))]));
+  const daily = aggregateDaily({ days, kwhByDay: kwhRaw, types: Object.fromEntries(ctx.stores.map((s) => [s.id, s.type])), ownerEvents });
+  // owners join the day files last, so they never count as customers, footfall, regulars or daily totals
   days.forEach((d, i) => d.agents.push(...ownerDays[i]));
-  const kwhByDay = Object.fromEntries(
-    ctx.stores.map((s) => [s.id, Array.from({ length: DAYS_PER_RUN }, (_, i) => round2(ctx.book.kwhByHour(ctx.book.shops[s.idx], i + 1).reduce((a, b) => a + b, 0)))]),
-  );
+  const kwhByDay = Object.fromEntries(Object.entries(kwhRaw).map(([id, xs]) => [id, xs.map(round2)]));
   return {
     days,
     stores,
@@ -667,8 +671,9 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number, run = 1,
     agents: { returning: returningIds.size, oneOff: oneOffIds.size, total: returningIds.size + oneOffIds.size },
     missedByHour: Object.fromEntries(ctx.stores.map((s) => [s.id, (ctx.missed.get(s.id) ?? Array(24).fill(0)).map((n) => round2(n / DAYS_PER_RUN))])),
     kwhByHour: Object.fromEntries(ctx.stores.map((s) => [s.id, kwhHourly.get(s.id)!.map(round2)])),
-    ownerEvents: ctx.book.allEvents(),
+    ownerEvents,
     streetEvents: street,
+    daily,
   };
 }
 
