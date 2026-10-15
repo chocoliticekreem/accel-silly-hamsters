@@ -9,7 +9,7 @@ import { mergeDays, prepareAgents, type PreparedAgent } from "../sim/interp";
 import { task, watchBytes, type StageId } from "./loading";
 
 /** Start-up loads the loading screen follows: one task, byte progress from api/http.ts for paths under `prefix`. */
-function tracked<T>(stage: StageId, key: string, prefix: string, start: () => Promise<T>): Promise<T> {
+function tracked<T>(stage: StageId, key: string, prefix: string, start: () => Promise<T>, optional = false): Promise<T> {
   const t = task(stage, key);
   let best = 0;
   const unwatch = watchBytes(prefix, (p) => {
@@ -18,7 +18,7 @@ function tracked<T>(stage: StageId, key: string, prefix: string, start: () => Pr
   const p = start();
   p.then(
     () => (unwatch(), t.done()),
-    (e: unknown) => (unwatch(), t.fail(e instanceof Error ? e.message : String(e))),
+    (e: unknown) => (unwatch(), optional ? t.done() : t.fail(e instanceof Error ? e.message : String(e))),
   );
   return p;
 }
@@ -113,7 +113,7 @@ export const useAgentSession = () => useResource<AgentSession | null>("agents:se
 export const useAgentLog = () => useResource<AgentEvent[]>("agents:log", () => api.agentLog());
 export const useCalibration = () => useResource<Calibration | null>("calibration", () => api.calibration());
 export const useRunStores = (run: number | null) =>
-  useResource<RunStores>(run == null ? null : `stores:${run}`, () => tracked("run", "stores", `/api/runs/${run}/stores`, () => api.runStores(run!)));
+  useResource<RunStores>(run == null ? null : `stores:${run}`, () => tracked("run", `stores:${run}`, `/api/runs/${run}/stores`, () => api.runStores(run!), true));
 /** Owners' day-by-day decisions this run ([] when the backend doesn't serve them). */
 export const useOwnerEvents = (run: number | null) => useResource<OwnerEvent[]>(run == null ? null : `owner-events:${run}`, () => api.ownerEvents(run!));
 /** Roadworks, traffic, club nights... this run ([] when not served). */
@@ -135,7 +135,7 @@ interface PreparedDay {
 const preparedDays = new Map<string, PreparedDay>();
 const KEEP_PREPARED_DAYS = 8;
 
-let firstDayTracked = false;
+const dayTracked = new Set<number>();
 
 /** Loads and prepares the agents around `day` once, shared by every module that draws them. */
 export function prepareDay(run: number, day: number): PreparedDay {
@@ -151,9 +151,10 @@ export function prepareDay(run: number, day: number): PreparedDay {
       return entry.list;
     });
   // the first day drawn is part of start-up (the loading screen's "Today's run")
-  const first = !firstDayTracked;
-  firstDayTracked = true;
-  const entry: PreparedDay = { promise: first ? tracked("run", "day", `/api/runs/${run}/days/`, start) : start() };
+  // (the first asked for per run: a default run the backend lacks fails quietly, the app then moves to a real one)
+  const first = !dayTracked.has(run);
+  dayTracked.add(run);
+  const entry: PreparedDay = { promise: first ? tracked("run", `day:${run}`, `/api/runs/${run}/days/`, start, true) : start() };
   entry.promise.catch(() => {
     if (preparedDays.get(key) === entry) preparedDays.delete(key); // let a later render retry
   });
