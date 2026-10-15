@@ -15,6 +15,7 @@ import { closestOnStreet, toScene } from "../../sim/geometry";
 import { MARKING_LIFT, ROAD_TOP, roadClass } from "../../sim/roadLayers";
 import { Kit, type HeroModel } from "../models/kit";
 import { drawBusStop } from "../models/street";
+import { teaBuilding } from "./tea";
 
 export interface AreaData {
   signals: { x: number; z: number; crossing: boolean }[];
@@ -124,7 +125,7 @@ export interface GraffitiWall {
   face: 1 | -1;
 }
 
-export function buildArea(map: CityMap, data: AreaData, opts: { graffitiWalls?: GraffitiWall[] } = {}): AreaBuild {
+export function buildArea(map: CityMap, data: AreaData, opts: { graffitiWalls?: GraffitiWall[]; tea?: boolean } = {}): AreaBuild {
   const k = new Kit();
   const lamps: Lamp[] = [];
   const hoardings: BufferGeometry[] = [];
@@ -269,6 +270,10 @@ export function buildArea(map: CityMap, data: AreaData, opts: { graffitiWalls?: 
         if (onRoad(px, pz, 0.5)) continue;
         const [sx, sz] = toScene(px, pz);
         k.box("solid", 0.12, H + 0.1, 0.12, sx, (H + 0.1) / 2, sz, "#3a3d40");
+        if (Math.round(t / 4) % 5 === 0) {
+          const [lx, lz] = toScene(px + ox * 0.5, pz + oz * 0.5);
+          k.box("glow", 0.3, 0.12, 0.3, lx, H + 0.25, lz, "#fff1c9");
+        }
       }
       run += len;
     }
@@ -292,6 +297,7 @@ export function buildArea(map: CityMap, data: AreaData, opts: { graffitiWalls?: 
     const D = 8.6;
     // align one arch over the street that passes under it (Braithwaite Street)
     let phase = 0;
+    const crossings: number[] = [];
     for (const st of map.streets)
       for (let i = 0; i < st.points.length - 1; i++) {
         const [px, pz] = st.points[i];
@@ -301,7 +307,10 @@ export function buildArea(map: CityMap, data: AreaData, opts: { graffitiWalls?: 
         if (da * db > 0) continue;
         const kk = da / (da - db);
         const t = (px + (qx - px) * kk - a[0]) * ux + (pz + (qz - pz) * kk - a[1]) * uz;
-        if (t > 0 && t < len) phase = (((t - PITCH / 2) % PITCH) + PITCH) % PITCH;
+        if (t > 0 && t < len) {
+          crossings.push(t);
+          phase = (((t - (PIER + PITCH) / 2) % PITCH) + PITCH) % PITCH;
+        }
       }
     const spandrel = new Shape();
     spandrel.moveTo(-SPAN / 2, SPRING);
@@ -325,7 +334,8 @@ export function buildArea(map: CityMap, data: AreaData, opts: { graffitiWalls?: 
         k.extrude("brick", spandrel, D, [c + PIER / 2, 0, -D / 2], BRICK, [0, 0, 0], 10);
         // half the arches bricked up (lock-ups, some painted), the rest open right through
         const fill = r();
-        if (fill < 0.55) {
+        const overStreet = crossings.some((t) => t > x + PIER - 1 && t < x + PITCH + 1);
+        if (fill < 0.55 && !overStreet) {
           k.extrude("brick", infill, 0.35, [c + PIER / 2, 0, -D / 2 + 0.9], BRICK_INFILL[Math.floor(r() * 3)], [0, 0, 0], 10);
           k.extrude("brick", infill, 0.35, [c + PIER / 2, 0, D / 2 - 1.25], BRICK_INFILL[Math.floor(r() * 3)], [0, 0, 0], 10);
           // a steel door or roller shutter in the north face
@@ -422,6 +432,8 @@ export function buildArea(map: CityMap, data: AreaData, opts: { graffitiWalls?: 
     const bb: [number, number, number] = [b[0] - w.face * 0.64, 0.12, b[1]];
     murals.push(facing(ba, bb, w.h - 0.4, [-w.face, 0], 0, len / 16, 0.25, 0.5));
   }
+
+  if (opts.tea) teaBuilding(k);
 
   const merge = (list: BufferGeometry[]) => {
     const clean = list.map((g) => {
