@@ -254,7 +254,7 @@ function build(map: CityMap): Built {
     const real = geos;
     const [wall, frame, variant] = STYLES[style];
     const t = windowTextures(wall, variant, frame);
-    const mat = new MeshStandardMaterial({ map: t.map, emissiveMap: t.emissive, emissive: "#ffffff", emissiveIntensity: 0, roughness: 0.88 });
+    const mat = new MeshStandardMaterial({ map: t.map, bumpMap: t.bump, bumpScale: 2, emissiveMap: t.emissive, emissive: "#ffffff", emissiveIntensity: 0, roughness: 0.88 });
     windowMats.push({ mat, office: style.startsWith("office") });
     merged.push({ geo: mergeGeometries(real)!, mat, shadow: true });
     real.forEach((g) => g.dispose());
@@ -317,6 +317,7 @@ export default function Infill() {
         const m = mat as MeshStandardMaterial;
         m.map?.dispose();
         m.emissiveMap?.dispose();
+        m.bumpMap?.dispose();
         m.dispose();
       });
       built.inst.forEach(({ geo, mat }) => {

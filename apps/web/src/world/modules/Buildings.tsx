@@ -60,7 +60,7 @@ export default function Buildings() {
         k,
         Array.from({ length: VARIANTS }, (_, v) => {
           const t = windowTextures(BUILDING_COLORS[k], v + (k === "office" ? 10 : 0), k === "residential" ? "#efe9df" : undefined);
-          return new MeshStandardMaterial({ map: t.map, emissiveMap: t.emissive, emissive: "#ffffff", emissiveIntensity: 0, roughness: 0.85 });
+          return new MeshStandardMaterial({ map: t.map, bumpMap: t.bump, bumpScale: 2, emissiveMap: t.emissive, emissive: "#ffffff", emissiveIntensity: 0, roughness: 0.85 });
         }),
       ]),
     ) as Record<(typeof kinds)[number], MeshStandardMaterial[]>;
@@ -81,6 +81,7 @@ export default function Buildings() {
         .forEach((m) => {
           m.map?.dispose();
           m.emissiveMap?.dispose();
+          m.bumpMap?.dispose();
           m.dispose();
         });
     },
