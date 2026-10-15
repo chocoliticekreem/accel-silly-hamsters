@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useAnalyst, useHealth, useMap, useRuns, useRunStores } from "./state/data";
 import { RUN_FROM_URL, useSim } from "./state/store";
 import { AreaPanel } from "./ui/AreaPanel";
+import { CityFeedMount } from "./ui/CityFeedMount";
 import { AgentsPanel } from "./ui/AgentsPanel";
 import { Bot } from "lucide-react";
 import { AnalystChip } from "./ui/AnalystChip";
@@ -84,6 +85,7 @@ export default function App() {
         {panel === "area" && <AreaPanel />}
         {panel === "agents" && <AgentsPanel />}
         {!compare && <StoreCard />}
+        <CityFeedMount />
         <div className="bottom">
           <Legend />
           <PlaybackBar />

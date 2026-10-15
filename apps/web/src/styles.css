@@ -2533,3 +2533,17 @@ button.chip:disabled {
 .store-page:has(.demo-bar) .sp-main {
   padding-bottom: 110px;
 }
+
+/* ---------- owner state on the store card ---------- */
+
+.owner-now {
+  margin: -2px 0 10px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--lamp);
+}
+.store-card .week-schedule,
+.store-card .owner-timeline,
+.sp-card .week-schedule {
+  margin-top: 12px;
+}
