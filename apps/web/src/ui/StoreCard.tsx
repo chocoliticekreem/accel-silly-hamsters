@@ -15,6 +15,7 @@ import { change, fmtInt, TYPE_LABEL } from "./format";
 import { HourStrip } from "./HourStrip";
 import { Icon } from "./icons";
 import { InsightsPanel } from "./InsightsPanel";
+import { BusyTimes } from "./BusyTimes";
 import { SuggestionList } from "./SuggestionList";
 import { TypeIcon } from "./TypeIcon";
 import { agentsPath, navigate, storePath } from "../router";
@@ -131,6 +132,7 @@ export function StoreCard() {
       {state?.reason && <div className="owner-now">“{state.reason}”</div>}
       <SafetyCardExtras storeId={id} />
       {cfg && <HourStrip cfg={cfg} hour={hour} prev={prev} licence={store.licensedHours ?? undefined} />}
+      <BusyTimes storeId={id} />
       {!isClub && (
         <>
           <WeekSchedule storeId={id} run={run} />

@@ -1,0 +1,520 @@
+/* Busy times: the store card's popular-times chart and the all-businesses heat grid. */
+
+:root {
+  --busy-live: #ff7eb6;
+  --busy-hatch: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0 2px, rgba(255, 255, 255, 0.015) 2px 6px);
+}
+
+/* ---------- store card ---------- */
+
+.busy {
+  margin-top: 12px;
+}
+.busy-days {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+}
+.busy-days button {
+  position: relative;
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.busy-days button:hover {
+  color: var(--text);
+}
+.busy-days button.today::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 1px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--lamp);
+}
+.busy-days button.on {
+  background: var(--lamp);
+  color: var(--ink);
+}
+.busy-days button.on.today::after {
+  background: var(--ink);
+}
+
+.busy-live {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+}
+.busy-live b {
+  font-weight: 700;
+}
+.busy-live .mono {
+  font-size: 11px;
+}
+.busy-live-n {
+  margin-left: auto;
+}
+.busy-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  align-self: center;
+  background: var(--busy-live);
+  box-shadow: 0 0 0 3px rgba(255, 126, 182, 0.18);
+}
+.live-busier .busy-dot {
+  animation: busy-pulse 1.6s ease-in-out infinite;
+}
+.live-closed .busy-dot {
+  background: var(--faint);
+  box-shadow: none;
+}
+.live-quiet .busy-dot {
+  background: var(--blue);
+  box-shadow: 0 0 0 3px rgba(127, 178, 255, 0.16);
+}
+@keyframes busy-pulse {
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 126, 182, 0.05);
+  }
+}
+
+.busy-chart {
+  position: relative;
+  height: 74px;
+  padding: 6px 0 0;
+  border-radius: 10px 10px 0 0;
+  border-bottom: 1px solid var(--line-strong);
+  transition: opacity 0.2s;
+}
+.busy-chart.loading {
+  opacity: 0.45;
+}
+.busy-bars {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+  height: 100%;
+  align-items: end;
+}
+.bb {
+  position: relative;
+  height: 100%;
+  border-radius: 3px 3px 0 0;
+}
+.bb.shut {
+  background: var(--busy-hatch);
+}
+.bb i,
+.bb .bb-live {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 3px 3px 0 0;
+}
+.bb i {
+  min-height: 1px;
+  background: color-mix(in srgb, var(--lamp) 78%, transparent);
+}
+.bb.shut i {
+  background: rgba(255, 255, 255, 0.16);
+}
+.bb.now i {
+  background: var(--lamp);
+  box-shadow: 0 0 10px rgba(255, 200, 87, 0.45);
+}
+.bb .bb-live {
+  left: 22%;
+  right: 22%;
+  min-height: 2px;
+  background: var(--busy-live);
+  box-shadow: 0 0 8px rgba(255, 126, 182, 0.6);
+}
+.busy-kwh {
+  position: absolute;
+  inset: 6px 0 0;
+  width: 100%;
+  height: calc(100% - 6px);
+  overflow: visible;
+  pointer-events: none;
+}
+.busy-kwh polyline {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.9;
+}
+.busy-cursor {
+  position: absolute;
+  top: 0;
+  bottom: -4px;
+  width: 0;
+  border-left: 1px dashed rgba(255, 200, 87, 0.8);
+  pointer-events: none;
+}
+.busy-caption {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.busy-hours {
+  margin: 3px 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.busy-hours b {
+  color: var(--text);
+  font-weight: 500;
+}
+.busy-band {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+  margin-bottom: 6px;
+}
+.busy-band i {
+  height: 12px;
+  border-radius: 2px;
+  background: var(--busy-hatch);
+}
+.busy-band i.on {
+  background: rgba(139, 151, 173, 0.32);
+}
+.sw.busy-sw-open {
+  background: var(--lamp);
+}
+.sw.busy-sw-shut {
+  background: var(--busy-hatch), rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+}
+.sw.busy-sw-kwh {
+  height: 2px;
+  background: var(--blue);
+  vertical-align: middle;
+}
+.sw.busy-sw-live {
+  background: var(--busy-live);
+}
+.sw.busy-sw-nosim {
+  background: rgba(139, 151, 173, 0.32);
+}
+.sw.busy-sw-now {
+  width: 2px;
+  background: var(--lamp);
+}
+
+/* ---------- all businesses ---------- */
+
+/* between the HUD column (left) and the store card (right), so neither covers it */
+.history.busy-panel {
+  left: 392px;
+  right: 16px;
+  width: auto;
+  max-width: 980px;
+  top: 140px;
+}
+.overlay:has(.store-card) .history.busy-panel {
+  right: 392px;
+}
+@media (max-width: 1240px) {
+  .history.busy-panel,
+  .overlay:has(.store-card) .history.busy-panel {
+    left: 16px;
+    right: auto;
+    top: 236px;
+    width: min(760px, calc(100vw - 424px));
+    min-width: 440px;
+  }
+}
+.busy-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.busy-search {
+  flex: 1 1 180px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--muted);
+}
+.busy-search:focus-within {
+  border-color: var(--lamp);
+}
+.busy-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.busy-days.compact {
+  flex: 1 1 300px;
+  margin: 0;
+}
+.busy-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.busy-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 12px;
+}
+.busy-type svg {
+  width: 13px;
+  height: 13px;
+}
+.busy-type:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.busy-type.on {
+  color: var(--ink);
+  background: var(--lamp);
+  border-color: var(--lamp);
+}
+.busy-type.clear {
+  border-style: dashed;
+}
+.busy-type.scale {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.busy-table {
+  --cols: minmax(130px, 1.15fr) minmax(170px, 2.2fr) 84px 34px 52px 52px 42px;
+  position: relative;
+}
+.busy-row {
+  display: grid;
+  grid-template-columns: var(--cols);
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 26px;
+}
+.busy-row:hover,
+.busy-row:focus-visible {
+  background: rgba(255, 255, 255, 0.05);
+  outline: none;
+}
+.busy-row.sel {
+  background: var(--lamp-soft);
+  box-shadow: inset 2px 0 0 var(--lamp);
+}
+.busy-row .c-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text);
+}
+.busy-row .c-name svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+.busy-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.busy-row.nosim .busy-name {
+  color: var(--muted);
+}
+.busy-strip {
+  position: relative;
+  height: 16px;
+  border-radius: 3px;
+  background-color: rgba(255, 255, 255, 0.025);
+}
+/* hour separators */
+.busy-strip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(to right, transparent 0 calc(100% / 24 - 1px), rgba(14, 20, 34, 0.85) calc(100% / 24 - 1px) calc(100% / 24));
+  border-radius: 3px;
+  pointer-events: none;
+}
+/* the current sim time */
+.busy-strip::after {
+  content: "";
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  left: calc(var(--now, 0) * 100%);
+  width: 2px;
+  margin-left: -1px;
+  background: var(--lamp);
+  opacity: 0.85;
+  pointer-events: none;
+}
+.busy-row .c-hours {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.busy-row .c-peak {
+  font-size: 11.5px;
+  color: var(--lamp);
+  text-align: right;
+}
+.busy-row .c-num {
+  text-align: right;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.busy-row .c-nosim {
+  grid-column: span 3;
+  text-align: right;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--faint);
+}
+.busy-headrow {
+  position: sticky;
+  top: -14px;
+  z-index: 1;
+  height: 30px;
+  cursor: default;
+  background: var(--glass-strong);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  content-visibility: visible;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+}
+.busy-headrow:hover {
+  background: var(--glass-strong);
+}
+.busy-headrow button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--muted);
+}
+.busy-headrow button:hover {
+  color: var(--lamp);
+}
+.busy-headrow .c-name {
+  gap: 8px;
+  color: var(--muted);
+}
+.busy-headrow .c-hours,
+.busy-headrow .c-peak,
+.busy-headrow .c-num {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-family: var(--font);
+}
+.busy-axis {
+  position: relative;
+  height: 12px;
+}
+.busy-axis i {
+  position: absolute;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0;
+  color: var(--faint);
+}
+.busy-legend {
+  margin-top: 10px;
+}
+.busy-ramp {
+  display: inline-block;
+  width: 46px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 2px;
+  vertical-align: -1px;
+  background: linear-gradient(to right, #25345a, #d9822b 45%, #ffc857 80%, #fff1c9);
+}
+
+@media (max-width: 1100px) {
+  .busy-table {
+    --cols: minmax(110px, 1fr) minmax(140px, 2fr) 80px 30px 48px;
+  }
+  .busy-table .c-num:nth-last-child(-n + 2) {
+    display: none;
+  }
+  .busy-row .c-nosim {
+    grid-column: span 1;
+  }
+}
+@media (max-width: 900px) {
+  .history.busy-panel,
+  .overlay:has(.store-card) .history.busy-panel {
+    left: 16px;
+    right: 16px;
+    width: auto;
+    min-width: 0;
+    top: auto;
+    max-height: 60vh;
+  }
+}
+@media (max-width: 640px) {
+  .busy-table {
+    --cols: minmax(90px, 1fr) minmax(120px, 1.6fr) 74px;
+  }
+  .busy-table .c-peak,
+  .busy-table .c-num,
+  .busy-row .c-nosim {
+    display: none;
+  }
+  .busy-type.scale {
+    margin-left: 0;
+  }
+}
