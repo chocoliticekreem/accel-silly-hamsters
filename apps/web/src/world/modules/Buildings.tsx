@@ -10,6 +10,7 @@ import { nightLevel } from "../../sim/sky";
 import { hourOf } from "../../sim/time";
 import { useSim } from "../../state/store";
 import { useWorld } from "../context";
+import { buildingKeptOut } from "../keepOut";
 import { Station } from "../Station";
 import { BUILDING_COLORS } from "../palette";
 import { FLOOR_H, TILE_COLS, TILE_ROWS, WINDOW_W, windowTextures } from "../textures";
@@ -65,7 +66,7 @@ export default function Buildings() {
       ]),
     ) as Record<(typeof kinds)[number], MeshStandardMaterial[]>;
     const items = map.buildings
-      .filter((b) => b.kind === "residential" || b.kind === "office")
+      .filter((b) => (b.kind === "residential" || b.kind === "office") && !buildingKeptOut(b))
       .map((raw) => {
         const b = unclash(raw);
         return { b, geo: facadeBox(b), mat: mats[b.kind as "residential" | "office"][hash(b.id) % VARIANTS] };
