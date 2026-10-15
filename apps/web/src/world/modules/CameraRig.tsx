@@ -22,6 +22,8 @@ let rigSeq = 0;
 const HOME_POS = new Vector3(230, 250, 330);
 const HOME_TARGET = new Vector3(0, 0, -10);
 const FOCUS_DIST = 150;
+/** Angle from straight down when focusing a store (radians); ~32°. */
+const FOCUS_POLAR = 0.55;
 
 export default function CameraRig() {
   const { map, cameraGroup } = useWorld();
@@ -51,7 +53,10 @@ export default function CameraRig() {
     if (!b) return;
     const [x, z] = toScene(b.x, b.z);
     const target = new Vector3(x, 0, z);
-    const dir = camera.position.clone().sub(controls.target).normalize();
+    // keep the user's compass direction but come in steeply, so a small shop between tall offices stays in view
+    const off = camera.position.clone().sub(controls.target);
+    const azimuth = Math.atan2(off.x, off.z);
+    const dir = new Vector3(Math.sin(FOCUS_POLAR) * Math.sin(azimuth), Math.cos(FOCUS_POLAR), Math.sin(FOCUS_POLAR) * Math.cos(azimuth));
     fly.current = { target, position: target.clone().add(dir.multiplyScalar(FOCUS_DIST)), k: 0 };
     shared.leader = id;
   }, [selected, controls, map, camera, id, shared]);

@@ -44,8 +44,8 @@ export function Pips({ level }: { level: keyof typeof PIPS }) {
   );
 }
 
-export function SuggestionList({ items }: { items: Suggestion[] }) {
-  if (!items.length) return <div className="empty">No changes · at best config</div>;
+export function SuggestionList({ items, empty = "No changes · at best config" }: { items: Suggestion[]; empty?: string }) {
+  if (!items.length) return <div className="empty">{empty}</div>;
   return (
     <ul className="sugg-list">
       {items.map((s, i) => (
