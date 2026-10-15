@@ -83,6 +83,28 @@ OpenStreetMap (map, opening_hours) · Reddit + reviews → ~10 persona archetype
 
 Human in the loop · honest uncertainty (confidence + "simulated, not guaranteed") · public aggregate data only · licence/noise rules enforced in code · objective rewards energy saved · session budgets and full logging.
 
+### Misuse cases and how we block them
+
+| Misuse | Block |
+| --- | --- |
+| Council uses store data for licensing enforcement | Councils only get anonymised area totals; written into terms |
+| A shop spies on a competitor | No store ever sees another store's data or suggestions |
+| Competitors coordinate hours or prices through us | Advice is per store only; no cross-store recommendations |
+| Tracking real individuals | Citizens are synthetic archetypes; no usernames or personal data kept |
+| Landlord uses footfall to raise rents | Store-level data is owned by the store and shared only with its consent |
+| Agents overspend or run away | Session budgets, hard stop, every action logged |
+
+## Judging criteria map
+
+| Criterion | Weight | How we hit it | Priority action |
+| --- | --- | --- | --- |
+| Real output | 20% | Working end-to-end run producing per-shop reports for real Shoreditch venues | Get a live link and saved run proof (logs, notebook, run files) early; real beats polished |
+| Business viability | 20% | Shops as customer, BID channel, council as phase 2; data gaps councils can't fill | Get 2–3 real quotes from Shoreditch shop owners during the hackathon |
+| Agent design and architecture | 15% | Orchestrator + team of store agents + sim as tool; planning, hand-offs, memory, checkpoint/resume | Show the notebook, the hand-off and a resume-after-crash live |
+| Demo and pitch | 15% | 5-minute story: one shop, agents overnight, approve, zoom out to the council | Rehearse; have a one-page diagram for round 1 at the table |
+| Demo clarity | 15% | 3D before/after of the same 14 days; one KPI chart | Pre-cached runs so nothing stalls live |
+| Responsible design | 15% | Human approval, licence rules in code, anonymous data only, honest confidence, spend caps, no enforcement use | Name the misuse cases and how we block them |
+
 ## Demo plan
 
 1. Open on the analyst's runtime clock and lab notebook (ran overnight, ~10 iterations, replay not live compute).

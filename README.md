@@ -5,6 +5,8 @@ A team of Claude agents lives 14 days of Shoreditch overnight and tells independ
 - Product spec: [docs/BUILD_SPEC.md](docs/BUILD_SPEC.md)
 - Frontend brief and **data contract**: [docs/FRONTEND_PROMPT.md](docs/FRONTEND_PROMPT.md)
 - Design decisions: [docs/superpowers/specs/2026-10-15-frontend-design.md](docs/superpowers/specs/2026-10-15-frontend-design.md)
+- Full spec PDF (source of truth, incl. judging criteria and misuse cases): [docs/Smart City Sim - Build Spec.pdf](<docs/Smart City Sim - Build Spec.pdf>)
+- Backend brief: [docs/BACKEND_PROMPT.md](docs/BACKEND_PROMPT.md) · backend build decisions: [docs/BUILD_NOTES.md](docs/BUILD_NOTES.md)
 
 ## Quickstart
 
