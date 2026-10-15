@@ -59,6 +59,9 @@ OFFLINE = os.getenv("OFFLINE", "") == "1"
 # "messages" (Messages API tool-use loop) or "managed" (Managed Agents session).
 ANALYST_BACKEND = os.getenv("ANALYST_BACKEND", "auto")
 
+# Hosted read-only demo: READ_ONLY=1 refuses requests that start work (POST .../optimize -> 403).
+READ_ONLY = os.getenv("READ_ONLY", "") == "1"
+
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
 ).split(",")

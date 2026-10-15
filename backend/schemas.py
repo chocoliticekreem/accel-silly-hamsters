@@ -199,6 +199,9 @@ class AnalystState(Model):
     stoppedReason: Literal["threshold", "max_runs", "budget", "error"] | None = None
     spentGbp: float = 0.0
     error: str | None = None
+    # A one-shop session (POST /api/stores/{id}/optimize): only this store's settings change and
+    # the objective is its profit change per week vs the baseline. None = the area session.
+    scopeStore: str | None = None
 
 
 class Decision(Model):

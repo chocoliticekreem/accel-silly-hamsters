@@ -639,10 +639,14 @@ def _json(text: str) -> dict:
 # --- entry point ----------------------------------------------------------------------------
 
 
-def propose_all(run: int, *, session: str | None = None) -> list[Suggestion]:
+def propose_all(
+    run: int, *, session: str | None = None, store_ids: set[str] | None = None
+) -> list[Suggestion]:
     """Every non-club store's agent proposes 0-2 changes on `run`.
 
     Writes runs/{run}/suggestions.json (rule-checked) and returns the same list, in map order.
+    With `store_ids` (a one-shop session) only those stores' agents propose: their suggestions
+    replace theirs in suggestions.json, other stores' are kept, and only theirs are returned.
     """
     map_data = store.load_map()
     files = rundata.RunFiles.load(run)
@@ -651,7 +655,10 @@ def propose_all(run: int, *, session: str | None = None) -> list[Suggestion]:
     advised = [
         ms
         for ms in rundata.advised_stores(map_data)
-        if ms.id in files.config.stores and ms.id in files.stores and ms.id in files.stats
+        if ms.id in files.config.stores
+        and ms.id in files.stores
+        and ms.id in files.stats
+        and (store_ids is None or ms.id in store_ids)
     ]
     histories = store_histories(run, [ms.id for ms in advised])
     briefs = {
@@ -682,7 +689,11 @@ def propose_all(run: int, *, session: str | None = None) -> list[Suggestion]:
         )
         log_rejections(run, result.rejections, agent=AGENT)
         final.extend(result.accepted)
-    rundata.save_suggestions(run, final)
+    if store_ids is None:
+        rundata.save_suggestions(run, final)
+    else:
+        kept = [s for s in rundata.load_suggestions(run) if s.storeId not in store_ids]
+        rundata.save_suggestions(run, kept + final)
     llm.log_event(
         run,
         {

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from statistics import fmean
 
-from backend.contract import DAYS, StoreType
+from backend import settings, store
+from backend.contract import DAYS, StoreKpis, StoreType
 from backend.schemas import EnergyFile
 
 # Average spend per visit (GBP). Clubs are fixed anchors and never get advice.
@@ -30,6 +31,25 @@ WEEKS_PER_RUN = DAYS / 7
 def price_gbp_per_kwh(energy: EnergyFile) -> float:
     """Mean of energy.json's hourly tariff."""
     return fmean(energy.priceGbpPerKwh)
+
+
+def area_price_gbp_per_kwh() -> float:
+    """price_gbp_per_kwh of data/processed/energy.json, else settings.DEFAULT_PRICE_GBP_PER_KWH."""
+    try:
+        return price_gbp_per_kwh(store.load_energy())
+    except FileNotFoundError:
+        return settings.DEFAULT_PRICE_GBP_PER_KWH
+
+
+def profit_vs(store_type: StoreType, base: StoreKpis, now: StoreKpis, price: float) -> float:
+    """One shop's profit change per week in a run (`now`) against another run (`base`), from
+    their 14-day KPIs: gbp_per_week of the visit and kWh differences."""
+    return gbp_per_week(store_type, now.visits - base.visits, now.kwh - base.kwh, price)
+
+
+def weekly_margin_gbp(store_type: StoreType, kpis: StoreKpis) -> float:
+    """What the shop keeps per week from its customers (margin on takings, before energy)."""
+    return kpis.visits / WEEKS_PER_RUN * SPEND_GBP_PER_VISIT[store_type] * GROSS_MARGIN
 
 
 def gbp_per_week(
