@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { RUN_MINUTES } from "../api/contract";
 
 export type Speed = 1 | 10 | 100;
-export type Panel = null | "history" | "area" | "agents";
+export type Panel = null | "history" | "report" | "area" | "agents";
 /** "satellite" / "map" = free keyless aerial / OSM basemap draped as the ground (world/modules/MapGround.tsx);
  *  "photoreal" = Google Photorealistic 3D Tiles (world/modules/Photoreal.tsx), needs VITE_GOOGLE_MAPS_API_KEY. */
 export type GraphicsMode = "stylised" | "satellite" | "map" | "photoreal";
@@ -87,7 +87,7 @@ export const useSim = create<SimState>((set, get) => ({
     set({ playing: !playing, t: !playing && t >= RUN_MINUTES ? 0 : t });
   },
   setSpeed: (speed) => set({ speed }),
-  selectStore: (selectedStoreId) => set({ selectedStoreId }),
+  selectStore: (selectedStoreId) => set((s) => ({ selectedStoreId, panel: !selectedStoreId && s.panel === "report" ? null : s.panel })),
   hoverStore: (hoveredStoreId) => set({ hoveredStoreId }),
   openPanel: (panel) => set({ panel }),
   setCompare: (compare) => set({ compare }),
