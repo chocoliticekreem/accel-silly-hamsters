@@ -453,7 +453,7 @@ function Site({ site }: { site: SiteLayout }) {
       wait: 0,
       heading: 0,
       phase: r() * 6,
-      deck: i % 3 !== 2,
+      deck: i % 5 < 2,
       here: false,
       shirt: VESTS[i % VESTS.length],
       trousers: TROUSERS[Math.floor(r() * TROUSERS.length)],
