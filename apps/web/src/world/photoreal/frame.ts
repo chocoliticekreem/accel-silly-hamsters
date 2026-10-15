@@ -18,7 +18,8 @@ export const ORIGIN_LAT = 51.5232534;
 export const ORIGIN_LON = -0.0744674;
 
 /** Sphere radius the contract projection uses (osm_map.EARTH_RADIUS_M). */
-const R = 6_371_008.8;
+export const EARTH_RADIUS = 6_371_008.8;
+const R = EARTH_RADIUS;
 const WGS84_A = 6_378_137;
 const WGS84_E2 = 6.69437999014e-3;
 const s2 = Math.sin((ORIGIN_LAT * Math.PI) / 180) ** 2;

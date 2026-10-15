@@ -5,9 +5,11 @@ import { RUN_MINUTES } from "../api/contract";
 
 export type Speed = 1 | 10 | 100;
 export type Panel = null | "history" | "area" | "agents";
-/** "photoreal" = Google Photorealistic 3D Tiles under the sim (world/modules/Photoreal.tsx); needs VITE_GOOGLE_MAPS_API_KEY. */
-export type GraphicsMode = "stylised" | "photoreal";
-const GFX_KEY = "scs.graphicsMode";
+/** "satellite" / "map" = free keyless aerial / OSM basemap draped as the ground (world/modules/MapGround.tsx);
+ *  "photoreal" = Google Photorealistic 3D Tiles (world/modules/Photoreal.tsx), needs VITE_GOOGLE_MAPS_API_KEY. */
+export type GraphicsMode = "stylised" | "satellite" | "map" | "photoreal";
+const GFX_MODES: readonly GraphicsMode[] = ["stylised", "satellite", "map", "photoreal"];
+const GFX_KEY = "scs.graphicsMode.v2"; // v2: default back to stylised
 
 /** Sim minutes per real second. 100× plays 14 days in one minute (spec). */
 export const RATE: Record<Speed, number> = { 100: RUN_MINUTES / 60, 10: RUN_MINUTES / 600, 1: RUN_MINUTES / 6000 };
@@ -55,7 +57,8 @@ let toastSeq = 0;
 
 function readGraphicsMode(): GraphicsMode {
   try {
-    return typeof window !== "undefined" && localStorage.getItem(GFX_KEY) === "photoreal" ? "photoreal" : "stylised";
+    const v = typeof window !== "undefined" ? localStorage.getItem(GFX_KEY) : null;
+    return GFX_MODES.find((m) => m === v) ?? "stylised";
   } catch {
     return "stylised";
   }
