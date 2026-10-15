@@ -266,8 +266,9 @@ def test_net_value_objective_scores_runs_in_gbp_per_week(sim):
         total = 0.0
         for sid, result in rundata.load_stores(run).items():
             if types[sid] != "club":
-                spend = economics.SPEND_GBP_PER_VISIT[types[sid]] * economics.GROSS_MARGIN
-                total += (result.kpis.visits * spend - result.kpis.kwh * price) / 2  # 14 days
+                spend = economics.margin_per_visit(types[sid])
+                wages = result.kpis.openHours * economics.staff_gbp_per_open_hour(types[sid])
+                total += (result.kpis.visits * spend - result.kpis.kwh * price - wages) / 2
         return total
 
     state = training.train(TrainingConfig(objective="netValueGbp"))
@@ -557,7 +558,14 @@ def report_names(run: int) -> list[str]:
     return sorted(p.name for p in reports.glob("*.json") if not p.name.endswith(".meta.json"))
 
 
-def test_a_one_shop_session_is_the_saved_config_scoped_to_one_store(sim):
+def one_person_kebab_shop(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The fake s2's late demand pays for one person on shift past 23:00 but not the default two,
+    # and these tests need a shop with a profitable change to try.
+    monkeypatch.setitem(economics.STAFF_ON_SHIFT, "takeaway", 1)
+
+
+def test_a_one_shop_session_is_the_saved_config_scoped_to_one_store(sim, monkeypatch):
+    one_person_kebab_shop(monkeypatch)
     store.save_training_config(TrainingConfig(levers=Levers(lighting=False), threshold=0.01))
     started = training.start_store_session("s2")  # what POST /api/stores/s2/optimize checkpoints
     state = training.train(max_runs=3, scope_store="s2")
@@ -588,6 +596,7 @@ def test_a_one_shop_session_is_the_saved_config_scoped_to_one_store(sim):
 
 
 def test_one_shop_sessions_share_the_area_baseline_and_leave_its_files_alone(sim, monkeypatch):
+    one_person_kebab_shop(monkeypatch)
     area = training.train(max_runs=2)
     others = [s for s in rundata.load_suggestions(1) if s.storeId != "s2"]
     assert others  # the area session's proposals on run 1
