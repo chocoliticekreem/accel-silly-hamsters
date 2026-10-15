@@ -223,7 +223,7 @@ export interface AnalystStatus {
   iterations: number;
   bestRun: number | null;
   /** budget = spend cap reached (hard stop); error = the session crashed and can resume. */
-  stoppedReason: "threshold" | "max_runs" | "budget" | "error" | null;
+  stoppedReason: "threshold" | "max_runs" | "budget" | "error" | "stopped" | null;
   /** The session's untouched starting run (compare mode's left side). */
   baselineRun?: number | null;
 }
@@ -432,7 +432,7 @@ export interface AgentSession {
   lowGainStreak: number;
   /** Last completed step, for resume: start | baseline | proposed | chosen | ran | scored | ... */
   step: string;
-  stoppedReason?: "threshold" | "max_runs" | "budget" | "error" | null;
+  stoppedReason?: "threshold" | "max_runs" | "budget" | "error" | "stopped" | null;
   spentGbp: number;
   error?: string | null;
 }

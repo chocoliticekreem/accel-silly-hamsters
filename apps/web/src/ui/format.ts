@@ -45,4 +45,4 @@ export function duration(ms: number) {
 }
 
 /** Why the analyst stopped, in two words (chip, History's stop line). */
-export const STOP_LABELS = { threshold: "plateau", max_runs: "max runs", budget: "budget cap", error: "crashed, resumable" } as const;
+export const STOP_LABELS = { threshold: "plateau", max_runs: "max runs", budget: "budget cap", error: "crashed, resumable", stopped: "stopped by you" } as const;
