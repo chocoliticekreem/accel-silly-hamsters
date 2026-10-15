@@ -27,7 +27,7 @@ WRITE_DAY_FILES = os.getenv("WRITE_DAY_FILES", "0" if ON_VERCEL else "1") == "1"
 MAX_SESSION_RUNS = int(os.getenv("MAX_SESSION_RUNS", "12" if ON_VERCEL else "40"))
 
 # Simulation
-SIM_VERSION = "0.3.0"  # bump on any change that alters sim output; it is part of the run-cache key
+SIM_VERSION = "0.3.1"  # bump on any change that alters sim output; it is part of the run-cache key
 DEFAULT_SEED = 42
 TICK_MINUTES = 5
 # Self-learning city (docs/OWNER_ACTIONS.md): street events, and every shop's owner adapting day by
