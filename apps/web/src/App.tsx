@@ -16,6 +16,7 @@ import { HistoryPanel } from "./ui/HistoryPanel";
 import { Clock, Hud } from "./ui/Hud";
 import { Icon } from "./ui/icons";
 import { Legend } from "./ui/Legend";
+import { PlaceJumps } from "./ui/PlaceJumps";
 import { PlaybackBar } from "./ui/PlaybackBar";
 import { StoreCard } from "./ui/StoreCard";
 import { Toast } from "./ui/Toast";
@@ -92,6 +93,7 @@ export default function App() {
             {dataTag && <span className="chip chip-mock" title={health ? `map: ${health.mapSource} · real runs: ${health.realRuns}` : undefined}>{dataTag}</span>}
           </div>
           {!compare && <HeatmapToggle />}
+          {!compare && <PlaceJumps />}
         </div>
         {panel === "history" && <HistoryPanel />}
         {panel === "area" && <AreaPanel />}
