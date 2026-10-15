@@ -1,0 +1,12 @@
+{
+  "installCommand": "echo skip-node-install",
+  "buildCommand": "echo no-build",
+  "outputDirectory": "public",
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "{backend/**,data/processed/**,runs/**}",
+      "maxDuration": 300
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+}

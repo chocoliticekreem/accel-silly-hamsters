@@ -9,6 +9,8 @@ hand-made sample run in runs/0 (and its map), so the frontend can switch off moc
 
 from __future__ import annotations
 
+import shutil
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -18,6 +20,18 @@ from backend import settings, store
 from backend.api import common, footfall
 from backend.api.routers import agents, city, insights, reports, runs, stores, training
 from backend.contract import Model, Optional
+
+# Vercel: copy the bundled runs into the writable /tmp once per cold start.
+if (
+    settings.RUNS_DIR != settings.BUNDLED_RUNS_DIR
+    and not settings.RUNS_DIR.exists()
+    and settings.BUNDLED_RUNS_DIR.exists()
+):
+    shutil.copytree(
+        settings.BUNDLED_RUNS_DIR,
+        settings.RUNS_DIR,
+        ignore=shutil.ignore_patterns("_archive", "training.lock"),
+    )
 
 # Any localhost port: Vite moves to the next free port when 5173 is taken.
 LOCAL_ORIGIN_REGEX = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"

@@ -96,7 +96,7 @@ def post_store_optimize(
         overview.find_store(map_data, store_id)
     except KeyError as e:
         raise HTTPException(404, str(e).strip("'\"")) from e
-    max_runs = (request or OptimizeRequest()).maxRuns
+    max_runs = min((request or OptimizeRequest()).maxRuns, settings.MAX_SESSION_RUNS)
     with _start_lock:
         if _is_running(store.load_analyst_state()):
             raise HTTPException(409, "a training session is already running")
