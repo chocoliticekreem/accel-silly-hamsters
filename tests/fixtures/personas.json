@@ -1,0 +1,338 @@
+{
+  "sources": [
+    {
+      "label": "Hand-written test fixture (not measured)",
+      "url": "tests/fixtures"
+    }
+  ],
+  "fallback": true,
+  "notes": [
+    "Test fixture personas"
+  ],
+  "personas": [
+    {
+      "id": "commuter",
+      "label": "Commuter",
+      "share": 0.3,
+      "returningProb": 0.8,
+      "weekendMultiplier": 0.3,
+      "activeHours": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.2,
+        0.3,
+        0.1,
+        0.0,
+        0.0,
+        0.05,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.15,
+        0.15,
+        0.05,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "storePrefs": {
+        "cafe": 1.0,
+        "restaurant": 0.05,
+        "takeaway": 0.4,
+        "bar": 0.05,
+        "shop": 0.3,
+        "offlicence": 0.2,
+        "club": 0.0
+      },
+      "lightingSensitivity": 0.2,
+      "stopsPerTrip": [
+        0.0,
+        1.5
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          3,
+          10
+        ],
+        "restaurant": [
+          10,
+          30
+        ],
+        "takeaway": [
+          2,
+          6
+        ],
+        "bar": [
+          10,
+          30
+        ],
+        "shop": [
+          2,
+          8
+        ],
+        "offlicence": [
+          2,
+          6
+        ],
+        "club": [
+          10,
+          30
+        ]
+      },
+      "entryKinds": {
+        "station": 0.8,
+        "street": 0.2
+      }
+    },
+    {
+      "id": "local",
+      "label": "Local",
+      "share": 0.3,
+      "returningProb": 0.9,
+      "weekendMultiplier": 1.2,
+      "activeHours": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.05,
+        0.1,
+        0.1,
+        0.0,
+        0.0,
+        0.05,
+        0.15,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.0,
+        0.0
+      ],
+      "storePrefs": {
+        "cafe": 0.4,
+        "restaurant": 0.4,
+        "takeaway": 0.6,
+        "bar": 0.4,
+        "shop": 0.8,
+        "offlicence": 1.0,
+        "club": 0.05
+      },
+      "lightingSensitivity": 0.3,
+      "stopsPerTrip": [
+        1.0,
+        2.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          10,
+          30
+        ],
+        "restaurant": [
+          45,
+          90
+        ],
+        "takeaway": [
+          3,
+          10
+        ],
+        "bar": [
+          30,
+          90
+        ],
+        "shop": [
+          5,
+          15
+        ],
+        "offlicence": [
+          2,
+          6
+        ],
+        "club": [
+          10,
+          30
+        ]
+      },
+      "entryKinds": {
+        "street": 0.9,
+        "station": 0.1
+      }
+    },
+    {
+      "id": "night-owl",
+      "label": "Night owl",
+      "share": 0.15,
+      "returningProb": 0.4,
+      "weekendMultiplier": 2.5,
+      "activeHours": [
+        0.2,
+        0.15,
+        0.05,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.05,
+        0.1,
+        0.2,
+        0.25
+      ],
+      "storePrefs": {
+        "cafe": 0.05,
+        "restaurant": 0.15,
+        "takeaway": 0.9,
+        "bar": 0.8,
+        "shop": 0.05,
+        "offlicence": 0.6,
+        "club": 1.0
+      },
+      "lightingSensitivity": 0.9,
+      "stopsPerTrip": [
+        1.0,
+        3.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          10,
+          30
+        ],
+        "restaurant": [
+          10,
+          30
+        ],
+        "takeaway": [
+          5,
+          15
+        ],
+        "bar": [
+          30,
+          90
+        ],
+        "shop": [
+          10,
+          30
+        ],
+        "offlicence": [
+          2,
+          6
+        ],
+        "club": [
+          120,
+          300
+        ]
+      },
+      "entryKinds": {
+        "station": 0.6,
+        "street": 0.4
+      }
+    },
+    {
+      "id": "tourist",
+      "label": "Tourist",
+      "share": 0.25,
+      "returningProb": 0.02,
+      "weekendMultiplier": 1.8,
+      "activeHours": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        0.15,
+        0.15,
+        0.15,
+        0.15,
+        0.1,
+        0.1,
+        0.05,
+        0.05,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "storePrefs": {
+        "cafe": 0.7,
+        "restaurant": 0.8,
+        "takeaway": 0.4,
+        "bar": 0.5,
+        "shop": 0.9,
+        "offlicence": 0.1,
+        "club": 0.1
+      },
+      "lightingSensitivity": 0.6,
+      "stopsPerTrip": [
+        2.0,
+        3.0
+      ],
+      "dwellMinutes": {
+        "cafe": [
+          15,
+          45
+        ],
+        "restaurant": [
+          60,
+          100
+        ],
+        "takeaway": [
+          3,
+          10
+        ],
+        "bar": [
+          30,
+          75
+        ],
+        "shop": [
+          10,
+          30
+        ],
+        "offlicence": [
+          10,
+          30
+        ],
+        "club": [
+          10,
+          30
+        ]
+      },
+      "entryKinds": {
+        "station": 0.7,
+        "street": 0.3
+      }
+    }
+  ]
+}

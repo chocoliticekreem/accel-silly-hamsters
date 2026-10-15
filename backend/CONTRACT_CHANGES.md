@@ -38,7 +38,12 @@ not sent as `null`.
   existing (finished) run. Otherwise the new run shows in `GET /api/runs` as `queued` → `running` →
   `done` or `failed`; poll `/api/runs`. Suggestions go through the hard rules
   (`backend/agents/rules.py`); rejected ones are not applied.
-- **Day files** are streamed as the sim wrote them (compact JSON, same shape).
+- **Day files** are streamed as the sim wrote them (compact JSON, same shape). Conventions:
+  a trip that runs past midnight is listed in both day files with the same id and identical path,
+  so each file plays back its own 24 hours; a regular can therefore appear twice in one day file
+  (last night's trip and today's), never overlapping in time. Returning ids are `r{n}` and persist
+  across days; one-off ids are `v{day}-{n}` and never repeat. Spawn, `tIn` and `tOut` sit on the
+  5-minute grid; corners, door arrivals and exits are integer minutes from walking at 1.3 m/s.
 - **CORS:** `settings.CORS_ORIGINS` plus any `http(s)://localhost` or `127.0.0.1` port.
 
 ## Errors

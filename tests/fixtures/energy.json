@@ -1,0 +1,87 @@
+{
+  "sources": [
+    {
+      "label": "Hand-written test fixture (not measured)",
+      "url": "tests/fixtures"
+    }
+  ],
+  "fallback": true,
+  "notes": [
+    "Test fixture: values copied from the energy pipeline output (data/processed/energy.json) on 2026-10-15; not a measured build."
+  ],
+  "kwhPerM2PerOpenHour": {
+    "cafe": 0.03223,
+    "restaurant": 0.03385,
+    "takeaway": 0.05444,
+    "bar": 0.03653,
+    "shop": 0.02466,
+    "offlicence": 0.04566,
+    "club": 0.09506
+  },
+  "standbyKwhPerM2PerHour": {
+    "cafe": 0.00645,
+    "restaurant": 0.00508,
+    "takeaway": 0.01633,
+    "bar": 0.00913,
+    "shop": 0.00493,
+    "offlicence": 0.01826,
+    "club": 0.00951
+  },
+  "lightingKw": {
+    "off": 0.0,
+    "low": 0.25,
+    "high": 0.6
+  },
+  "carbonGPerKwh": [
+    151.2,
+    144.0,
+    140.5,
+    140.1,
+    144.3,
+    153.2,
+    165.3,
+    166.9,
+    150.8,
+    130.0,
+    110.0,
+    99.3,
+    96.1,
+    94.8,
+    99.6,
+    117.3,
+    145.6,
+    172.2,
+    187.8,
+    184.9,
+    177.4,
+    168.0,
+    158.6,
+    157.4
+  ],
+  "priceGbpPerKwh": [
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201,
+    0.3201
+  ]
+}
