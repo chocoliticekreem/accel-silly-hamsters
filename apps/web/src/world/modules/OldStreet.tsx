@@ -132,9 +132,12 @@ function Scene({ data }: { data: OldStreetData }) {
       root.add(m);
     }
     if (built.signs) {
-      built.signs.renderOrder = -2;
-      built.signs.raycast = noRaycast;
-      root.add(built.signs);
+      // a fresh Mesh per memo call (StrictMode builds this twice; an Object3D can only have one parent)
+      const signs = new Mesh(built.signs.geometry, built.signs.material);
+      signs.name = "old-street-signs";
+      signs.renderOrder = -2;
+      signs.raycast = noRaycast;
+      root.add(signs);
     }
     // the pavilion's glazing: see-through
     const glassMat = new MeshStandardMaterial({ color: "#cfe2e6", roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.22, depthWrite: false, side: DoubleSide });
