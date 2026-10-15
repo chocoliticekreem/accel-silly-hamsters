@@ -1,15 +1,18 @@
 // London Overground through Shoreditch High Street: where the viaduct runs, how a train moves, how often they come.
 // Pure and deterministic; the 3D module (world/modules/Overground.tsx) draws it, Infill/Surroundings keep clear of it.
 //
-// Route: the station is the map's long `kind: "station"` building. The viaduct runs through it along its long axis,
-// straight on for a little beyond each end, then (if going straight would plough through a building taller than
-// the deck) bends by the smallest angle that clears, and runs on out past the map edge into the surroundings.
+// Route: on the real map, the East London line's real alignment from OSM (sim/london.ts): Haggerston → Hoxton →
+// Shoreditch High Street → east into the tunnel toward Whitechapel, stopping at Hoxton and Shoreditch High St.
+// Otherwise (the mock) the viaduct runs through the map's long `kind: "station"` building along its long axis,
+// straight on a little beyond each end, then bends by the smallest angle that clears any building taller than the
+// deck, and runs on out past the map edge.
 //
 // Time: trains follow the sim clock's *timetable* (service hours, peak/off-peak frequency, Night Overground on
 // Friday and Saturday nights) but move in real seconds, like the traffic and the crowd: at 10×/100× a train that
 // moved in sim time would cross the map in a fraction of a frame.
 // Contract coords throughout (x east, z north).
 import type { Building, CityMap } from "../api/contract";
+import { ELL_ALIGNMENT, ELL_STATIONS, ELL_TUNNEL_PORTAL } from "./london";
 import { dayAt, weekdayIndex } from "./storeState";
 import { hourOf } from "./time";
 
@@ -24,6 +27,15 @@ const STRAIGHT = 40;
 export const ROUTE_REACH = 650;
 const ANGLES = [0, 8, -8, 16, -16, 24, -24, 32, -32];
 
+export interface Stop {
+  name: string;
+  /** Distance along the route of the platform's middle. */
+  s: number;
+  platformLen: number;
+  /** True for Shoreditch High Street (the map's own station building draws its platforms). */
+  main: boolean;
+}
+
 export interface OvergroundRoute {
   /** Polyline, west/south tip → east/north tip. */
   points: [number, number][];
@@ -35,6 +47,63 @@ export interface OvergroundRoute {
   /** Platform length (the station's long side). */
   platformLen: number;
   station: Building;
+  /** Where trains stop, in route order. */
+  stops: Stop[];
+  /** The line drops into a cutting from `rampFrom` and enters the tunnel at `portal` (route distances). */
+  rampFrom?: number;
+  portal?: number;
+  /** True when the route is the real OSM alignment (vs. the fallback through the station's axis). */
+  real: boolean;
+}
+
+/** Rail level at distance `s`: the viaduct deck, or dropping into the cutting toward the tunnel portal. */
+export function railLevel(r: Pick<OvergroundRoute, "rampFrom" | "portal">, s: number): number {
+  if (r.rampFrom === undefined || r.portal === undefined || s <= r.rampFrom) return DECK_Y;
+  const k = Math.min(1.4, (s - r.rampFrom) / (r.portal - r.rampFrom));
+  return DECK_Y - k * (DECK_Y + 7);
+}
+
+function cumulative(pts: [number, number][]) {
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  return cum;
+}
+
+/** Distance along a polyline of its closest point to (x, z), and how far off it is. */
+export function project(pts: [number, number][], cum: number[], x: number, z: number): { s: number; d: number } {
+  let best = { s: 0, d: Infinity };
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, az] = pts[i];
+    const [bx, bz] = pts[i + 1];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const L2 = dx * dx + dz * dz || 1;
+    const k = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2));
+    const d = Math.hypot(x - ax - dx * k, z - az - dz * k);
+    if (d < best.d) best = { s: cum[i] + k * Math.sqrt(L2), d };
+  }
+  return best;
+}
+
+/**
+ * The real East London line (OSM): Haggerston → Hoxton → Shoreditch High Street → toward Whitechapel, where it goes
+ * underground. Used when the map's station building sits on it (the real map); null otherwise (the mock).
+ */
+export function realRoute(station: Building): OvergroundRoute | null {
+  const pts = ELL_ALIGNMENT.map((p) => [p[0], p[1]] as [number, number]);
+  const cum = cumulative(pts);
+  const at = project(pts, cum, station.x, station.z);
+  if (at.d > 12) return null;
+  const L = Math.max(station.w, station.d);
+  const stops: Stop[] = [];
+  for (const st of ELL_STATIONS) {
+    const p = project(pts, cum, st.x, st.z);
+    if (p.d < 40) stops.push({ name: st.name, s: p.s, platformLen: st.platformLen, main: false });
+  }
+  stops.push({ name: "Shoreditch High Street", s: at.s, platformLen: L, main: true });
+  stops.sort((a, b) => a.s - b.s);
+  const portal = project(pts, cum, ELL_TUNNEL_PORTAL.x, ELL_TUNNEL_PORTAL.z).s;
+  return { points: pts, cum, length: cum[cum.length - 1], stationS: at.s, platformLen: L, station, stops, rampFrom: portal - 190, portal, real: true };
 }
 
 export function stationBuilding(map: CityMap): Building | null {
@@ -88,6 +157,8 @@ function clashes(pts: [number, number][], map: CityMap, station: Building): Set<
 export function overgroundRoute(map: CityMap, reach = ROUTE_REACH): OvergroundRoute | null {
   const station = stationBuilding(map);
   if (!station) return null;
+  const real = realRoute(station);
+  if (real) return real;
   const alongX = station.w >= station.d;
   const L = alongX ? station.w : station.d;
   const axis: [number, number] = alongX ? [1, 0] : [0, 1];
@@ -142,7 +213,8 @@ export function overgroundRoute(map: CityMap, reach = ROUTE_REACH): OvergroundRo
   const cum = [0];
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
   const westEnd = westPart.length - 1; // station west end
-  return { points: pts, cum, length: cum[cum.length - 1], stationS: cum[westEnd] + L / 2, platformLen: L, station };
+  const stationS = cum[westEnd] + L / 2;
+  return { points: pts, cum, length: cum[cum.length - 1], stationS, platformLen: L, station, stops: [{ name: "Shoreditch High Street", s: stationS, platformLen: L, main: true }], real: false };
 }
 
 /** Point and unit direction `s` metres along the route, shifted `lateral` metres to the right of travel. */
@@ -218,6 +290,58 @@ export function trainMotion(elapsed: number, toStop: number, afterStop: number, 
   if (u < tAccel) return { d: toStop + 0.5 * a * u * u, doors: 0, phase: "depart" };
   const d = toStop + accelDist + (u - tAccel) * Math.sqrt(2 * a * accelDist);
   return d >= toStop + afterStop ? { d: toStop + afterStop, doors: 0, phase: "gone" } : { d, doors: 0, phase: "depart" };
+}
+
+export interface RunMotion extends TrainMotion {
+  /** Index of the stop the train is approaching or standing at (the last one once departing it). */
+  stop: number;
+}
+
+type Cfg = { speed: number; accel: number; dwell: number };
+
+/** A leg ending at a stand: entering at full speed (`flying`) or starting from a stand. */
+function leg(flying: boolean, len: number, { speed: v, accel: a }: Cfg) {
+  if (flying) {
+    const brake = Math.min(len, (v * v) / (2 * a));
+    const vIn = Math.sqrt(2 * a * brake);
+    const tc = (len - brake) / v;
+    return {
+      time: tc + vIn / a,
+      at: (t: number) => (t < tc ? t * v : len - brake + vIn * (t - tc) - 0.5 * a * (t - tc) ** 2),
+    };
+  }
+  const vmax = Math.min(v, Math.sqrt(a * len));
+  const ramp = (vmax * vmax) / (2 * a);
+  const tr = vmax / a;
+  const tc = (len - 2 * ramp) / (vmax || 1);
+  const time = 2 * tr + tc;
+  return {
+    time,
+    at: (t: number) => (t < tr ? 0.5 * a * t * t : t < tr + tc ? ramp + (t - tr) * vmax : len - 0.5 * a * (time - t) ** 2),
+  };
+}
+
+const doorsAt = (u: number, dwell: number) => Math.min(Math.min(1, Math.max(0, (u - 1) / 1.2)), Math.min(1, Math.max(0, (dwell - 3 - u) / 1.2 + 1)));
+
+/**
+ * A whole run, `elapsed` real seconds after the train appears: in at full speed, a stand of `dwell` s at each of
+ * `stops` (metres from the start, ascending) with the doors opening and closing, then away and gone at `end`.
+ */
+export function runMotion(elapsed: number, stops: number[], end: number, cfg: Cfg = TRAIN): RunMotion {
+  let t = elapsed;
+  let from = 0;
+  for (let i = 0; i < stops.length; i++) {
+    const l = leg(i === 0, stops[i] - from, cfg);
+    if (t < l.time) return { d: from + l.at(t), doors: 0, phase: "approach", stop: i };
+    t -= l.time;
+    if (t < cfg.dwell) return { d: stops[i], doors: doorsAt(t, cfg.dwell), phase: "dwell", stop: i };
+    t -= cfg.dwell;
+    from = stops[i];
+  }
+  const { speed: v, accel: a } = cfg;
+  const tr = v / a;
+  const d = from + (t < tr ? 0.5 * a * t * t : (v * v) / (2 * a) + (t - tr) * v);
+  return d >= end ? { d: end, doors: 0, phase: "gone", stop: stops.length - 1 } : { d, doors: 0, phase: "depart", stop: stops.length - 1 };
 }
 
 /**
