@@ -236,6 +236,7 @@ def cache_inputs(map_data: MapData) -> dict[str, Any]:
     club_buildings = {c.buildingId for c in clubs}
     return {
         "model": MODEL_VERSION,
+        "scale": [SIM_WEEKDAY_ARRIVALS, STATION_SHARE],
         "numbat": [numbat_url(d) for d in NUMBAT_DAY_TYPES],
         "entryPoints": [e.model_dump(mode="json") for e in map_data.entryPoints],
         "streets": [s.model_dump(mode="json") for s in map_data.streets],

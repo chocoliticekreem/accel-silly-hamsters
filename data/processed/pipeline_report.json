@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-15T11:55:30Z",
+  "at": "2026-10-15T12:00:48Z",
   "steps": [
     {
       "step": "map",
@@ -168,13 +168,13 @@
         }
       ],
       "notes": [
-        "Units: sim agents per hour (expected values; sample e.g. Poisson per hour), not real people. Scale: 1 sim agent ~ 69 real arrivals.",
-        "Scale derivation: station exits (Shoreditch High Street 11,495, Old Street 25,787) 37,282 per weekday and 26,424 per weekend day (TfL NUMBAT 2025, mean of calendar days); assumed station share 45% of all arrivals into the area gives 82,850 real arrivals per weekday; weekday sim total fixed at 1200 (BUILD_NOTES budget 600-1200/day); weekend total 851 follows the measured weekend/weekday exit ratio 0.71.",
+        "Units: sim agents per hour (expected values; sample e.g. Poisson per hour), not real people. Scale: 1 sim agent ~ 83 real arrivals.",
+        "Scale derivation: station exits (Shoreditch High Street 11,495, Old Street 25,787) 37,282 per weekday and 26,424 per weekend day (TfL NUMBAT 2025, mean of calendar days); assumed station share 45% of all arrivals into the area gives 82,850 real arrivals per weekday; weekday sim total fixed at 1000 (BUILD_NOTES budget 600-1200/day); weekend total 709 follows the measured weekend/weekday exit ratio 0.71.",
         "Station entries: each station's budget is its share of the stations' measured exits; hour-of-day = that station's exits (people arriving into the area; quarter-hour bands summed to hours), TfL traffic days (05:00-05:00) mapped to calendar days; a station's entrances (Old Street has several) share its budget equally.",
         "Night Overground: TfL lists Shoreditch High Street on the Windrush Night route (Unified API); NUMBAT SHS exits 01:00-05:00 by night: Mon 0, Tue-Thu (each) 0, Fri 76, Sat 108, Sun 0. Late station arrivals therefore sit in the 00-04 hours of the weekend profile (Sat/Sun mornings) and are ~0 on weekday nights.",
         "Street entries (assumption): hourly arrivals at street edges are not measured here; timing = 70% weekday / 60% weekend SHS exit timing plus 30% / 40% night-time-economy walk-ins (weekday 11:00-01:00, peak 17-23; weekend 10:00-04:00, peak 20-24). Split across street entries by the width of the street each sits on: e1 8 m, e2 8 m, e3 14 m, e4 12 m, e5 8 m, e6 8 m, e7 12 m, e8 14 m, e9 8 m, e10 14 m, e11 8 m, e12 8 m, e13 14 m, e14 8 m, e15 14 m, e16 8 m, e17 14 m, e18 8 m, e19 14 m, e20 14 m, e21 10 m, e22 8 m, e23 14 m, e24 14 m.",
-        "Club nights: one per club store, nights thu/fri/sat, hours from map.json defaultHours when they describe a night (open from 18:00, close after midnight by 08:00), else 22:00-03:00 (assumption; club events are not scraped). Club-goers are NOT in entryPoints: the sim adds `capacity` club-goers per club night; capacity is already in sim agents (do not rescale). capacity = floor area / 0.5 m2 per person (Approved Document B) x 60% typical fill, clamped 150-1500 real (500 without floor area), x scale 0.0145: c1 22:00-03:00 (default: map hours 08:00-00:00 are not a night), 720 real -> 10 agents; c2 19:00-03:00 (map hours), 150 real -> 2 agents; c3 22:00-03:00 (map hours), 515 real -> 7 agents.",
-        "returningShare and returningPoolSize (estimate; open question in the spec): commuters = arrivals in the TfL AM peak band 07:00-10:00 (32% of weekday, 6% of weekend arrivals) plus 25% of all other arrivals assumed regulars (residents, regular diners and drinkers, club regulars); weekly mix = 0.45. Pool = share x busiest daily total / 0.9 (a regular arrives on ~9 of 10 days) = 598.",
+        "Club nights: one per club store, nights thu/fri/sat, hours from map.json defaultHours when they describe a night (open from 18:00, close after midnight by 08:00), else 22:00-03:00 (assumption; club events are not scraped). Club-goers are NOT in entryPoints: the sim adds `capacity` club-goers per club night; capacity is already in sim agents (do not rescale). capacity = floor area / 0.5 m2 per person (Approved Document B) x 60% typical fill, clamped 150-1500 real (500 without floor area), x scale 0.0121: c1 22:00-03:00 (default: map hours 08:00-00:00 are not a night), 720 real -> 9 agents; c2 19:00-03:00 (map hours), 150 real -> 2 agents; c3 22:00-03:00 (map hours), 515 real -> 6 agents.",
+        "returningShare and returningPoolSize (estimate; open question in the spec): commuters = arrivals in the TfL AM peak band 07:00-10:00 (32% of weekday, 6% of weekend arrivals) plus 25% of all other arrivals assumed regulars (residents, regular diners and drinkers, club regulars); weekly mix = 0.45. Pool = share x busiest daily total / 0.9 (a regular arrives on ~9 of 10 days) = 498.",
         "Checked 2026-10-15, not used: TfL crowding API (/crowding/910GSHRDHST returns isFound=false); ONS Time Use Survey tables (OTUS, March 2024) give daily minutes per activity with no hour-of-day split, so hour-of-day comes from NUMBAT; TfL BUSTO bus demand files are 55-125 MB (over the download cap); Resident Advisor, Dice and Eventbrite are not scraped (terms)."
       ]
     },
@@ -201,7 +201,7 @@
     "calibration"
   ],
   "cacheHitRates": {
-    "pipeline": 1.0,
+    "pipeline": 0.8,
     "scrape": 1.0
   },
   "calibration": {
@@ -212,14 +212,14 @@
         "type": "cafe",
         "measured": false,
         "weekday": {
-          "mae": 0.0777,
-          "r": 0.9368
+          "mae": 0.0731,
+          "r": 0.9547
         },
         "weekend": {
-          "mae": 0.1014,
-          "r": 0.8361
+          "mae": 0.1359,
+          "r": 0.7808
         },
-        "mae": 0.0896
+        "mae": 0.1045
       },
       {
         "name": "Typical restaurant",
@@ -227,14 +227,14 @@
         "type": "restaurant",
         "measured": false,
         "weekday": {
-          "mae": 0.166,
-          "r": 0.7877
+          "mae": 0.1671,
+          "r": 0.7597
         },
         "weekend": {
-          "mae": 0.1516,
-          "r": 0.791
+          "mae": 0.1924,
+          "r": 0.6021
         },
-        "mae": 0.1588
+        "mae": 0.1797
       },
       {
         "name": "Typical bar",
@@ -242,14 +242,14 @@
         "type": "bar",
         "measured": false,
         "weekday": {
-          "mae": 0.1114,
-          "r": 0.8808
+          "mae": 0.1079,
+          "r": 0.8796
         },
         "weekend": {
-          "mae": 0.2447,
-          "r": 0.5751
+          "mae": 0.2547,
+          "r": 0.5233
         },
-        "mae": 0.178
+        "mae": 0.1813
       },
       {
         "name": "Typical club",
@@ -272,14 +272,14 @@
         "type": "takeaway",
         "measured": false,
         "weekday": {
-          "mae": 0.2142,
+          "mae": 0.2206,
           "r": 0.6662
         },
         "weekend": {
-          "mae": 0.2777,
-          "r": 0.0759
+          "mae": 0.2755,
+          "r": 0.0802
         },
-        "mae": 0.246
+        "mae": 0.248
       }
     ],
     "measuredCount": 0,

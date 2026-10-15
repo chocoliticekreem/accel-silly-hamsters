@@ -6,14 +6,14 @@
       "type": "cafe",
       "measured": false,
       "weekday": {
-        "mae": 0.0777,
-        "r": 0.9368
+        "mae": 0.0731,
+        "r": 0.9547
       },
       "weekend": {
-        "mae": 0.1014,
-        "r": 0.8361
+        "mae": 0.1359,
+        "r": 0.7808
       },
-      "mae": 0.0896
+      "mae": 0.1045
     },
     {
       "name": "Typical restaurant",
@@ -21,14 +21,14 @@
       "type": "restaurant",
       "measured": false,
       "weekday": {
-        "mae": 0.166,
-        "r": 0.7877
+        "mae": 0.1671,
+        "r": 0.7597
       },
       "weekend": {
-        "mae": 0.1516,
-        "r": 0.791
+        "mae": 0.1924,
+        "r": 0.6021
       },
-      "mae": 0.1588
+      "mae": 0.1797
     },
     {
       "name": "Typical bar",
@@ -36,14 +36,14 @@
       "type": "bar",
       "measured": false,
       "weekday": {
-        "mae": 0.1114,
-        "r": 0.8808
+        "mae": 0.1079,
+        "r": 0.8796
       },
       "weekend": {
-        "mae": 0.2447,
-        "r": 0.5751
+        "mae": 0.2547,
+        "r": 0.5233
       },
-      "mae": 0.178
+      "mae": 0.1813
     },
     {
       "name": "Typical club",
@@ -66,14 +66,14 @@
       "type": "takeaway",
       "measured": false,
       "weekday": {
-        "mae": 0.2142,
+        "mae": 0.2206,
         "r": 0.6662
       },
       "weekend": {
-        "mae": 0.2777,
-        "r": 0.0759
+        "mae": 0.2755,
+        "r": 0.0802
       },
-      "mae": 0.246
+      "mae": 0.248
     }
   ],
   "measuredCount": 0,

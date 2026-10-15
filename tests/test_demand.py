@@ -68,6 +68,9 @@ def numbat_workbook(hourly: list[float], station: str = STATION_ROW_NAME) -> byt
     )
     sheet.append([1, "OTHx", "Other Station", 1, 0] + [0] * 6 + [999.0] * 96)
     sheet.append([1024, "SDCr", station, 1, sum(values)] + [0] * 6 + values)
+    # Old Street: twice Shoreditch High Street's exits, same timing.
+    doubled = [2 * v for v in values]
+    sheet.append([665, "OLDu", "Old Street", 1, sum(doubled)] + [0] * 6 + doubled)
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
@@ -406,3 +409,43 @@ def test_parse_station_exits_reads_96_quarter_hours() -> None:
 def test_parse_station_exits_rejects_unexpected_files(payload: bytes, message: str) -> None:
     with pytest.raises(demand.SourceFormatError, match=message):
         demand.parse_station_exits(payload, "Shoreditch High Street")
+
+
+def test_two_stations_split_the_station_budget_by_their_exits(tfl: FakeTfl) -> None:
+    entries = [
+        EntryPoint(id="north", kind="street", x=0, z=100),
+        EntryPoint(id="st1", kind="station", name="Shoreditch High Street", x=10, z=0),
+        EntryPoint(id="st2", kind="station", name="Old Street", x=-50, z=50),
+        EntryPoint(id="st3", kind="station", name="Old Street", x=-60, z=50),
+    ]
+
+    result = demand.build(map_data=synthetic_map(entries))
+
+    shs = sum(result.entryPoints["st1"].weekday)
+    old_street = [sum(result.entryPoints[e].weekday) for e in ("st2", "st3")]
+    assert old_street[0] == pytest.approx(old_street[1], abs=0.05), "entrances share equally"
+    assert sum(old_street) == pytest.approx(2 * shs, rel=1e-3), "split by measured exits"
+    station_total = demand.STATION_SHARE * demand.SIM_WEEKDAY_ARRIVALS
+    assert shs + sum(old_street) == pytest.approx(station_total, abs=0.5)
+    weekday, _ = demand.daily_totals(result)
+    assert weekday == pytest.approx(demand.SIM_WEEKDAY_ARRIVALS, abs=0.5)
+    numbat = [src for src in result.sources if "NUMBAT" in src.label]
+    assert len(numbat) == 5 and all("Old Street" in src.label for src in numbat)
+    assert len(tfl.downloads) == 5, "one download per workbook for both stations"
+
+
+def test_two_stations_fall_back_to_both_snapshots(tfl: FakeTfl) -> None:
+    tfl.numbat_down = True
+    entries = [
+        EntryPoint(id="st1", kind="station", name="Shoreditch High Street", x=10, z=0),
+        EntryPoint(id="st2", kind="station", name="Old Street", x=-50, z=50),
+    ]
+
+    result = demand.build(map_data=synthetic_map(entries))
+
+    assert result.fallback is True
+    shs, old_street = (sum(result.entryPoints[e].weekday) for e in ("st1", "st2"))
+    expected = sum(demand.OLD_STREET_SNAPSHOT_EXITS["weekday"]) / sum(
+        demand.SNAPSHOT_EXITS["weekday"]
+    )
+    assert old_street / shs == pytest.approx(expected, rel=1e-3)
