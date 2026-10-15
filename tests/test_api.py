@@ -63,6 +63,7 @@ RUN_EXTRAS = frozenset({"costPerStoreWeekGbp"})  # in the contract text, not its
 SUGGESTION_EXTRAS = frozenset({"confidence", "reason"})
 REPORT_EXTRAS = frozenset({"note", "fetchedAt"}) | SUGGESTION_EXTRAS
 ANALYST_EXTRAS = frozenset({"baselineRun"})
+STORE_KPIS_EXTRAS = frozenset({"openHours"})
 NO_EXTRAS: frozenset[str] = frozenset()
 
 
@@ -128,7 +129,7 @@ def test_key_check_catches_drift() -> None:
 
 def test_every_allowed_extra_is_documented() -> None:
     changes = (ROOT / "backend" / "CONTRACT_CHANGES.md").read_text()
-    for key in MAP_EXTRAS | RUN_EXTRAS | REPORT_EXTRAS | ANALYST_EXTRAS:
+    for key in MAP_EXTRAS | RUN_EXTRAS | REPORT_EXTRAS | ANALYST_EXTRAS | STORE_KPIS_EXTRAS:
         assert f"`{key}`" in changes, key
     assert "none are breaking" in changes.lower()
 
@@ -241,7 +242,7 @@ def test_sample_run_is_complete_valid_and_small() -> None:
 
     s3, contract_s3 = stores["s3"], sample("GET /api/runs/{run}/stores")["s3"]
     assert (s3.open, s3.close) == (contract_s3["open"], contract_s3["close"])
-    assert s3.kpis.model_dump() == contract_s3["kpis"]
+    assert s3.kpis.model_dump(exclude=STORE_KPIS_EXTRAS) == contract_s3["kpis"]
     assert s3.lighting[:8] == contract_s3["lighting"][:8]
     assert s3.visitsByHour[:8] == contract_s3["visitsByHour"][:8]
     assert read(SAMPLE_DIR / "suggestions.json") == sample("GET /api/runs/{run}/suggestions")
@@ -335,7 +336,7 @@ def test_run_stores(client: TestClient) -> None:
     TypeAdapter(dict[str, StoreRunResult]).validate_python(body)
     contract_store = sample("GET /api/runs/{run}/stores")["s3"]
     for store_id, result in body.items():
-        assert_keys_match(result, contract_store, NO_EXTRAS, f"$.{store_id}")
+        assert_keys_match(result, contract_store, STORE_KPIS_EXTRAS, f"$.{store_id}")
         assert len(result["lighting"]) == 24 and len(result["visitsByHour"]) == 24
 
 

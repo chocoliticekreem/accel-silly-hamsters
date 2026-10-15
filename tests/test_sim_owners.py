@@ -40,10 +40,17 @@ def adapted(seed: int = SEED) -> engine.SimOutput:
     return engine.simulate(world(), baseline(), seed, adapt=True)
 
 
+LATE_OFFLICENCE_SPEND = 16.0
+
+
 @cache
 def late_offlicence() -> engine.SimOutput:
-    """Off-licence s7 shut from 17:00: plenty of people find it shut every evening."""
-    return engine.simulate(world(), with_changes(s7={"close": "17:00"}), SEED, adapt=True)
+    """Off-licence s7 shut from 17:00: plenty of people find it shut every evening. Its basket is
+    priced so the evening crowd pays an hour of wages (at the default spend it does not)."""
+    spend = dict(economics.SPEND_GBP_PER_VISIT, offlicence=LATE_OFFLICENCE_SPEND)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(economics, "SPEND_GBP_PER_VISIT", spend)
+        return engine.simulate(world(), with_changes(s7={"close": "17:00"}), SEED, adapt=True)
 
 
 def store_ids() -> list[str]:
@@ -429,7 +436,7 @@ def window_hours(store_id: str) -> np.ndarray:
 def live_days(
     team: owners.Owners, store_id: str, *, dead_day: int, last_day: int, passing: float
 ) -> None:
-    """Days 1..last_day for one shop: 3 visits and 20 passers-by an open hour, except dead_day
+    """Days 1..last_day for one shop: 5 visits and 20 passers-by an open hour, except dead_day
     (no visits) and, while a weekday is closed, `passing` passers-by an hour at the shut door."""
     i, hours = index(store_id), window_hours(store_id)
     for day in range(1, last_day + 1):
@@ -439,7 +446,7 @@ def live_days(
         else:
             footfall[i, hours] = 20.0
             if day != dead_day:
-                team.visits[i, day, hours] = 3.0
+                team.visits[i, day, hours] = 5.0
         team.end_day(day, footfall)
 
 
@@ -465,11 +472,11 @@ def test_a_quiet_weekday_that_still_pays_stays_open() -> None:
     team = fresh_team()
     s5, hours = index("s5"), window_hours("s5")
     for day in range(1, owners.REVIEW_DAY + 1):
-        team.visits[s5, day, hours] = 0.25 if day == 3 else 3.0
+        team.visits[s5, day, hours] = 3.0 if day == 3 else 40.0
         team.end_day(day, np.zeros((world().n_stores, 24)))
-    quiet, usual = 0.25 * hours.sum(), 3.0 * hours.sum()
+    quiet, usual = 3.0 * hours.sum(), 40.0 * hours.sum()
     assert quiet < owners.DEAD_DAY_SHARE * usual  # dead by visits ...
-    margin = economics.SPEND_GBP_PER_VISIT["restaurant"] * economics.GROSS_MARGIN
+    margin = economics.margin_per_visit("restaurant")
     assert quiet * margin > team._open_cost(team.owners[s5], 12 * 60, 11 * 60)  # ... but it pays
     assert not [e for e in team.events() if e.action == "day_closed"]
 
@@ -502,13 +509,14 @@ def test_open_cost_counts_the_open_load_and_the_lights() -> None:
     rate = world().floor_area[s7] * (
         e.kwhPerM2PerOpenHour["offlicence"] - e.standbyKwhPerM2PerHour["offlicence"]
     )
+    wages = economics.STAFF_ON_SHIFT["offlicence"] * economics.NATIONAL_LIVING_WAGE_GBP  # 12.71
     lighting = baseline()["s7"].lighting
     assert lighting[23] == "low"  # shut at 23:00 with the window lit low, and low when open
-    expected = rate * e.priceGbpPerKwh[23]
+    expected = rate * e.priceGbpPerKwh[23] + wages
     assert team._open_cost(o, 23 * 60, 60) == pytest.approx(expected)
     assert team._open_cost(o, 23 * 60, 30) == pytest.approx(expected / 2)
     assert lighting[3] == "off"  # 03:00 shut and dark: opening it lights the window high
-    expected = (rate + e.lightingKw["high"]) * e.priceGbpPerKwh[3]
+    expected = (rate + e.lightingKw["high"]) * e.priceGbpPerKwh[3] + wages
     assert team._open_cost(o, 3 * 60, 60) == pytest.approx(expected)
 
 
@@ -523,6 +531,33 @@ def test_an_extension_whose_power_costs_more_than_its_margin_is_not_taken(
     assert not [
         e for e in out.owner_events if e.storeId == "s7" and e.trigger.kind == "missed_demand"
     ]
+
+
+@pytest.mark.parametrize(("found", "taken"), [(6.0, False), (20.0, True)])
+def test_an_extension_that_pays_its_power_but_not_its_wages_is_not_taken(
+    found: float, taken: bool
+) -> None:
+    configs = with_changes(s7={"close": "17:00"})
+    schedule = engine.build_schedule(world(), configs)
+    team = owners.Owners(world(), schedule, configs, [], allow_closure=False)
+    s7 = index("s7")
+    o = team.owners[s7]
+    hours = np.asarray(timeutil.open_hours_fraction("08:00", "17:00")) > 0
+    for day in range(1, owners.MIN_HISTORY_DAYS + 1):
+        team.visits[s7, day, hours] = 8.0
+        team.found[s7, day, 17] = found
+        team.end_day(day, np.zeros((world().n_stores, 24)))
+    gain = found * owners.EXTEND_CONVERSION * economics.margin_per_visit("offlicence")
+    cost = team._open_cost(o, 17 * 60, 60)
+    power = cost - economics.staff_gbp_per_open_hour("offlicence")
+    extended = [e for e in team.events() if e.trigger.kind == "missed_demand"]
+    if taken:
+        assert gain > cost
+        [event] = extended
+        assert (event.storeId, event.from_, event.to) == ("s7", "17:00", "18:00")
+        return
+    assert power < gain < cost
+    assert not extended
 
 
 def run_money(out: engine.SimOutput) -> tuple[float, float]:
@@ -564,13 +599,16 @@ def test_daily_kpis_add_up_to_the_run(adapt: bool) -> None:
     price = np.asarray(world().energy.priceGbpPerKwh)
     shops = ~world().is_club
     margin = sum(
-        results.stores[s.id].kpis.visits
-        * economics.SPEND_GBP_PER_VISIT[s.type]
-        * economics.GROSS_MARGIN
+        results.stores[s.id].kpis.visits * economics.margin_per_visit(s.type)
         for s in world().stores
     )
     bill = float((kpis.store_kwh(world(), out)[shops] * price).sum())
-    assert sum(d.profitGbp for d in daily) == pytest.approx(margin - bill, abs=0.1)
+    open_hours = out.schedule.open_fraction.sum(axis=(1, 2))
+    wage = np.array([economics.staff_gbp_per_open_hour(s.type) for s in world().stores])
+    wages = float((open_hours[shops] * wage[shops]).sum())
+    for i, s in enumerate(world().stores):
+        assert results.stores[s.id].kpis.openHours == pytest.approx(open_hours[i], abs=0.01)
+    assert sum(d.profitGbp for d in daily) == pytest.approx(margin - bill - wages, abs=0.1)
     for d in daily:
         assert d.visitsPerKwh == round(d.visits / d.kwh, 4)
     assert kpis.build_results(world(), baseline(), out).daily == daily  # deterministic

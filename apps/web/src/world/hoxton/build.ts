@@ -18,6 +18,7 @@ import { rng, seedOf, type Rng } from "../../mock/rng";
 import { HOXTON_AREA, inPoly } from "../../sim/areaKeepouts";
 import { MARKING_LIFT, ROAD_TOP, roadClass } from "../../sim/roadLayers";
 import { Kit, type SlotGeos } from "../models/kit";
+import { landmarkHostIds, landmarkKeepouts } from "../models/plots";
 import { drawBusStop, drawCycleDock, drawK6, drawPlaneTree } from "../models/street";
 import { buildAtlas, MURALS, type Atlas, type SignReq, type SignStyle } from "./atlas";
 import { bbox, centroid, closestSeg, pip, polyArea, type HoxtonData, type HxArea, type P2 } from "./data";
@@ -186,6 +187,12 @@ export function buildHoxton(map: CityMap, data: HoxtonData): HoxtonBuilt {
   const boxes = map.buildings.filter((b) => near(b.x, b.z, 60));
   const solids = new Hash<Solid>(24);
   for (const b of boxes) solids.add(b.x - b.w / 2, b.x + b.w / 2, b.z - b.d / 2, b.z + b.d / 2, { kind: "box", b });
+  // hero landmark plots (world/models/plots) are solid: no gap building, furniture or sign inside or on them
+  const heroHosts = landmarkHostIds(map);
+  landmarkKeepouts(map).forEach((k, i) => {
+    const b: Building = { id: `_landmark${i}`, kind: "office", x: (k.x0 + k.x1) / 2, z: (k.z0 + k.z1) / 2, w: k.x1 - k.x0, d: k.z1 - k.z0, h: 20 };
+    solids.add(k.x0, k.x1, k.z0, k.z1, { kind: "box", b });
+  });
   const roadHash = new Hash<Street>(30);
   for (const s of streets)
     for (let i = 0; i < s.points.length - 1; i++) {
@@ -310,6 +317,7 @@ export function buildHoxton(map: CityMap, data: HoxtonData): HoxtonBuilt {
       if (s) {
         if (s.kind === "box") {
           const b = s.b;
+          if (b.id.startsWith("_landmark") || heroHosts.has(b.id)) return null; // landmarks carry their own signage
           const faces = [
             { d: b.x - b.w / 2 - px, ox: -1, oz: 0 },
             { d: px - (b.x + b.w / 2), ox: 1, oz: 0 },

@@ -3,6 +3,7 @@
 // KPIs are computed from the generated visits, so what you see in 3D matches the numbers in the HUD.
 // Owners adapt day by day (mock/owners.ts): opening, lighting and energy follow each owner's evolving schedule.
 import type { PersonDay } from "../api/economy";
+import { windowHours } from "../sim/economics";
 import type { AgentDay, CityMap, DayData, LightLevel, OwnerEvent, PathKey, RunDay, RunKpis, RunStores, StoreKpis, StoreType, StoreVisit, StreetEvent } from "../api/contract";
 import { DAYS_PER_RUN, MINUTES_PER_DAY } from "../api/contract";
 import { frontage } from "../sim/geometry";
@@ -625,7 +626,9 @@ export function simulateRun(map: CityMap, cfg: RunConfig, seed: number, run = 1,
     const kwh = kwhHourly.get(s.id)!.reduce((a, b) => a + b, 0) * DAYS_PER_RUN;
     const vd = [...visitorDays.get(s.id)!.values()];
     const returnRate = vd.length ? vd.filter((x) => x.size > 1).length / vd.length : 0;
-    const kpis: StoreKpis = { visits: visits.get(s.id)!, kwh: round(kwh), returnRate: round2(returnRate) };
+    const daysOpen = s.type === "club" ? DAYS_PER_RUN : Math.min(DAYS_PER_RUN, (shop.src.closedFromDay ?? DAYS_PER_RUN + 1) - 1);
+    const openHours = round(windowHours(c.open, c.close) * daysOpen);
+    const kpis: StoreKpis = { visits: visits.get(s.id)!, kwh: round(kwh), returnRate: round2(returnRate), openHours };
     stores[s.id] = {
       open: c.open,
       close: c.close,

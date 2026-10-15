@@ -7,6 +7,7 @@ import { closestOnStreet } from "../../sim/geometry";
 import { infillPlanFor, planSite } from "../../sim/construction";
 import { resolveLandmarks, type LandmarkKey, type ResolvedLandmark } from "../../sim/london";
 import { XOYO } from "../clubs";
+import { landmarkPlots } from "../models/plots";
 
 /** Landmarks with a multi-floor interior (world/landmarks/floors). */
 export type InteriorKey = "xoyo" | "encode" | "artotel" | "boxpark";
@@ -174,6 +175,16 @@ function resolveSpec(map: CityMap, s: Spec, lms: ResolvedLandmark[]): Place | nu
       else if (s.host === "free") [x, z] = Object.values(freeSpot(map, x, z, w, d)) as [number, number];
       foot = host ? { x, z, w: host.w, d: host.d, h: Math.max(host.h, h) } : { x, z, w, d, h };
     }
+  }
+  // the hero model's plot (world/models/plots) is the authority: the interior replaces that model
+  const plot = s.interior ? landmarkPlots(map).find((pl) => pl.key === s.interior) : undefined;
+  if (plot) {
+    const xs = plot.keepouts.flatMap((k) => [k.x0 + 1, k.x1 - 1]);
+    const zs = plot.keepouts.flatMap((k) => [k.z0 + 1, k.z1 - 1]);
+    [x, z] = [plot.x, plot.z];
+    const hb = plot.hostId ? map.buildings.find((b) => b.id === plot.hostId) : undefined;
+    if (hb) host = hb;
+    foot = { x, z, w: Math.max(...xs) - Math.min(...xs), d: Math.max(...zs) - Math.min(...zs), h: Math.max(foot?.h ?? 0, h) };
   }
   const c = clampTo(map, x, z);
   if (c.outside && s.interior) return null; // an interior off the map can't be drawn on our ground

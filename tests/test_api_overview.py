@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from backend import economics, settings, store
 from backend.agents import rundata, training
 from backend.api.main import app
-from backend.contract import AnalystStatus, MapData, RunListItem, StoreOverview
+from backend.contract import AnalystStatus, MapData, RunListItem, StoreOverview, Suggestion
 from backend.schemas import AnalystState, RunConfig, StoreConfig
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -61,7 +61,7 @@ BASE = {
     "s2": StoreConfig(open="11:00", close="23:00", lighting=LOW),
     "s3": StoreConfig(open="16:00", close="23:00", lighting=LOW),
 }
-BASE_KPIS = {"s1": (200, 300.0), "s2": (150, 200.0), "s3": (100, 150.0)}
+BASE_KPIS = {"s1": (200, 300.0), "s2": (150, 200.0), "s3": (300, 150.0)}
 
 
 def write_run(
@@ -154,18 +154,19 @@ S1_LIGHTS |= {"from": "low", "to": "high"}
 
 @pytest.fixture
 def history(world: Path) -> None:
-    """Run 1 baseline; run 2 opens s1 till 03:00 (profitable for s1); run 3 (the area's best)
-    lights s1 18-24 high and shortens s3 (both cost those shops money); run 4 changes s2 only."""
+    """Run 1 baseline; run 2 opens s1 till 03:00 (profitable for s1 after the wages for the 4
+    extra hours); run 3 (the area's best) lights s1 18-24 high and shortens s3 (both cost those
+    shops money); run 4 changes s2 only."""
     write_run(1, parent=None, configs=BASE, kpis=BASE_KPIS)
     run2 = {**BASE, "s1": StoreConfig(open="11:00", close="03:00", lighting=LOW)}
     write_run(
         2,
         parent=1,
         configs=run2,
-        kpis={**BASE_KPIS, "s1": (300, 340.0)},
+        kpis={**BASE_KPIS, "s1": (500, 340.0)},
         applied=[{**S1_CLOSE, "expectedDelta": {"visits": 0.5, "kwh": 0.1}}],
         suggestions=[
-            suggestion("s1", "open", "11:00", "10:00", 0.05, 0.05),
+            suggestion("s1", "open", "11:00", "10:00", 0.2, 0.05),
             suggestion("s1", "close", "23:00", "03:00", 0.5, 0.1, reason="Fixture Club crowds"),
             suggestion("s1", "lighting", "low", "high", 0.2, 0.3, hours=list(range(18, 24))),
             suggestion("s1", "open", "11:00", "10:30", 0.01, 0.02, confidence="high"),
@@ -185,7 +186,7 @@ def history(world: Path) -> None:
         3,
         parent=2,
         configs=run3,
-        kpis={**BASE_KPIS, "s1": (305, 1300.0), "s3": (60, 140.0)},
+        kpis={**BASE_KPIS, "s1": (505, 1300.0), "s3": (200, 140.0)},
         applied=[{**S1_LIGHTS, "expectedDelta": {"visits": 0.2, "kwh": 0.3}}],
     )
     run4 = {**BASE, "s2": StoreConfig(open="10:00", close="23:00", lighting=LOW)}
@@ -197,8 +198,11 @@ def price() -> float:
     return economics.area_price_gbp_per_kwh()
 
 
-def profit(kind: str, base: tuple[int, float], now: tuple[int, float]) -> float:
-    return economics.gbp_per_week(kind, now[0] - base[0], now[1] - base[1], price())  # type: ignore[arg-type]
+def profit(
+    kind: str, base: tuple[int, float], now: tuple[int, float], hours_added_a_day: float
+) -> float:
+    d_hours = hours_added_a_day * 14
+    return economics.gbp_per_week(kind, now[0] - base[0], now[1] - base[1], d_hours, price())  # type: ignore[arg-type]
 
 
 def test_shape_matches_the_spec_sample(client: TestClient, history: None) -> None:
@@ -229,10 +233,10 @@ def test_default_run_is_this_shops_best_not_the_area_best(
     assert body["history"][1]["changes"] == ["Close 23:00 → 03:00"]
     assert body["history"][2]["label"] == "Lights 18–00 high"
     assert body["history"][2]["changes"] == ["Lights 18–00 low → high"]
-    expected = round(profit("takeaway", BASE_KPIS["s1"], (300, 340.0)))
+    expected = round(profit("takeaway", BASE_KPIS["s1"], (500, 340.0), 4))  # 23:00 -> 03:00
     assert body["history"][1]["profitChangePerWeekGbp"] == expected
     assert body["numbers"]["profitChangePerWeekGbp"] == expected
-    assert body["numbers"]["customersPerWeek"] == {"value": 150, "change": 0.5}
+    assert body["numbers"]["customersPerWeek"] == {"value": 250, "change": 1.5}
     assert body["numbers"]["kwhPerWeek"]["value"] == 170.0
 
 
@@ -240,8 +244,8 @@ def test_area_best_run_that_costs_the_shop_money_says_going_back_is_better(
     client: TestClient, history: None
 ) -> None:
     body = client.get("/api/stores/s1/overview?run=3").json()
-    loss = profit("takeaway", BASE_KPIS["s1"], (305, 1300.0))
-    best = profit("takeaway", BASE_KPIS["s1"], (300, 340.0))
+    loss = profit("takeaway", BASE_KPIS["s1"], (505, 1300.0), 4)
+    best = profit("takeaway", BASE_KPIS["s1"], (500, 340.0), 4)
     assert loss < 0 < best
     assert body["run"] == 3 and body["bestRun"] == 2
     assert body["numbers"]["profitChangePerWeekGbp"] == round(loss)
@@ -249,7 +253,8 @@ def test_area_best_run_that_costs_the_shop_money_says_going_back_is_better(
         "Your settings from an earlier test did better: going back to them is about "
         f"£{round(best - loss)} a week better for you."
     )
-    # s3's only change (in the area-best run) lost money: its best is its original settings.
+    # s3's only change (in the area-best run) lost more margin than the wages it saved: its best
+    # is its original settings.
     s3 = client.get("/api/stores/s3/overview?run=3").json()
     assert [(h["run"], h["best"]) for h in s3["history"]] == [(1, True), (3, False)]
     assert s3["bestRun"] == 1
@@ -269,16 +274,39 @@ def test_advice_is_this_shops_top_three_by_gbp_with_status_and_certainty(
     by_field = {(a["suggestion"]["field"], a["suggestion"]["to"]): a for a in advice}
     close = by_field[("close", "03:00")]
     assert close["status"] == "applied"  # run 2 already has it
-    assert close["text"] == "Stay open until 03:00: about 75 more customers a week."
+    assert close["text"] == (
+        f"Stay open until 03:00: about 125 more customers a week, "
+        f"£{round(close['gbpPerWeek'])} a week after staff and power."
+    )
     assert close["certainty"] == "worth testing"  # no confidence -> medium
     assert "reason" not in close["suggestion"]  # named another shop: dropped (firewall)
     assert by_field[("lighting", "high")]["status"] == "tested_worse"  # run 3 lost money
     assert by_field[("open", "10:00")]["status"] == "new"
-    d_visits, d_kwh = 300 * 0.5, 340 * 0.1
-    assert close["gbpPerWeek"] == round(
-        economics.gbp_per_week("takeaway", d_visits, d_kwh, price())
+    d_visits, d_kwh = 500 * 0.5, 340 * 0.1
+    assert close["gbpPerWeek"] == round(  # run 2 already closes at 03:00: no hours added
+        economics.gbp_per_week("takeaway", d_visits, d_kwh, 0.0, price())
     )
     assert advice[0]["text"] == client.get("/api/stores/s1/overview?run=2").json()["headline"]
+
+
+def test_opening_earlier_advice_pays_the_wages_for_the_hours_it_adds(
+    client: TestClient, history: None
+) -> None:
+    advice = client.get("/api/stores/s1/overview?run=2").json()["advice"]
+    by_field = {(a["suggestion"]["field"], a["suggestion"]["to"]): a for a in advice}
+    result = rundata.load_stores(2)["s1"]
+    assert result.kpis.openHours == 16 * 14  # 11:00-03:00 every day
+    opening = by_field[("open", "10:00")]
+    change = Suggestion.model_validate(opening["suggestion"])
+    assert economics.suggestion_open_hours_delta(result, change) == pytest.approx(14)  # +1h a day
+    lights = Suggestion.model_validate(by_field[("lighting", "high")]["suggestion"])
+    assert economics.suggestion_open_hours_delta(result, lights) == 0.0
+    # takeaway: 100 more visits x £9 x 60% and 17 kWh more over 2 weeks, minus 14 hours x 2 on
+    # shift x £12.71
+    takings = 500 * 0.2 / 2 * 9 * 0.60 - 340 * 0.05 / 2 * price()
+    wages = 14 / 2 * 2 * 12.71
+    assert opening["gbpPerWeek"] == round(takings - wages)
+    assert 0 < opening["gbpPerWeek"] < takings - 1
 
 
 def test_firewall_no_other_shop_in_the_payload(client: TestClient, history: None) -> None:
@@ -300,11 +328,11 @@ def test_status_not_started_and_improving(client: TestClient, world: Path) -> No
     assert body["headline"].startswith("No changes tested for your shop yet")
     assert "ownerChanges" not in body  # run without owner_events.json
     run2 = {**BASE, "s1": StoreConfig(open="11:00", close="01:00", lighting=LOW)}
-    write_run(2, parent=1, configs=run2, kpis={**BASE_KPIS, "s1": (260, 320.0)})
+    write_run(2, parent=1, configs=run2, kpis={**BASE_KPIS, "s1": (400, 320.0)})
     save_state("running", best=2)
     body = client.get("/api/stores/s1/overview").json()
     assert body["status"] == "improving" and body["run"] == 2
-    assert body["headline"].startswith("Keep these settings: about 130 customers a week")
+    assert body["headline"].startswith("Keep these settings: about 200 customers a week")
 
 
 def test_404s(client: TestClient, world: Path) -> None:

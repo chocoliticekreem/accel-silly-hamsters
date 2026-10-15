@@ -2,6 +2,7 @@
 // urban fabric for it: street-facing terraces, inner warehouses, yards, pocket parks, car parks, and for the
 // biggest void a construction site + container market. Pure and deterministic (seeded); never feeds sim data.
 // All coordinates are contract coords (x = east, z = north). The 3D module converts with toScene.
+import { landmarkKeepouts } from "../world/models/plots";
 import type { Building, CityMap } from "../api/contract";
 import { rng, seedOf, type Rng } from "../mock/rng";
 import { closestOnStreet, frontage } from "./geometry";
@@ -66,6 +67,8 @@ export function occupancy(map: CityMap, cell = CELL): Grid {
     else keepouts.push({ x: b.x, z: f.facadeZ + (f.nz * STORE_FRONT) / 2, w: b.w + STORE_PAD * 2, d: STORE_FRONT + STORE_PAD * 2 });
   }
   for (const e of map.entryPoints) keepouts.push({ x: e.x, z: e.z, w: 16, d: 16 });
+  // hero landmark plots (world/models/plots) are built up: never infill inside one
+  const landmarks = landmarkKeepouts(map);
   // the Overground viaduct's corridor (its arches stand there)
   const viaduct = overgroundRoute(map, 0);
 
@@ -80,6 +83,12 @@ export function occupancy(map: CityMap, cell = CELL): Grid {
           break;
         }
       }
+      if (s === FREE)
+        for (const k of landmarks)
+          if (cx + half > k.x0 && cx - half < k.x1 && cz + half > k.z0 && cz - half < k.z1) {
+            s = BUILDING;
+            break;
+          }
       if (s === FREE)
         for (const st of map.streets)
           if (closestOnStreet(st, cx, cz)[2] - halfDiag < st.width / 2 + STREET_PAD) {
