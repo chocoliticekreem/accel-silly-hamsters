@@ -23,21 +23,30 @@ import Skyline from "./modules/Skyline";
 import StreetDressing from "./modules/StreetDressing";
 import StreetEvents from "./modules/StreetEvents";
 import Streets from "./modules/Streets";
+import Surroundings from "./modules/Surroundings";
+import Overground from "./modules/Overground";
+import OldStreet from "./modules/OldStreet";
 import Traffic from "./modules/Traffic";
 import ClubLife from "./modules/ClubLife";
 import Incidents from "./modules/Incidents";
 import Interiors from "./modules/Interiors";
 import Police from "./modules/Police";
-import Photoreal, { usePhotorealHides } from "./modules/Photoreal";
+import Photoreal from "./modules/Photoreal";
+import MapGround from "./modules/MapGround";
+import { useModuleHides } from "./graphics";
 
 export const MODULES: Record<string, ComponentType> = {
   Sky,
   Photoreal,
+  MapGround,
   Ground,
+  Surroundings,
   Heatmap,
   Skyline,
   Streets,
   Buildings,
+  Overground,
+  OldStreet,
   Infill,
   Construction,
   Stores,
@@ -76,7 +85,7 @@ export interface WorldProps {
 export default function World({ map, run, stores, cameraGroup = "main", interactive = true, onLive }: WorldProps) {
   const [dpr, setDpr] = useState(1.5);
   const [enabled] = useState(enabledModules);
-  const photorealHides = usePhotorealHides();
+  const modeHides = useModuleHides();
   const live = useMemo(() => {
     const l = newLive();
     onLive?.(l);
@@ -97,7 +106,7 @@ export default function World({ map, run, stores, cameraGroup = "main", interact
       <AdaptiveDpr pixelated />
       <WorldContext.Provider value={ctx}>
         {Object.entries(MODULES)
-          .filter(([name]) => enabled.includes(name) && !photorealHides.has(name))
+          .filter(([name]) => enabled.includes(name) && !modeHides.has(name))
           .map(([name, M]) => (
             <ModuleBoundary key={name} name={name}>
               <Suspense fallback={null}>
