@@ -4,9 +4,10 @@ import { useEffect, useRef } from "react";
 import { useAnalyst, useMap, useRuns, useRunStores } from "./state/data";
 import { RUN_FROM_URL, useSim } from "./state/store";
 import { AreaPanel } from "./ui/AreaPanel";
+import { BusyPanel } from "./ui/BusyPanel";
 import { CityFeedMount } from "./ui/CityFeedMount";
 import { AgentsPanel } from "./ui/AgentsPanel";
-import { Bot, PanelsTopLeft } from "lucide-react";
+import { Bot, ChartColumn, PanelsTopLeft } from "lucide-react";
 import { AnalystChip } from "./ui/AnalystChip";
 import { CompareView } from "./ui/CompareView";
 import { DemoBar, DemoChip } from "./ui/DemoBar";
@@ -28,7 +29,7 @@ import { InterveneMenu } from "./ui/InterveneMenu";
 import { PersonCard } from "./ui/PersonCard";
 import World from "./world/World";
 
-const VIEW_LABEL: Record<string, string> = { history: "History", agents: "Agents", area: "Area energy", compare: "Before vs after" };
+const VIEW_LABEL: Record<string, string> = { history: "History", agents: "Agents", area: "Area energy", busy: "Busy times", compare: "Before vs after" };
 
 /** Keeps --goto-h = the Go-to bar's height, so the top-right tools sit just below it however it wraps. */
 function useGotoHeight(ready: boolean) {
@@ -103,6 +104,7 @@ export default function App() {
                   <DropdownItem on={panel === "history"} icon={<Icon name="chart" size={14} />} onClick={() => (openPanel(panel === "history" ? null : "history"), close())}>History</DropdownItem>
                   <DropdownItem on={panel === "agents"} icon={<Bot size={14} />} onClick={() => (openPanel(panel === "agents" ? null : "agents"), close())}>Agents</DropdownItem>
                   <DropdownItem on={panel === "area"} icon={<Icon name="bolt" size={14} />} onClick={() => (openPanel(panel === "area" ? null : "area"), close())}>Area energy</DropdownItem>
+                  <DropdownItem on={panel === "busy"} icon={<ChartColumn size={14} />} onClick={() => (openPanel(panel === "busy" ? null : "busy"), close())}>Busy times</DropdownItem>
                   <DropdownItem on={compare} icon={<Icon name="split" size={14} />} onClick={() => (setCompare(!compare), close())}>Before vs after</DropdownItem>
                 </>
               )}
@@ -113,6 +115,7 @@ export default function App() {
         </div>
         {panel === "history" && <HistoryPanel />}
         {panel === "area" && <AreaPanel />}
+        {panel === "busy" && !compare && <BusyPanel />}
         {panel === "agents" && <AgentsPanel />}
         {!compare && <StoreCard />}
         {!compare && <BusinessCard />}
